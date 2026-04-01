@@ -9,7 +9,7 @@ export const getWebRequestHeaders = () => {
                 const { url, requestHeaders }: any = details
                 if (url?.includes('sellercentral.amazon') || url?.includes('baidu.com')) {
                     console.log('%c 请求地址=====:', 'color:red;', url);
-                    // console.log('%c  请求头：', 'color:red;', requestHeaders);
+                    console.log('%c  请求头：', 'color:red;', requestHeaders);
                     const header = await browserStorage.get('lyRequestHeaders')
                     if (!header) {
                         browserStorage.set('lyRequestHeaders', JSON.stringify(requestHeaders))
@@ -47,7 +47,7 @@ export const getWebResponseHeaders = () => {
             try {
                 const { url, responseHeaders }: any = details
                 // if (url?.includes('/sugrec')){
-                //     console.log('%c 响应头：', 'color:green;', responseHeaders);
+                    console.log('%c 响应头：', 'color:green;', responseHeaders);
                 // }
                 // if (url?.includes('sellercentral.amazon') || url?.includes('baidu.com')) {
                     // console.log('%c 响应头：', 'color:green;', responseHeaders);
