@@ -1,0 +1,251 @@
+{
+    "country": {
+        "list": ".partner-switcher-container",
+        "item": ".dropdown-account-switcher-header-label-regional.dropdown-account-switcher-header-label-regional-child"
+    },
+    "mallIds": [
+        [
+            "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "欧洲"
+        ],
+        [
+            "amzn1.pa.d.AAJALQOXAXDOGKQJ5SUN2JN4NJ7Q",
+            "美洲"
+        ]
+    ],
+    "href": "/coupons/ref=xx_scoupn_dnav_xx",
+    "locales": [
+        {
+            "code": "fr_FR",
+            "nativeName": "Français",
+            "countryName": "France"
+        },
+        {
+            "code": "en_FR",
+            "nativeName": "English",
+            "countryName": "United Kingdom"
+        },
+        {
+            "code": "zh_CN",
+            "nativeName": "中文(简体)",
+            "countryName": "中国大陆"
+        },
+        {
+            "code": "de_DE",
+            "nativeName": "Deutsch",
+            "countryName": "Deutschland"
+        },
+        {
+            "code": "es_ES",
+            "nativeName": "Español",
+            "countryName": "España"
+        },
+        {
+            "code": "it_IT",
+            "nativeName": "Italiano",
+            "countryName": "Italia"
+        },
+        {
+            "code": "ja_JP",
+            "nativeName": "日本語",
+            "countryName": "日本"
+        },
+        {
+            "code": "ko_KR",
+            "nativeName": "한국어",
+            "countryName": "대한민국"
+        },
+        {
+            "code": "zh_TW",
+            "nativeName": "中文(繁體)",
+            "countryName": "中國台灣"
+        }
+    ],
+    "us-regionalAccounts": [
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A1805IZSGTT6HS"
+            },
+            "label": "荷兰",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A13V1IB3VIYZZH"
+            },
+            "label": "法国",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": true
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.APJ6JRA9NG5V4"
+            },
+            "label": "意大利",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A1F83G8C2ARO7P"
+            },
+            "label": "英国",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A33AVAJ2PDY3EV"
+            },
+            "label": "土耳其",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A1PA6795UKMFR9"
+            },
+            "label": "德国",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A1RKKUPIHCS9HS"
+            },
+            "label": "西班牙",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A1C3SOZRARQ6R3"
+            },
+            "label": "波兰",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A2NODRKZP88ZB9"
+            },
+            "label": "瑞典",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.A28R8C7NBKEWEA"
+            },
+            "label": "爱尔兰",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAY3WP6674657FFA2JKBNQEWCCKA",
+                "mons_sel_mkid": "amzn1.mp.o.AMEN7PMS3EDWL"
+            },
+            "label": "比利时",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.ADUILQ4FEWY2HTJ5JBVGG3MWESPQ",
+            "domain": null,
+            "selected": false
+        }
+    ],
+    "eu-regionalAccounts": [
+        {
+            "ids": {
+                "mons_sel_mkid": "amzn1.mp.o.ATVPDKIKX0DER",
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAM5KIEXY47ATQGJ2EH6XYVEJNYQ"
+            },
+            "label": "美国",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.AAJALQOXAXDOGKQJ5SUN2JN4NJ7Q",
+            "domain": null,
+            "selected": true
+        },
+        {
+            "ids": {
+                "mons_sel_mkid": "amzn1.mp.o.A2Q3Y263D00KWC",
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAM5KIEXY47ATQGJ2EH6XYVEJNYQ"
+            },
+            "label": "巴西",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.AAJALQOXAXDOGKQJ5SUN2JN4NJ7Q",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_mkid": "amzn1.mp.o.A2EUQ1WTGCTBG2",
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAM5KIEXY47ATQGJ2EH6XYVEJNYQ"
+            },
+            "label": "加拿大",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.AAJALQOXAXDOGKQJ5SUN2JN4NJ7Q",
+            "domain": null,
+            "selected": false
+        },
+        {
+            "ids": {
+                "mons_sel_mkid": "amzn1.mp.o.A1AM78C64UM0Y8",
+                "mons_sel_dir_mcid": "amzn1.merchant.d.AAM5KIEXY47ATQGJ2EH6XYVEJNYQ"
+            },
+            "label": "墨西哥",
+            "typeLabel": null,
+            "globalAccountId": "amzn1.pa.d.AAJALQOXAXDOGKQJ5SUN2JN4NJ7Q",
+            "domain": null,
+            "selected": false
+        }
+    ],
+    "rules": {
+        "headers": [
+            "dashboard-table-primary-text",
+            "dashboard-table-secondary-text"
+        ],
+        "body": [
+            "dashboard-table-primary-text",
+            "dashboard-table-secondary-text"
+        ],
+        "优惠券名称": [
+            "kat-link",
+            "label"
+        ],
+        "状态": [
+            "kat-badge",
+            "label"
+        ]
+    }
+}

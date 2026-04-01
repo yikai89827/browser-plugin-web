@@ -1,0 +1,875 @@
+{
+    "customerName": null,
+    "tabs": [
+        {
+            "id": "catalog",
+            "label": "目录",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "add-products",
+                    "label": "添加商品",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/productsearch/ref=xx_catadd_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "item-creator",
+                    "label": "批量上传商品",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/item-manager/ezdpc/uploadInventory.html/ref=xx_invfile_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "complete-drafts",
+                    "label": "补全您的草稿",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/draft/dashboard/ref=xx_cyd_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "view-selling-applications",
+                    "label": "查看销售申请",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/hz/myqdashboard/ref=xx_myqd_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "spsx-lqd",
+                    "label": "改进商品信息质量",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/quality/ref=xx_lqd_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "upload-images",
+                    "label": "上传图片",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/imaging/manage?ref_=xx_pxim_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "upload-and-manage-videos-2",
+                    "label": "上传和管理视频",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/creatorhub/video/library/ref=xx_vsecpl_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "inventory",
+            "label": "库存",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "ezdpc-gui-inventory-mons",
+                    "label": "管理所有库存",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/myinventory/inventory?ref_=xx_invmgr_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-sfp-v2",
+                    "label": "管理卖家自配送商品",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/seller-fulfilled-product/analytics/ref=xx_msfp_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "sell-globally-mons",
+                    "label": "全球销售",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/global-selling/dashboard/ref=xx_agsdsh_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-fitment",
+                    "label": "汽车配件",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/automotiveWW/automotive-fitment/ref=xx_autofitment_nav_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "fba",
+                    "label": "亚马逊物流 (FBA)",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [
+                        {
+                            "id": "fba-dashboard",
+                            "label": "控制面板",
+                            "badgeLabel": "新",
+                            "badgeType": "info",
+                            "items": [],
+                            "uri": "/fba/dashboard?ref_=xx_fbadashboard_dnav_xx",
+                            "isExternalUri": false
+                        },
+                        {
+                            "id": "fba-inventory",
+                            "label": "亚马逊物流库存",
+                            "badgeLabel": null,
+                            "badgeType": null,
+                            "items": [],
+                            "uri": "/inventoryplanning/manageinventoryhealth?ref_=xx_invplan_dnav_xx",
+                            "isExternalUri": false
+                        },
+                        {
+                            "id": "fba-shipping-queue",
+                            "label": "货件",
+                            "badgeLabel": null,
+                            "badgeType": null,
+                            "items": [],
+                            "uri": "/gp/ssof/shipping-queue.html/ref=xx_fbashipq_dnav_xx",
+                            "isExternalUri": false
+                        },
+                        {
+                            "id": "fba-opportunities",
+                            "label": "机会",
+                            "badgeLabel": "新",
+                            "badgeType": "info",
+                            "items": [],
+                            "uri": "/next/fba?ref_=xx_fbaopp_dnav_xx",
+                            "isExternalUri": false
+                        },
+                        {
+                            "id": "fba-analytics",
+                            "label": "分析",
+                            "badgeLabel": "新",
+                            "badgeType": "info",
+                            "items": [],
+                            "uri": "/fbaselleranalytics?ref_=xx_fbalyt_dnav_xx",
+                            "isExternalUri": false
+                        },
+                        {
+                            "id": "ags-rafn-ui-t1",
+                            "label": "亚马逊物流远程配送",
+                            "badgeLabel": null,
+                            "badgeType": null,
+                            "items": [],
+                            "uri": "/rafn/inventory/ref=xx_rafn_dnav_xx",
+                            "isExternalUri": false
+                        },
+                        {
+                            "id": "manage-pan-europe-inventory",
+                            "label": "亚马逊物流欧洲整合服务库存\n",
+                            "badgeLabel": null,
+                            "badgeType": null,
+                            "items": [],
+                            "uri": "/paneu/inventory/ref=xx_paneulpg_dnav_xx",
+                            "isExternalUri": false
+                        }
+                    ],
+                    "uri": null,
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "pricing",
+            "label": "确定价格",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "pricing-health-nav",
+                    "label": "定价状况",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/pricing/health/ref=xx_xx_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "pricing-automation",
+                    "label": "自动定价",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/automatepricingv2/pricingrules/ref=xx_mars_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "fee-discounts",
+                    "label": "佣金折扣",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/feediscounts/dashboard/ref=xx_feedsc_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "negotiated-pricing-new",
+                    "label": "协议定价",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business/pricing/negotiatedpricing/ref=xx_nps_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "flexible-financing",
+                    "label": "启用免息等额每月分期付款",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/ofs/seller?ref_=xx_fcf_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "orders",
+            "label": "订单",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "seller-your-account",
+                    "label": "管理订单",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/orders-v3/ref=xx_myo_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "create-mcf-order",
+                    "label": "创建 MCF 订单",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/mcf/orders/create-order/ref=xx_cyo_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "transactions-download-orders-mons2",
+                    "label": "订单报告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/order-reports-and-feeds/reports/ref=xx_orderrpt_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-invoices",
+                    "label": "管理发票开具",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gc/invoicing/orders/ref=xx_mi_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "transactions-upload-shipping-feed",
+                    "label": "上传订单相关文件",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/order-reports-and-feeds/feeds/ref=xx_ordrelfile_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-returns",
+                    "label": "管理退货",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/returns/list/v2/ref=xx_myr_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "safe-t",
+                    "label": "管理 SAFE-T 索赔",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/safet-claims/ref=xx_safet_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "bidding",
+            "label": "广告",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "nemo-campaign-mgr-new",
+                    "label": "广告活动管理",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/cm/ref=xx_cmpmgr_dnav_xx",
+                    "isExternalUri": true
+                },
+                {
+                    "id": "enhanced-brand-content",
+                    "label": "A+ 商品描述管理器",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/enhanced-content/ref=xx_ebc_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "vine-sc-topnav",
+                    "label": "Vine",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/vine/ref=xx_vine_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "lightning-deals",
+                    "label": "秒杀",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/merchandising/ref=xx_lghtdels_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "coupons",
+                    "label": "优惠券",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/coupons/ref=xx_scoupn_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "price-discounts",
+                    "label": "价格折扣",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/discounts/ref=xx_discnts_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "promotion-manager-new",
+                    "label": "管理促销",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/promotions/manage/ref=xx_promomgr_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "store-design",
+            "label": "品牌旗舰店",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "manage-stores-t2",
+                    "label": "管理店铺",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/amazonStores/seller-stores/ref=xx_sbsc_dnav_xx",
+                    "isExternalUri": true
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "programs",
+            "label": "增长",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "growth-opportunities",
+                    "label": "增长潜力看板",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/grow/ref=xx_MYG_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "recommended-programs",
+                    "label": "浏览计划",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/recommended-programs/ref=xx_nav_esp_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "gestalt_registration",
+                    "label": "定制计划",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gestalt/manageregistration/index.html/ref=xx_g_rg_n_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "selection-guidance-T1",
+                    "label": "选品指南针",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/selection/ref=xx_sggrow_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "opportunity-explorer",
+                    "label": "商机探测器",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/opportunity-explorer/ref=xx_ox_sc_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "multi-channel-fulfillment",
+                    "label": "多渠道配送 ",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/mcf/ref=xx_mcfgrow_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "reports",
+            "label": "数据报告",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "site-metrics",
+                    "label": "业务报告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business-reports/ref=xx_sitemetric_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "fulfillment-report",
+                    "label": "库存和销售报告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/reportcentral/ref=xx_fbareports_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "ad-reports",
+                    "label": "广告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/reports/ref=xx_perftime_dnav_xx",
+                    "isExternalUri": true
+                },
+                {
+                    "id": "return-reports",
+                    "label": "退货报告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/returns/report/ref=xx_scnvrr_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "cbr-custom-reports",
+                    "label": "自定义报告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/customizedReports/lp/ref=xx_CBRTab_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "inventory-report",
+                    "label": "库存报告",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/listing/reports/ref=xx_invreport_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "tax-library",
+                    "label": "税务文件库",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/tax/tax-library.html/ref=xx_taxlib_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "mytax_mytds",
+                    "label": "管理税费",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/mytax/nav?ref_=xx_mytax_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-your-vat",
+                    "label": "管理您的增值税",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/vat-registration/v2/index.html/ref=xx_manvat_dnav_xx#/dashboard",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "sc-epr-registration",
+                    "label": "管理您的生产者延伸责任合规任务",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/compliance-services/environmental-compliance-services/ref=xx_epr_reg_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "selling-economics-fees",
+                    "label": "销售成本和费用",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/sereport?ref_=xx_specon_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "payments",
+            "label": "付款",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "payments-account-new",
+                    "label": "付款",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "seller-payments-experience",
+                    "label": "报告库",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/payments/reports-repository/ref=xx_rrepo_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "accs-currency-converter",
+                    "label": "亚马逊全球收款",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gc/accs?ref_=xx_nav_accs_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "performance",
+            "label": "绩效",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "account-health",
+                    "label": "账户状况",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/seller-rating/pages/performance-summary.html/ref=xx_srsumprf_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "feedback-manager",
+                    "label": "反馈管理器",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/seller-rating/pages/feedback-manager.html/ref=xx_feedback_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "a-z-claims",
+                    "label": "亚马逊商城交易保障索赔",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/guarantee-claims/home.html/ref=xx_azclaims_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "chargeback-claims",
+                    "label": "信用卡拒付索赔",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/chargebacks/home.html/ref=xx_chrgbck_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "performance-notices",
+                    "label": "绩效通知",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/customer-experience/perf-notifications.html/ref=xx_cxperform_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "voice-of-customer",
+                    "label": "买家之声",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/voice-of-the-customer/ref=xx_voc_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "appstore",
+            "label": "应用程序和服务",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "find-apps-and-services",
+                    "label": "销售伙伴应用商店",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/selling-partner-appstore/ref=xx_masdis_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-your-apps",
+                    "label": "管理您的应用",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/apps/manage/ref=xx_masman_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "explore-services",
+                    "label": "探索服务",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/tsba/ref=xx_srvs_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "manage-service-requests",
+                    "label": "管理服务请求",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/spnsellerdashboard/ref=xx_masdis_dnav_xx?TOTAL",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "develop-apps",
+                    "label": "开发应用程序",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/sellingpartner/developerconsole/ref=xx_DevCon_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "business",
+            "label": "B2B",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "b2b-central",
+                    "label": "B2B平台",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business/b2bcentral/ref=xx_b2bcen_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "b2b-product-opportunities",
+                    "label": "商品机会",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business/opportunities/ref=xx_mbop_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "b2b-manage-quotes-new",
+                    "label": "管理报价",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business/manage-quotes/ref=xx_b2bmyp_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "business-discount-insight",
+                    "label": "企业折扣分析",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business/insights?ref_=xx_scbdi_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "case-pack-recommendation",
+                    "label": "装箱推荐",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/business/largepacks?ref_=xx_sccpr_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "branding",
+            "label": "品牌",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "manage-brand",
+                    "label": "管理您的品牌",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/manage-your-brands?ref_=xx_myb_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "brand-protection",
+                    "label": "品牌注册",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gc/brand-protection/ref=xx_bpro_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "build-your-brand",
+                    "label": "打造您的品牌",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/build-your-brand?ref_=xx_byb_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        },
+        {
+            "id": "learn",
+            "label": "学习",
+            "badgeLabel": null,
+            "badgeType": null,
+            "items": [
+                {
+                    "id": "seller-university",
+                    "label": "卖家大学",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/learn/ref=xx_su_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "forums",
+                    "label": "论坛",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/forums?ref_=xx_forums_dnav_xx",
+                    "isExternalUri": false
+                },
+                {
+                    "id": "news",
+                    "label": "新闻",
+                    "badgeLabel": null,
+                    "badgeType": null,
+                    "items": [],
+                    "uri": "/gp/headlines.html?ref_=xx_news_dnav_xx",
+                    "isExternalUri": false
+                }
+            ],
+            "uri": null,
+            "isExternalUri": false
+        }
+    ]
+}

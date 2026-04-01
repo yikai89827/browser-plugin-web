@@ -1,0 +1,38 @@
+{
+  "name": "erp-assistant",
+  "description": "manifest.json description",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt --port 5050",
+    "test": "wxt --mode test",
+    "uat": "wxt --mode uat",
+    "prod": "wxt --mode prod",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefoox": "wxt zip -b firefox",
+    "compile": "vue-tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.8.0",
+    "axios": "^1.9.0",
+    "cheerio": "^1.0.0",
+    "uuid": "^11.1.0",
+    "vue": "^3.5.13",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.322",
+    "@types/node": "^22.15.19",
+    "@wxt-dev/module-vue": "^1.0.2",
+    "@wxt-dev/storage": "^1.1.1",
+    "typescript": "5.6.3",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vue-tsc": "^2.2.10",
+    "wxt": "^0.20.6"
+  }
+}

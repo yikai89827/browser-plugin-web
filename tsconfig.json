@@ -1,0 +1,37 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": false,
+    "lib": [
+      "ES2020",
+      "DOM"
+    ],
+    "typeRoots": [
+      "./node_modules/@types",
+      "./types"
+    ],
+    "types": [
+      "@wxt/client",
+      "chrome"
+    ],
+    "baseUrl": ".", // 基础路径
+    "paths": {
+      "@/*": [
+        "./utils/*"
+      ],
+      "@": [
+        "./utils"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "tests/**/*"
+  ]
+}

@@ -1,0 +1,16 @@
+[
+    {
+        "id": 1,
+        "priority": 1,
+        "action": {
+            "type": "block"
+        },
+        "condition": {
+            "urlFilter": "taobao.com||baidu.com||amazon.com",
+            "resourceTypes": [
+                "main_frame",
+                "sub_frame"
+            ]
+        }
+    }
+]
