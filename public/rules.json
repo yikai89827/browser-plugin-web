@@ -6,7 +6,7 @@
             "type": "block"
         },
         "condition": {
-            "urlFilter": "taobao.com||baidu.com||amazon.com",
+            "urlFilter": "taobao.com||baidu.com||amazon.com||facebook.com",
             "resourceTypes": [
                 "main_frame",
                 "sub_frame"

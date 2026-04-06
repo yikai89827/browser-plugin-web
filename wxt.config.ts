@@ -42,6 +42,7 @@ export default defineConfig({
       name: 'erp助手',
       host_permissions: [
         "*://*.baidu.com/*",
+        "*://*.facebook.com/*",
         "http://localhost/*",
         "http://127.0.0.1/*",
         "http://192.168.110.106/*",
@@ -82,6 +83,7 @@ export default defineConfig({
         {
           matches: [
             '*://*.baidu.com/*',
+            "*://*.facebook.com/*",
             "http://localhost/*",
             "http://127.0.0.1/*",
             "http://192.168.110.106/*",
@@ -97,6 +99,7 @@ export default defineConfig({
         resources: ['*.js', "*.csv", "*.xlsx"],
         matches: [
           '*://*.baidu.com/*',
+          "*://*.facebook.com/*",
           "http://localhost/*",
           "http://127.0.0.1/*",
           "http://192.168.110.106/*",
