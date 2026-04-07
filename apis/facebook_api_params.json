@@ -1,0 +1,52 @@
+{
+  "api_endpoint": "https://adsmanager-graph.facebook.com/v22.0/act_2174042080104706/light_adsets",
+  "method": "GET",
+  "params": {
+    "access_token": "EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD",
+    "__aaid": "2174042080104706",
+    "__activeScenarioIDs": "[]",
+    "__activeScenarios": "[]",
+    "__entryPointPreloaded": "1",
+    "__interactionsMetadata": "[]",
+    "_callFlowletID": "113152",
+    "_reqName": "adaccount/light_adsets",
+    "_reqSrc": "AdsManagerDataLoadingSortEntryPoint",
+    "_sessionID": "743b2f25b7598227",
+    "_triggerFlowletID": "113153",
+    "ad_draft_id": "1498506284979940",
+    "fields": "id",
+    "filtering": "[{\"field\":\"campaign.impressions\",\"operator\":\"GREATER_THAN\",\"value\":0},{\"field\":\"campaign.delivery_status\",\"operator\":\"IN\",\"value\":[\"active\"]}]",
+    "include_headers": "false",
+    "limit": "200",
+    "locale": "en_GB",
+    "method": "get",
+    "pretty": "0",
+    "qpl_active_e2e_trace_ids": "270215142_fd24e3b5bc7a7dbda",
+    "qpl_active_flow_ids": "270215142",
+    "qpl_active_flow_instance_ids": "270215142_27f3402a9a9657d935d",
+    "sort": "[\"name_descending\"]",
+    "summary": "true",
+    "suppress_http_code": "1",
+    "time_range": "{\"since\":\"2026-04-01\",\"until\":\"2026-04-04\"}",
+    "xref": "fb4ee0f4212e16a84"
+  },
+  "parsed_params": {
+    "filtering": [
+      {
+        "field": "campaign.impressions",
+        "operator": "GREATER_THAN",
+        "value": 0
+      },
+      {
+        "field": "campaign.delivery_status",
+        "operator": "IN",
+        "value": ["active"]
+      }
+    ],
+    "time_range": {
+      "since": "2026-04-01",
+      "until": "2026-04-04"
+    },
+    "sort": ["name_descending"]
+  }
+}

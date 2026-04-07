@@ -35,7 +35,6 @@ export default defineConfig({
       '@/*': path.resolve(__dirname, './utils/*')  // 通配符支持
     }
   },
-  entrypointsDir: 'entrypoints',
   manifest: () => {
     return {
       version: '3',
@@ -76,25 +75,9 @@ export default defineConfig({
       },
       background: {
         persistent: true,
-        service_worker: "entrypoints/background.ts",
         type: "module"
       },
-      content_scripts: [
-        {
-          matches: [
-            '*://*.baidu.com/*',
-            "*://*.facebook.com/*",
-            "http://localhost/*",
-            "http://127.0.0.1/*",
-            "http://192.168.110.106/*",
-            ...hostPermissions,
-          ],
-          js: ['content-scripts/content.js'],
-          run_at: "document_end",
-          world: "MAIN",
-          all_frames: true// 允许在所有框架中运行
-        }
-      ],
+
       web_accessible_resources: [{
         resources: ['*.js', "*.csv", "*.xlsx"],
         matches: [
@@ -115,6 +98,9 @@ export default defineConfig({
             mac: "Command+Shift+F"
           }
         }
+      },
+      action: {
+        default_popup: "popup.html"
       }
       // "content_security_policy": {
       //   "extension_pages": "script-src 'self' 'unsafe-eval'; connect-src http://localhost:* http://127.0.0.1:* http://192.168.*:*"
