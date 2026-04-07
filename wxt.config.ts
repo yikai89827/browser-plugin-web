@@ -39,7 +39,7 @@ export default defineConfig({
   manifest: () => {
     return {
       version: '3',
-      name: 'erp助手',
+      name: '广告助手',
       host_permissions: [
         "*://*.baidu.com/*",
         "*://*.facebook.com/*",
