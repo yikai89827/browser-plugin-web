@@ -24,6 +24,8 @@ const ads = ref<AdData[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const error = ref('');
+const selectedDate = ref(new Date().toISOString().split('T')[0]);
+const dataProtectionEnabled = ref(true);
 
 // 广告账户ID
 const accountId = '2174042080104706';
@@ -47,7 +49,14 @@ const fetchAds = async () => {
         params: {
           access_token: accessToken,
           fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-          limit: 200
+          limit: 200,
+          filtering: JSON.stringify([
+            {
+              field: 'status',
+              operator: 'IN',
+              value: ['ACTIVE', 'PAUSED', 'DRAFT'] // 包含草稿状态的广告
+            }
+          ])
         }
       }
     );
@@ -164,20 +173,44 @@ onMounted(() => {
     
     <!-- 操作按钮区域 -->
     <div class="action-bar">
-      <button 
-        class="btn" 
-        @click="fetchAds" 
-        :disabled="loading"
-      >
-        {{ loading ? '获取中...' : '获取数据' }}
-      </button>
-      <button 
-        class="btn save-btn" 
-        @click="saveChanges" 
-        :disabled="saving || ads.length === 0"
-      >
-        {{ saving ? '保存中...' : '保存' }}
-      </button>
+      <div class="action-bar-left">
+        <div class="date-picker">
+          <input 
+            type="date" 
+            v-model="selectedDate" 
+            class="date-input"
+          />
+        </div>
+        <button 
+          class="btn" 
+          @click="fetchAds" 
+          :disabled="loading"
+        >
+          {{ loading ? '获取中...' : '获取数据' }}
+        </button>
+        <button 
+          class="btn save-btn" 
+          @click="saveChanges" 
+          :disabled="saving || ads.length === 0"
+        >
+          {{ saving ? '保存中...' : '保存' }}
+        </button>
+      </div>
+      <div class="action-bar-right">
+        <div class="ad-total">
+          广告总数: {{ ads.length }}
+        </div>
+        <div class="data-protection">
+          <span>数据保护</span>
+          <label class="switch">
+            <input 
+              type="checkbox" 
+              v-model="dataProtectionEnabled"
+            >
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
     </div>
     
     <!-- 错误提示 -->
@@ -191,7 +224,7 @@ onMounted(() => {
         <thead>
           <tr>
             <!-- <th>广告id</th> -->
-            <th>广告名称</th>
+            <th>名称</th>
             <th>覆盖人数</th>
             <th>增加</th>
             <th>展示次数</th>
@@ -201,7 +234,7 @@ onMounted(() => {
             <th>成效</th>
             <th>加成效</th>
             <th>单次成效</th>
-            <th>其他事件</th>
+            <th>事件</th>
           </tr>
         </thead>
         <tbody>
@@ -214,7 +247,7 @@ onMounted(() => {
                 class="editable-input"
               />
             </td>
-            <td>{{ ad.impressions || 0 }}</td>
+            <td class="ellipsis-cell" :title="ad.impressions || 0">{{ ad.impressions || 0 }}</td>
             <td>
               <input 
                 type="number" 
@@ -225,7 +258,7 @@ onMounted(() => {
               />
               <span>%</span>
             </td>
-            <td>{{ ad.reach || 0 }}</td>
+            <td class="ellipsis-cell" :title="ad.reach || 0">{{ ad.reach || 0 }}</td>
             <td>
               <input 
                 type="number" 
@@ -236,7 +269,7 @@ onMounted(() => {
               />
               <span>%</span>
             </td>
-            <td>{{ ad.spend || 0 }}</td>
+            <td class="ellipsis-cell" :title="ad.spend || 0">{{ ad.spend || 0 }}</td>
             <td>
               <input 
                 type="number" 
@@ -247,7 +280,7 @@ onMounted(() => {
               />
               <span>%</span>
             </td>
-            <td>{{ ad.results || 0 }}</td>
+            <td class="ellipsis-cell" :title="ad.results || 0">{{ ad.results || 0 }}</td>
             <td>
               <input 
                 type="number" 
@@ -258,8 +291,8 @@ onMounted(() => {
               />
               <span>%</span>
             </td>
-            <td>{{ ad.cost_per_result || 0 }}</td>
-            <td>{{ ad.other_events || 0 }}</td>
+            <td class="ellipsis-cell" :title="ad.cost_per_result || 0">{{ ad.cost_per_result || 0 }}</td>
+            <td class="ellipsis-cell" :title="ad.other_events || 0">{{ ad.other_events || 0 }}</td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
             <td colspan="12" class="empty-state">
@@ -273,8 +306,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.ads-manager {
-  width: 100%;
+.ads-manager,.content {
+  width: 100%!important;
 }
 
 .title {
@@ -298,8 +331,98 @@ onMounted(() => {
 
 .action-bar {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 15px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.action-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.action-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-right: 20px;
+}
+
+.date-picker {
+  display: flex;
+  align-items: center;
+}
+
+.date-input {
+  padding: 6px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.ad-total {
+  font-size: 14px;
+  color: #666;
+}
+
+.data-protection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+/* 开关样式 */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 20px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 20px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: transparent;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #1890ff;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #1890ff;
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
 }
 
 .btn {
@@ -343,13 +466,15 @@ onMounted(() => {
 .table-container {
   max-height: 400px;
   min-height: 320px;
-  overflow-y: auto;
+  overflow: auto;
   border: 1px solid #e8e8e8;
   border-radius: 4px;
+    width: 100%;
 }
 
 .ads-table {
   width: 100%;
+  min-width: 770px;
   border-collapse: collapse;
 }
 
@@ -358,16 +483,17 @@ onMounted(() => {
   padding: 12px;
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
+  max-width: 80px;
 }
 
 .ads-table th {
-  background-color: #fafafa;
+  background-color: transparent;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .ads-table tr:hover {
-  background-color: #f5f5f5;
+  background-color: #ddd;
 }
 
 .editable-input,
@@ -387,9 +513,10 @@ onMounted(() => {
 }
 
 .empty-state {
-  text-align: center;
-  padding: 40px;
-  color: #999;
+    height: 240px!important;
+    text-align: center!important;
+    padding: 40px;
+    color: #999;
 }
 
 /* 滚动条样式 */
@@ -409,5 +536,24 @@ onMounted(() => {
 
 .table-container::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+.ellipsis-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.ads-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.ads-table th {
+  white-space: nowrap;
+  min-width: 56px;
 }
 </style>

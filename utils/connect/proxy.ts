@@ -7,19 +7,25 @@ export const getWebRequestHeaders = () => {
         async (details) => {
             try {
                 const { url, requestHeaders }: any = details
-                if (url?.includes('sellercentral.amazon') || url?.includes('baidu.com')||url?.includes('facebook.com')) {
+                if (url?.includes('facebook.com')) {
                     console.log('%c 请求地址=====:', 'color:red;', url);
+                    // 原生方法将URL参数转换为JSON并打印
+                    const urlParams = new URL(url)?.searchParams || {};
+                    const paramsObj: any = {};
+                    urlParams.forEach((value, key) => {
+                        paramsObj[key] = value;
+                    });
+                    console.log('%c URL参数JSON=====:', 'color:blue;', paramsObj);
                     console.log('%c  请求头：', 'color:red;', requestHeaders);
                     const header = await browserStorage.get('lyRequestHeaders')
-                    if (!header) {
-                        browserStorage.set('lyRequestHeaders', JSON.stringify(requestHeaders))
-                    }
-                    // /events/com.amazon.csm.csa.prod
-                    if (url.includes('/ap/signin') || url.includes('/ap/mfa')){//验证码或者登录页面
-                        browserStorage.set('lyAmazonVerifycodePage', '1')
-                    }else {//已登录
-                        browserStorage.set('lyAmazonVerifycodePage', '')
-                    }
+                    // if (!header) {
+                    //     browserStorage.set('lyRequestHeaders', JSON.stringify(requestHeaders))
+                    // }
+                    // if (url.includes('/ap/signin') || url.includes('/ap/mfa')){//验证码或者登录页面
+                    //     browserStorage.set('lyFacebookVerifycodePage', '1')
+                    // }else {//已登录
+                    //     browserStorage.set('lyFacebookVerifycodePage', '')
+                    // }
                 }
                 // @ts-ignore
                 // const apiUrl = import.meta?.env?.WXT_COUPON_API_URL || '/coupons/api/getCouponPromotions'
@@ -45,11 +51,11 @@ export const getWebResponseHeaders = () => {
     browser?.webRequest?.onHeadersReceived.addListener(
         (details) => {
             try {
-                const { url, responseHeaders }: any = details
+                // const { url, responseHeaders }: any = details
                 // if (url?.includes('/sugrec')){
-                    console.log('%c 响应头：', 'color:green;', responseHeaders);
+                    // console.log('%c 响应头：', 'color:green;', responseHeaders);
                 // }
-                // if (url?.includes('sellercentral.amazon') || url?.includes('baidu.com')||url?.includes('facebook.com')) {
+                // if (url?.includes('sellercentral.Facebook') || url?.includes('baidu.com')||url?.includes('facebook.com')) {
                     // console.log('%c 响应头：', 'color:green;', responseHeaders);
                     // responseHeaders?.forEach(el => {
                     //     // console.log('%c 响应头：', 'color:green;', el?.name + '========' + el?.value);

@@ -74,7 +74,6 @@ export default defineConfig({
         }]
       },
       background: {
-        persistent: true,
         type: "module"
       },
 

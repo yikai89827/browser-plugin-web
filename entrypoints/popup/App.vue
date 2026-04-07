@@ -37,7 +37,7 @@ const activeTab = ref('ads'); // 默认显示广告管理页面
 
 <style scoped>
 .app-container {
-  width: 1000px;
+  width: 100%;
   min-height: 500px;
 }
 
