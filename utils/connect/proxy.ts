@@ -26,17 +26,20 @@ export const getWebRequestHeaders = () => {
                         console.log('%c 不是广告相关接口：', 'color:red;', url);
                         return;
                     }
-                    console.log('%c 广告相关接口:', 'color:yellowgreen;', url);
+                    const path = url.split('?access_token=')[0];
+                    console.log('%c 广告相关接口:', 'color:yellowgreen;', path);
                     try {
                         const urlParams = new URL(url).searchParams;
                         const paramsObj: any = {};
                         urlParams.forEach((value, key) => {
                             paramsObj[key] = value;
                         });
+                        // const testUrl = `https://adsmanager-graph.facebook.com/v22.0/act_940870165585058/light_adsets?access_token=EAABsbCS1iHgBRCIxV1jE1P56KCb8XBcHrq8PdxRMuZB9Scmfb8qjTa6KoXHaY0HZCo4J7TR0UdZBQiIvCd5hNs8h2i2MZCeclaXCq9qx73QGXGI0MV23C1WhUwmhui2bqpI4PIAZC2BQSAI9Ml3LeeHZBWW0By6RUFNYxH07Nl3nyU6ba1tfzHBxKqYD5v8nxEN5ZCWmE5MfP9nugZDZD&__aaid=940870165585058&__activeScenarioIDs=%5B%5D&__activeScenarios=%5B%5D&__entryPointPreloaded=1&__interactionsMetadata=%5B%5D&_callFlowletID=5680&_reqName=adaccount%2Flight_adsets&_reqSrc=AdsManagerDataLoadingSortEntryPoint&_sessionID=27d490e6abbdaec4&_triggerFlowletID=5681&ad_draft_id=957736656941949&fields=id&filtering=%5B%5D&include_headers=false&limit=200&locale=en_GB&method=get&pretty=0&sort=%5B%22cost_per_result_ascending%22%5D&summary=true&suppress_http_code=1&time_range=%7B%22since%22%3A%222026-03-31%22%2C%22until%22%3A%222026-04-03%22%7D&xref=f247202ee34b9c00c&qpl_active_e2e_trace_ids=&access_token=EAABsbCS1iHgBRCIxV1jE1P56KCb8XBcHrq8PdxRMuZB9Scmfb8qjTa6KoXHaY0HZCo4J7TR0UdZBQiIvCd5hNs8h2i2MZCeclaXCq9qx73QGXGI0MV23C1WhUwmhui2bqpI4PIAZC2BQSAI9Ml3LeeHZBWW0By6RUFNYxH07Nl3nyU6ba1tfzHBxKqYD5v8nxEN5ZCWmE5MfP9nugZDZD&fields=id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result&limit=200`
+                        // console.log('%c 测试URL:', 'color:red;', testUrl.split('?access_token=')[0]);
                         console.log('%c URL参数JSON=====:', 'color:orange;', paramsObj);
                         if (paramsObj.access_token) {
                             browserStorage.set('lyRequestHeadersToken', paramsObj.access_token);
-                            browserStorage.set('lyRequestHeadersUrl', url);
+                            browserStorage.set('lyRequestHeadersUrl', url.split('?access_token=')[0]);
                         }
 
                     } catch (error) {

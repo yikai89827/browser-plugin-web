@@ -27,28 +27,38 @@ const saving = ref(false);
 const error = ref('');
 const selectedDate = ref(new Date().toISOString().split('T')[0]);
 const dataProtectionEnabled = ref(true);
+const dropdownOpen = ref<Record<string, boolean>>({});
 
-// 广告账户ID
-const accountId = '2174042080104706';
+// 事件数据
+const events = ref([
+  { id: '1', name: '查看详情' },
+  { id: '2', name: '编辑广告' },
+  { id: '3', name: '复制广告' },
+  { id: '4', name: '暂停广告' },
+  { id: '5', name: '删除广告' }
+]);
 
-// 获取访问令牌（从存储中提取）
-const getAccessToken = async (): Promise<string> => {
-  try {
-    // 尝试从存储中获取token
-    const token = await browserStorage.get('lyResponseHeadersToken');
-    if (token) {
-      console.log('Using token from storage:', token);
-      return token;
-    }
-    // 如果没有存储的token，使用默认token
-    console.log('Using default token');
-    return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
-  } catch (error) {
-    console.error('Error getting access token:', error);
-    // 出错时使用默认token
-    return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
-  }
-};
+// // 广告账户ID
+// const accountId = '2174042080104706';
+
+// // 获取访问令牌（从存储中提取）
+// const getAccessToken = async (): Promise<string> => {
+//   try {
+//     // 尝试从存储中获取token
+//     const token = await browserStorage.get('lyResponseHeadersToken');
+//     if (token) {
+//       console.log('Using token from storage:', token);
+//       return token;
+//     }
+//     // 如果没有存储的token，使用默认token
+//     console.log('Using default token');
+//     return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
+//   } catch (error) {
+//     console.error('Error getting access token:', error);
+//     // 出错时使用默认token
+//     return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
+//   }
+// };
 
 // 获取广告列表
 const fetchAds = async () => {
@@ -56,18 +66,52 @@ const fetchAds = async () => {
   error.value = '';
 
     // const apis = [
-    //     `/ads`,
     //     `/lightads`,
     //     `/adsets`,
     //     `/campaigns`,
-    //     `/events`,
     // ];
-  
+  ads.value = [
+    {
+      id: '123456789',
+      name: '测试广告1',
+      status: 'ACTIVE',
+      campaign_id: '987654321',
+      adset_id: '112233445',
+      impressions: 1000,
+      increase_impressions: 10,
+      reach: 800,
+      increase_reach: 5,
+      spend: 100,
+      increase_spend: 2,
+      results: 50,
+      increase_results: 15,
+      cost_per_result: 2,
+      other_events: 10
+    },
+    {
+      id: '987654321',
+      name: '测试广告2',
+      status: 'PAUSED',
+      campaign_id: '123456789',
+      adset_id: '554433221',
+      impressions: 2000,
+      increase_impressions: 15,
+      reach: 1500,
+      increase_reach: 8,
+      spend: 200,
+      increase_spend: 5,
+      results: 100,
+      increase_results: 20,
+      cost_per_result: 2,
+      other_events: 20
+    }
+  ];
+  return
   try {
-    // const accessToken = await browserStorage.get('lyResponseHeadersToken');
+    const accessToken = await browserStorage.get('lyRequestHeadersToken');
     const url = await browserStorage.get('lyRequestHeadersUrl');
     // const apiIndex = await browserStorage.get('lyRequestHeadersUrlIndex');
-    console.log('%c 请求地址=====1:', 'color:red;', url);
+
     
     // const response = await axios.get<ApiResponse>(
     //   `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
@@ -89,17 +133,17 @@ const fetchAds = async () => {
     //     }
     //   }
     // );
-    // const response = await axios.get<ApiResponse>(
-    //   url,
-    //   {
-    //     params: {
-    //       access_token: accessToken,
-    //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-    //       limit: 200,
-    //     }
-    //   }
-    // );
-    // console.log('%c 响应数据：', 'color:green;', response.data);
+    const response = await axios.get<ApiResponse>(
+      url,
+      {
+        params: {
+          access_token: accessToken,
+          fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+          limit: 200,
+        }
+      }
+    );
+    console.log('%c 响应数据：', 'color:green;', response.data);
     
     ads.value = (response.data.data || []).map(ad => ({
       ...ad,
@@ -112,42 +156,6 @@ const fetchAds = async () => {
     
     // 如果没有数据，添加mock数据用于展示
     if (ads.value.length === 0) {
-      ads.value = [
-        {
-          id: '123456789',
-          name: '测试广告1',
-          status: 'ACTIVE',
-          campaign_id: '987654321',
-          adset_id: '112233445',
-          impressions: 1000,
-          increase_impressions: 10,
-          reach: 800,
-          increase_reach: 5,
-          spend: 100,
-          increase_spend: 2,
-          results: 50,
-          increase_results: 15,
-          cost_per_result: 2,
-          other_events: 10
-        },
-        {
-          id: '987654321',
-          name: '测试广告2',
-          status: 'PAUSED',
-          campaign_id: '123456789',
-          adset_id: '554433221',
-          impressions: 2000,
-          increase_impressions: 15,
-          reach: 1500,
-          increase_reach: 8,
-          spend: 200,
-          increase_spend: 5,
-          results: 100,
-          increase_results: 20,
-          cost_per_result: 2,
-          other_events: 20
-        }
-      ];
       console.log('%c 响应数据：', 'color:green;', ads.value);
     }
   } catch (err: any) {
@@ -158,43 +166,129 @@ const fetchAds = async () => {
   }
 };
 
+// 添加延迟和限流
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000;
+
+async function updateWithRetry(adId: string, data: any, retries = 0,accessToken:string) {
+  try {
+    const response = await axios.post(
+      `https://graph.facebook.com/v22.0/${adId}`,
+      data,
+      { params: { access_token: accessToken } }
+    );
+    return response;
+  } catch (err) {
+    if (retries < MAX_RETRIES) {
+      await delay(RETRY_DELAY * (retries + 1));
+      return updateWithRetry(adId, data, retries + 1,accessToken);
+    }
+    throw err;
+  }
+}
+
 // 保存修改
 const saveChanges = async () => {
   saving.value = true;
   error.value = '';
   
   try {
-    // const accessToken = await browserStorage.get('lyResponseHeadersToken');
-    const url = await browserStorage.get('lyRequestHeadersUrl');
+    const accessToken = await browserStorage.get('lyRequestHeadersToken');
     
-    // 将URL参数转换为JSON对象
-    let urlParamsObj: Record<string, string> = {};
-    if (url) {
-      try {
-        const urlObj = new URL(url);
-        const params = urlObj.searchParams;
-        urlParamsObj = {};
-        params.forEach((value, key) => {
-          urlParamsObj[key] = value;
-        });
-        console.log('URL参数JSON:', urlParamsObj);
-      } catch (error) {
-        console.error('Error parsing URL:', error);
+    // 检测哪些广告被修改并保存
+    let modifiedCount = 0;
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const ad of ads.value) {
+      // 检查是否有数值被修改
+      const hasChanges = 
+        (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) ||
+        (ad.increase_reach !== undefined && ad.increase_reach !== 0) ||
+        (ad.increase_spend !== undefined && ad.increase_spend !== 0) ||
+        (ad.increase_results !== undefined && ad.increase_results !== 0);
+      
+      if (hasChanges) {
+        modifiedCount++;
+        
+        try {
+          // 准备更新数据
+          const updateData = {
+            name: ad.name,
+            // 使用自定义字段存储增加的数值
+            custom_data: {
+              increase_impressions: ad.increase_impressions || 0,
+              increase_reach: ad.increase_reach || 0,
+              increase_spend: ad.increase_spend || 0,
+              increase_results: ad.increase_results || 0
+            }
+          };
+          
+          // 调用 Facebook Marketing API 更新广告
+          const response = await updateWithRetry(ad.id, updateData, 0, accessToken);
+          console.log('广告更新成功:', ad.id, response.data);
+          successCount++;
+          await delay(1000);
+        } catch (err: any) {
+          console.error('更新广告失败:', ad.id, err);
+          error.value += `更新广告 ${ad.id} 失败: ${err.message}\n`;
+          failCount++;
+        }
       }
     }
     
-    // 这里简化处理，实际项目中需要检测哪些广告被修改
-    // 并对每个修改的广告调用相应的API
+    // 保存完成
+    saving.value = false;
     
-    // 模拟保存成功
-    setTimeout(() => {
-      saving.value = false;
-      alert('保存成功！');
-    }, 1000);
+    if (modifiedCount === 0) {
+      alert('没有需要保存的修改');
+    } else if (failCount === 0) {
+      alert(`保存成功！共更新 ${successCount} 个广告`);
+    } else {
+      alert(`保存完成！成功 ${successCount} 个，失败 ${failCount} 个`);
+    }
   } catch (err: any) {
     error.value = `保存失败: ${err.message}`;
     console.error('保存失败:', err);
     saving.value = false;
+  }
+};
+
+// 切换下拉菜单
+const toggleDropdown = (adId: string) => {
+  dropdownOpen.value[adId] = !dropdownOpen.value[adId];
+};
+
+// 触发事件
+const triggerEvent = (adId: string, eventId: string) => {
+  console.log('Triggering event', eventId, 'for ad', adId);
+  
+  // 关闭下拉菜单
+  dropdownOpen.value[adId] = false;
+  
+  // 根据事件ID执行不同的操作
+  switch (eventId) {
+    case '1':
+      alert('查看广告详情：' + adId);
+      break;
+    case '2':
+      alert('编辑广告：' + adId);
+      break;
+    case '3':
+      alert('复制广告：' + adId);
+      break;
+    case '4':
+      alert('暂停广告：' + adId);
+      break;
+    case '5':
+      if (confirm('确定要删除广告 ' + adId + ' 吗？')) {
+        alert('删除广告：' + adId);
+      }
+      break;
+    default:
+      break;
   }
 };
 
@@ -313,12 +407,8 @@ const closePopup = () => {
         <tbody>
           <tr v-for="ad in ads" :key="ad.id">
             <!-- <td>{{ ad.id }}</td> -->
-            <td>
-              <input 
-                type="text" 
-                v-model="ad.name" 
-                class="editable-input"
-              />
+            <td class="ellipsis-cell" :title="ad.name">
+              {{ ad.name }}
             </td>
             <td class="ellipsis-cell" :title="ad.impressions || 0">{{ ad.impressions || 0 }}</td>
             <td>
@@ -365,7 +455,29 @@ const closePopup = () => {
               <span>%</span>
             </td>
             <td class="ellipsis-cell" :title="ad.cost_per_result || 0">{{ ad.cost_per_result || 0 }}</td>
-            <td class="ellipsis-cell" :title="ad.other_events || 0">{{ ad.other_events || 0 }}</td>
+            <td class="event-dropdown-cell">
+              <div class="event-dropdown">
+                <button 
+                  class="event-dropdown-btn" 
+                  @click="toggleDropdown(ad.id)"
+                >
+                  <span class="event-icon">›</span>
+                </button>
+                <div 
+                  v-if="dropdownOpen[ad.id]" 
+                  class="event-dropdown-menu"
+                >
+                  <div 
+                    v-for="event in events" 
+                    :key="event.id"
+                    class="event-dropdown-item"
+                    @click="triggerEvent(ad.id, event.id)"
+                  >
+                    {{ event.name }}
+                  </div>
+                </div>
+              </div>
+            </td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
             <td colspan="12" class="empty-state">
@@ -632,5 +744,70 @@ input:checked + .slider:before {
 .ads-table th {
   white-space: nowrap;
   min-width: 56px;
+}
+/*  */
+/* 事件下拉菜单样式 */
+.event-dropdown-cell {
+  position: relative;
+  padding: 0;
+  text-align: center;
+}
+
+.event-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.event-dropdown-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  transition: background-color 0.2s;
+}
+
+.event-dropdown-btn:hover {
+  background-color: #f0f0f0;
+}
+
+.event-icon {
+  font-size: 16px;
+  font-weight: bold;
+  color: #666;
+  transition: transform 0.2s;
+}
+
+.event-dropdown:hover .event-icon {
+  transform: translateX(2px);
+}
+
+.event-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background-color: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  min-width: 120px;
+  z-index: 1000;
+  margin-top: 4px;
+}
+
+.event-dropdown-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.event-dropdown-item:hover {
+  background-color: #f5f5f5;
 }
 </style>
