@@ -13,49 +13,32 @@ export const getWebRequestHeaders = () => {
         (details) => {
             try {
                 const { url, requestHeaders } = details;
-                // console.log('%c 请求地址=====1:', 'color:red;', url);
+                // console.log('%c 请求地址:', 'color:red;', url);
                 const apis = [
-                    `/ads`,
-                    `/lightads`,
-                    `/adsets`,
-                    `/campaigns`,
+                    `/lightads?access_token`,
+                    `/light_adsets?access_token`,
+                    `/light_campaigns?access_token`,
                     // `/events`,
                 ];
                 if (url && url.includes('facebook.com')) {
-                    console.log('%c 请求地址=====2:', 'color:red;', url);
                     // 原生方法将URL参数转换为JSON并打印
                     if(!apis.some(api => url.includes(api))){
+                        console.log('%c 不是广告相关接口：', 'color:red;', url);
                         return;
                     }
+                    console.log('%c 广告相关接口:', 'color:yellowgreen;', url);
                     try {
                         const urlParams = new URL(url).searchParams;
                         const paramsObj: any = {};
                         urlParams.forEach((value, key) => {
                             paramsObj[key] = value;
                         });
-                        console.log('%c URL参数JSON=====:', 'color:blue;', paramsObj);
+                        console.log('%c URL参数JSON=====:', 'color:orange;', paramsObj);
                         if (paramsObj.access_token) {
                             browserStorage.set('lyRequestHeadersToken', paramsObj.access_token);
                             browserStorage.set('lyRequestHeadersUrl', url);
-                            
-                            // 检查URL是否包含数组中的字符并返回索引
-                            const apiIndex = findApiInUrl(url, apis);
-                            console.log('%c API索引：', 'color:purple;', apiIndex);
-                            if(apiIndex !== -1){
-                                browserStorage.set('lyRequestHeadersUrlIndex', apiIndex);
-                            }
-                        
                         }
 
-                    // 从URL中判断是否包含数组中的字符并返回索引
-                    function findApiInUrl(url: string, apiArray: string[]): number {
-                        for (let i = 0; i < apiArray.length; i++) {
-                            if (url.includes(apiArray[i])) {
-                                return i;
-                            }
-                        }
-                        return -1;
-                    }
                     } catch (error) {
                         console.error('Error parsing URL:', error);
                     }
@@ -94,7 +77,7 @@ export const getWebResponseHeaders = () => {
                 const { url, responseHeaders } = details;
                 if (url && (url.includes('facebook.com') || url.includes('baidu.com'))) {
                     // console.log('%c 响应地址:', 'color:green;', url);
-                    console.log('%c 响应头：', 'color:green;', responseHeaders);
+                    // console.log('%c 响应头：', 'color:green;', responseHeaders);
                     
                     // 检查响应头中的token
                     // if (responseHeaders) {

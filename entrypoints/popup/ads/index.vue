@@ -55,19 +55,19 @@ const fetchAds = async () => {
   loading.value = true;
   error.value = '';
 
-    const apis = [
-        `/ads`,
-        `/lightads`,
-        `/adsets`,
-        `/campaigns`,
-        `/events`,
-    ];
+    // const apis = [
+    //     `/ads`,
+    //     `/lightads`,
+    //     `/adsets`,
+    //     `/campaigns`,
+    //     `/events`,
+    // ];
   
   try {
-    const accessToken = await browserStorage.get('lyResponseHeadersToken');
+    // const accessToken = await browserStorage.get('lyResponseHeadersToken');
     const url = await browserStorage.get('lyRequestHeadersUrl');
     // const apiIndex = await browserStorage.get('lyRequestHeadersUrlIndex');
-
+    console.log('%c 请求地址=====1:', 'color:red;', url);
     
     // const response = await axios.get<ApiResponse>(
     //   `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
@@ -89,17 +89,17 @@ const fetchAds = async () => {
     //     }
     //   }
     // );
-    const response = await axios.get<ApiResponse>(
-      url,
-      {
-        params: {
-          access_token: accessToken,
-          fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-          limit: 200,
-        }
-      }
-    );
-    console.log('%c 响应数据：', 'color:green;', response.data);
+    // const response = await axios.get<ApiResponse>(
+    //   url,
+    //   {
+    //     params: {
+    //       access_token: accessToken,
+    //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+    //       limit: 200,
+    //     }
+    //   }
+    // );
+    // console.log('%c 响应数据：', 'color:green;', response.data);
     
     ads.value = (response.data.data || []).map(ad => ({
       ...ad,
@@ -164,7 +164,7 @@ const saveChanges = async () => {
   error.value = '';
   
   try {
-    const accessToken = await browserStorage.get('lyResponseHeadersToken');
+    // const accessToken = await browserStorage.get('lyResponseHeadersToken');
     const url = await browserStorage.get('lyRequestHeadersUrl');
     
     // 将URL参数转换为JSON对象
@@ -203,25 +203,25 @@ const closePopup = () => {
   window.close();
 };
 
-// 初始化
-onMounted(() => {
-  // 初始加载时不自动获取数据，等待用户点击
+// // 初始化
+// onMounted(() => {
+//   // 初始加载时不自动获取数据，等待用户点击
   
-  // 监听token变化
-  browserStorage.watch('lyResponseHeadersToken', (newToken) => {
-    console.log('Token changed:', newToken);
-    // 可以在这里添加逻辑，比如重新获取广告数据
-  });
+//   // 监听token变化
+//   browserStorage.watch('lyResponseHeadersToken', (newToken) => {
+//     console.log('Token changed:', newToken);
+//     // 可以在这里添加逻辑，比如重新获取广告数据
+//   });
   
-  // 初始检查是否有存储的token
-  browserStorage.get('lyResponseHeadersToken').then(token => {
-    if (token) {
-      console.log('Found stored token:', token);
-    } else {
-      console.log('No stored token found');
-    }
-  });
-});
+//   // 初始检查是否有存储的token
+//   browserStorage.get('lyResponseHeadersToken').then(token => {
+//     if (token) {
+//       console.log('Found stored token:', token);
+//     } else {
+//       console.log('No stored token found');
+//     }
+//   });
+// });
 </script>
 
 <template>
