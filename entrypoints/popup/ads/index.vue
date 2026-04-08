@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { browser } from "wxt/browser";
 import axios from "axios";
+import { browserStorage } from "../../../utils/storage";
 
 // 广告数据类型定义
 interface AdData {
@@ -30,36 +31,75 @@ const dataProtectionEnabled = ref(true);
 // 广告账户ID
 const accountId = '2174042080104706';
 
-// 获取访问令牌（实际项目中需要从存储或页面提取）
+// 获取访问令牌（从存储中提取）
 const getAccessToken = async (): Promise<string> => {
-  // 这里简化处理，实际项目中需要从存储或Facebook页面提取
-  return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
+  try {
+    // 尝试从存储中获取token
+    const token = await browserStorage.get('lyResponseHeadersToken');
+    if (token) {
+      console.log('Using token from storage:', token);
+      return token;
+    }
+    // 如果没有存储的token，使用默认token
+    console.log('Using default token');
+    return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
+  } catch (error) {
+    console.error('Error getting access token:', error);
+    // 出错时使用默认token
+    return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
+  }
 };
 
 // 获取广告列表
 const fetchAds = async () => {
   loading.value = true;
   error.value = '';
+
+    const apis = [
+        `/ads`,
+        `/lightads`,
+        `/adsets`,
+        `/campaigns`,
+        `/events`,
+    ];
   
   try {
-    const accessToken = await getAccessToken();
+    const accessToken = await browserStorage.get('lyResponseHeadersToken');
+    const url = await browserStorage.get('lyRequestHeadersUrl');
+    // const apiIndex = await browserStorage.get('lyRequestHeadersUrlIndex');
+
+    
+    // const response = await axios.get<ApiResponse>(
+    //   `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
+    //   {
+    //     params: {
+    //       access_token: accessToken,
+    //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+    //       limit: 200,
+    //     }
+    //   }
+    // );
+    // const response = await axios.get<ApiResponse>(
+    //   `https://adsmanager-graph.facebook.com/v22.0/act_${accountId}/lightads`,
+    //   {
+    //     params: {
+    //       access_token: accessToken,
+    //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+    //       limit: 200,
+    //     }
+    //   }
+    // );
     const response = await axios.get<ApiResponse>(
-      `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
+      url,
       {
         params: {
           access_token: accessToken,
           fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
           limit: 200,
-          filtering: JSON.stringify([
-            {
-              field: 'status',
-              operator: 'IN',
-              value: ['ACTIVE', 'PAUSED', 'DRAFT'] // 包含草稿状态的广告
-            }
-          ])
         }
       }
     );
+    console.log('%c 响应数据：', 'color:green;', response.data);
     
     ads.value = (response.data.data || []).map(ad => ({
       ...ad,
@@ -108,6 +148,7 @@ const fetchAds = async () => {
           other_events: 20
         }
       ];
+      console.log('%c 响应数据：', 'color:green;', ads.value);
     }
   } catch (err: any) {
     error.value = `获取广告列表失败: ${err.message}`;
@@ -123,7 +164,24 @@ const saveChanges = async () => {
   error.value = '';
   
   try {
-    const accessToken = await getAccessToken();
+    const accessToken = await browserStorage.get('lyResponseHeadersToken');
+    const url = await browserStorage.get('lyRequestHeadersUrl');
+    
+    // 将URL参数转换为JSON对象
+    let urlParamsObj: Record<string, string> = {};
+    if (url) {
+      try {
+        const urlObj = new URL(url);
+        const params = urlObj.searchParams;
+        urlParamsObj = {};
+        params.forEach((value, key) => {
+          urlParamsObj[key] = value;
+        });
+        console.log('URL参数JSON:', urlParamsObj);
+      } catch (error) {
+        console.error('Error parsing URL:', error);
+      }
+    }
     
     // 这里简化处理，实际项目中需要检测哪些广告被修改
     // 并对每个修改的广告调用相应的API
@@ -148,6 +206,21 @@ const closePopup = () => {
 // 初始化
 onMounted(() => {
   // 初始加载时不自动获取数据，等待用户点击
+  
+  // 监听token变化
+  browserStorage.watch('lyResponseHeadersToken', (newToken) => {
+    console.log('Token changed:', newToken);
+    // 可以在这里添加逻辑，比如重新获取广告数据
+  });
+  
+  // 初始检查是否有存储的token
+  browserStorage.get('lyResponseHeadersToken').then(token => {
+    if (token) {
+      console.log('Found stored token:', token);
+    } else {
+      console.log('No stored token found');
+    }
+  });
 });
 </script>
 
@@ -155,7 +228,7 @@ onMounted(() => {
   <div class="ads-manager">
     <!-- 顶部操作栏 -->
     <div class="title">
-      <span>Facebook广告管理</span>
+      <div>广告管理</div>
       <div class="close" @click="closePopup">
         <svg
           class="icon"
@@ -195,11 +268,11 @@ onMounted(() => {
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
+        <div class="ad-total">
+          {{ ads.length }}
+        </div>
       </div>
       <div class="action-bar-right">
-        <div class="ad-total">
-          广告总数: {{ ads.length }}
-        </div>
         <div class="data-protection">
           <span>数据保护</span>
           <label class="switch">
@@ -234,7 +307,7 @@ onMounted(() => {
             <th>成效</th>
             <th>加成效</th>
             <th>单次成效</th>
-            <th>事件</th>
+            <th>其它事件</th>
           </tr>
         </thead>
         <tbody>
@@ -316,17 +389,18 @@ onMounted(() => {
   position: relative;
   font-size: 20px;
   margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .close {
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   color: #333;
-  position: absolute;
-  top: 15px;
-  right: 0;
-  font-size: 24px;
   cursor: pointer;
+  background-color: #fff;
+  border-radius: 50%;
 }
 
 .action-bar {
@@ -375,12 +449,12 @@ onMounted(() => {
   font-size: 14px;
 }
 
-/* 开关样式 */
+/* 开关样式 - 左右切换 */
 .switch {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 20px;
+  width: 60px;
+  height: 24px;
 }
 
 .switch input {
@@ -396,33 +470,36 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: #f0f0f0;
   transition: .4s;
-  border-radius: 20px;
+  border-radius: 24px;
+  border: 1px solid #d9d9d9;
 }
 
 .slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: 20px;
+  width: 20px;
   left: 2px;
-  bottom: 2px;
-  background-color: transparent;
+  bottom: 1px;
+  background-color: white;
   transition: .4s;
   border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 input:checked + .slider {
   background-color: #1890ff;
+  border-color: #1890ff;
 }
 
 input:focus + .slider {
-  box-shadow: 0 0 1px #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
 }
 
 input:checked + .slider:before {
-  transform: translateX(20px);
+  transform: translateX(34px);
 }
 
 .btn {
@@ -480,10 +557,10 @@ input:checked + .slider:before {
 
 .ads-table th,
 .ads-table td {
-  padding: 12px;
+  padding: 12px 4px;
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
-  max-width: 80px;
+  max-width: 70px!important;
 }
 
 .ads-table th {

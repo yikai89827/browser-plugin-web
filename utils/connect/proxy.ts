@@ -2,80 +2,125 @@ import { browser } from 'wxt/browser';
 import { browserStorage } from "../../utils/storage";
 // 监听网络请求
 export const getWebRequestHeaders = () => {
-    browser?.webRequest?.onBeforeSendHeaders?.addListener(
-        //@ts-ignore
-        async (details) => {
+    // 确保browser对象存在
+    if (!browser || !browser.webRequest) {
+        console.error('browser.webRequest is not available');
+        return;
+    }
+    
+    // 添加网络请求监听器
+    browser.webRequest.onBeforeSendHeaders.addListener(
+        (details) => {
             try {
-                const { url, requestHeaders }: any = details
-                if (url?.includes('facebook.com')) {
-                    console.log('%c 请求地址=====:', 'color:red;', url);
+                const { url, requestHeaders } = details;
+                // console.log('%c 请求地址=====1:', 'color:red;', url);
+                const apis = [
+                    `/ads`,
+                    `/lightads`,
+                    `/adsets`,
+                    `/campaigns`,
+                    // `/events`,
+                ];
+                if (url && url.includes('facebook.com')) {
+                    console.log('%c 请求地址=====2:', 'color:red;', url);
                     // 原生方法将URL参数转换为JSON并打印
-                    const urlParams = new URL(url)?.searchParams || {};
-                    const paramsObj: any = {};
-                    urlParams.forEach((value, key) => {
-                        paramsObj[key] = value;
+                    if(!apis.some(api => url.includes(api))){
+                        return;
+                    }
+                    try {
+                        const urlParams = new URL(url).searchParams;
+                        const paramsObj: any = {};
+                        urlParams.forEach((value, key) => {
+                            paramsObj[key] = value;
+                        });
+                        console.log('%c URL参数JSON=====:', 'color:blue;', paramsObj);
+                        if (paramsObj.access_token) {
+                            browserStorage.set('lyRequestHeadersToken', paramsObj.access_token);
+                            browserStorage.set('lyRequestHeadersUrl', url);
+                            
+                            // 检查URL是否包含数组中的字符并返回索引
+                            const apiIndex = findApiInUrl(url, apis);
+                            console.log('%c API索引：', 'color:purple;', apiIndex);
+                            if(apiIndex !== -1){
+                                browserStorage.set('lyRequestHeadersUrlIndex', apiIndex);
+                            }
+                        
+                        }
+
+                    // 从URL中判断是否包含数组中的字符并返回索引
+                    function findApiInUrl(url: string, apiArray: string[]): number {
+                        for (let i = 0; i < apiArray.length; i++) {
+                            if (url.includes(apiArray[i])) {
+                                return i;
+                            }
+                        }
+                        return -1;
+                    }
+                    } catch (error) {
+                        console.error('Error parsing URL:', error);
+                    }
+                    console.log('%c  请求头：', 'color:red;', requestHeaders);  
+                    // 存储请求头   
+                    browserStorage.get('lyRequestHeaders').then(header => {
+                        // if (!header) {
+                        //     browserStorage.set('lyRequestHeaders', JSON.stringify(requestHeaders));
+                        // }
                     });
-                    console.log('%c URL参数JSON=====:', 'color:blue;', paramsObj);
-                    console.log('%c  请求头：', 'color:red;', requestHeaders);
-                    const header = await browserStorage.get('lyRequestHeaders')
-                    // if (!header) {
-                    //     browserStorage.set('lyRequestHeaders', JSON.stringify(requestHeaders))
-                    // }
-                    // if (url.includes('/ap/signin') || url.includes('/ap/mfa')){//验证码或者登录页面
-                    //     browserStorage.set('lyFacebookVerifycodePage', '1')
-                    // }else {//已登录
-                    //     browserStorage.set('lyFacebookVerifycodePage', '')
-                    // }
                 }
-                // @ts-ignore
-                // const apiUrl = import.meta?.env?.WXT_COUPON_API_URL || '/coupons/api/getCouponPromotions'
-                // if (url?.includes(apiUrl)) {
-                //     console.log('%c  请求头=====：', 'color:red;', requestHeaders);
-                //     browserStorage.set('lyRequestHeaders', JSON.stringify(requestHeaders))
-                //     requestHeaders?.forEach(el => {
-                //         console.log('%c 请求头=====：', 'color:red;', el?.name + '========' + el?.value);
-                //     });
-                // }
             } catch (error) {
-                console.error(error)
+                console.error('Error in webRequest listener:', error);
             }
-            return details;
+            return { requestHeaders: details.requestHeaders };
         },
         { urls: ['<all_urls>'] },
-        ['requestHeaders', 'extraHeaders']
+        ['requestHeaders'] // 在Manifest V3中，extraHeaders可能不需要
     );
+    
+    console.log('Web request listener added successfully');
 }
 
 // 监听响应头事件
 export const getWebResponseHeaders = () => {
-    browser?.webRequest?.onHeadersReceived.addListener(
+    // 确保browser对象存在
+    if (!browser || !browser.webRequest) {
+        console.error('browser.webRequest is not available');
+        return;
+    }
+    
+    // 添加响应头监听器
+    browser.webRequest.onHeadersReceived.addListener(
         (details) => {
             try {
-                // const { url, responseHeaders }: any = details
-                // if (url?.includes('/sugrec')){
-                    // console.log('%c 响应头：', 'color:green;', responseHeaders);
-                // }
-                // if (url?.includes('sellercentral.Facebook') || url?.includes('baidu.com')||url?.includes('facebook.com')) {
-                    // console.log('%c 响应头：', 'color:green;', responseHeaders);
-                    // responseHeaders?.forEach(el => {
-                    //     // console.log('%c 响应头：', 'color:green;', el?.name + '========' + el?.value);
-                    //     if (el?.name?.toLowerCase() === 'anti-csrftoken-a2z') {
-                    //         console.log('%c 响应头详情:', 'font-size:25px;background:#000;color:#fff;', el?.name, el?.value);
-                    //         if (el?.value) {
-                    //             browserStorage.set('lyResponseHeadersToken', el?.value)
+                const { url, responseHeaders } = details;
+                if (url && (url.includes('facebook.com') || url.includes('baidu.com'))) {
+                    // console.log('%c 响应地址:', 'color:green;', url);
+                    console.log('%c 响应头：', 'color:green;', responseHeaders);
+                    
+                    // 检查响应头中的token
+                    // if (responseHeaders) {
+                    //     // 在Manifest V3中，responseHeaders的格式可能不同
+                    //     for (const header of responseHeaders) {
+                    //         if (header.name && header.name.toLowerCase() === 'anti-csrftoken-a2z') {
+                    //             console.log('%c 响应头详情:', 'font-size:25px;background:#000;color:#fff;', header.name, header.value);
+                    //             if (header.value) {
+                    //                 browserStorage.set('lyResponseHeadersToken', header.value);
+                    //                 console.log('Token stored successfully:', header.value);
+                    //             }
+                    //             break;
                     //         }
                     //     }
-                    // });
-                    // console.log('%c 响应地址:', 'color:green;', url);
-                // }
+                    // }
+                }
             } catch (error) {
-                console.error(error)
+                console.error('Error in webResponse listener:', error);
             }
-            return details;
+            return { responseHeaders: details.responseHeaders };
         },
         { urls: ['<all_urls>'] },
-        ['responseHeaders', 'extraHeaders']
+        ['responseHeaders'] // 在Manifest V3中，extraHeaders可能不需要
     );
+    
+    console.log('Web response listener added successfully');
 }
 //设置网络代理
 export const setProxy = () => {
