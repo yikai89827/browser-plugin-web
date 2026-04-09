@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { defineContentScript } from 'wxt/sandbox';
 import { browserStorage } from '../../utils/storage';
 
 // 广告数据类型
@@ -13,7 +12,7 @@ interface AdData {
   updated_at: string;
 }
 
-export default defineContentScript({
+export default {
   matches: ['*://*.facebook.com/adsmanager/*'],
   main() {
     console.log('Content script loaded for Facebook Ads Manager');
@@ -33,7 +32,7 @@ export default defineContentScript({
       subtree: true
     });
   }
-});
+};
 
 // 同步广告数据到页面
 async function syncAdDataToPage() {

@@ -28,6 +28,8 @@ const error = ref('');
 const selectedDate = ref(new Date().toISOString().split('T')[0]);
 const dataProtectionEnabled = ref(true);
 const dropdownOpen = ref<Record<string, boolean>>({});
+const dropdownRefs = ref<Record<string, HTMLElement>>({});
+const dropdownPositions = ref<Record<string, { top: number; left: number }>>({});
 
 // 事件数据
 const events = ref([
@@ -70,43 +72,42 @@ const fetchAds = async () => {
     //     `/adsets`,
     //     `/campaigns`,
     // ];
-  ads.value = [
-    {
-      id: '123456789',
-      name: '测试广告1',
-      status: 'ACTIVE',
-      campaign_id: '987654321',
-      adset_id: '112233445',
-      impressions: 1000,
-      increase_impressions: 10,
-      reach: 800,
-      increase_reach: 5,
-      spend: 100,
-      increase_spend: 2,
-      results: 50,
-      increase_results: 15,
-      cost_per_result: 2,
-      other_events: 10
-    },
-    {
-      id: '987654321',
-      name: '测试广告2',
-      status: 'PAUSED',
-      campaign_id: '123456789',
-      adset_id: '554433221',
-      impressions: 2000,
-      increase_impressions: 15,
-      reach: 1500,
-      increase_reach: 8,
-      spend: 200,
-      increase_spend: 5,
-      results: 100,
-      increase_results: 20,
-      cost_per_result: 2,
-      other_events: 20
-    }
-  ];
-  return
+  // ads.value = [
+  //   {
+  //     id: '123456789',
+  //     name: '测试广告1',
+  //     status: 'ACTIVE',
+  //     campaign_id: '987654321',
+  //     adset_id: '112233445',
+  //     impressions: 1000,
+  //     increase_impressions: 10,
+  //     reach: 800,
+  //     increase_reach: 5,
+  //     spend: 100,
+  //     increase_spend: 2,
+  //     results: 50,
+  //     increase_results: 15,
+  //     cost_per_result: 2,
+  //     other_events: 10
+  //   },
+  //   {
+  //     id: '987654321',
+  //     name: '测试广告2',
+  //     status: 'PAUSED',
+  //     campaign_id: '123456789',
+  //     adset_id: '554433221',
+  //     impressions: 2000,
+  //     increase_impressions: 15,
+  //     reach: 1500,
+  //     increase_reach: 8,
+  //     spend: 200,
+  //     increase_spend: 5,
+  //     results: 100,
+  //     increase_results: 20,
+  //     cost_per_result: 2,
+  //     other_events: 20
+  //   }
+  // ];
   try {
     const accessToken = await browserStorage.get('lyRequestHeadersToken');
     const url = await browserStorage.get('lyRequestHeadersUrl');
@@ -256,9 +257,37 @@ const saveChanges = async () => {
   }
 };
 
+// 设置下拉菜单ref
+const setDropdownRef = (el: HTMLElement | null, adId: string) => {
+  if (el) {
+    dropdownRefs.value[adId] = el;
+  }
+};
+
 // 切换下拉菜单
-const toggleDropdown = (adId: string) => {
-  dropdownOpen.value[adId] = !dropdownOpen.value[adId];
+const toggleDropdown = (adId: string, event: MouseEvent) => {
+  const isOpen = !dropdownOpen.value[adId];
+  dropdownOpen.value[adId] = isOpen;
+  
+  if (isOpen) {
+    // 计算下拉菜单位置
+    const button = event.target as HTMLElement;
+    const rect = button.getBoundingClientRect();
+    dropdownPositions.value[adId] = {
+      top: rect.bottom + window.scrollY,
+      left: rect.left + window.scrollX - 60 // 向左偏移，使菜单右对齐
+    };
+  }
+};
+
+// 获取下拉菜单样式
+const getDropdownStyle = (adId: string) => {
+  const position = dropdownPositions.value[adId];
+  if (!position) return {};
+  return {
+    top: `${position.top}px`,
+    left: `${position.left}px`
+  };
 };
 
 // 触发事件
@@ -456,16 +485,17 @@ const closePopup = () => {
             </td>
             <td class="ellipsis-cell" :title="ad.cost_per_result || 0">{{ ad.cost_per_result || 0 }}</td>
             <td class="event-dropdown-cell">
-              <div class="event-dropdown">
+              <div class="event-dropdown" :ref="el => setDropdownRef(el, ad.id)">
                 <button 
                   class="event-dropdown-btn" 
-                  @click="toggleDropdown(ad.id)"
+                  @click="toggleDropdown(ad.id, $event)"
                 >
                   <span class="event-icon">›</span>
                 </button>
                 <div 
                   v-if="dropdownOpen[ad.id]" 
                   class="event-dropdown-menu"
+                  :style="getDropdownStyle(ad.id)"
                 >
                   <div 
                     v-for="event in events" 
@@ -748,7 +778,7 @@ input:checked + .slider:before {
 /*  */
 /* 事件下拉菜单样式 */
 .event-dropdown-cell {
-  position: relative;
+  position: static;
   padding: 0;
   text-align: center;
 }
@@ -788,15 +818,13 @@ input:checked + .slider:before {
 }
 
 .event-dropdown-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  background-color: white;
+  position: fixed;
+  background-color: #000;
   border: 1px solid #e8e8e8;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 120px;
-  z-index: 1000;
+  min-width: 80px;
+  z-index: 9999;
   margin-top: 4px;
 }
 
@@ -805,9 +833,12 @@ input:checked + .slider:before {
   cursor: pointer;
   transition: background-color 0.2s;
   white-space: nowrap;
+  color: #fff;
+  border-bottom: 1px solid #fff;
 }
 
 .event-dropdown-item:hover {
   background-color: #f5f5f5;
+  color: #000;
 }
 </style>
