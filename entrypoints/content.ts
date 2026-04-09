@@ -83,10 +83,14 @@ function getColumnIndices() {
     headerCells.forEach((cell, index) => {
       // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
       const cellId = cell?.children[0]?.children[0]?.id || '';
+      console.log(`Checking cell ID: ${cellId}`, cell); 
 
       for (const [field, idPattern] of Object.entries(columnMapping)) {
+        console.log(`${cellId}=====1=======Checking field ${field} with pattern ${idPattern}`);
         if (cellId.includes(idPattern)) {
+          console.log(`${cellId}=====2=======Matched field ${field} with pattern ${idPattern}`);
           columnIndices[field] = index;
+          console.log(`Found column ${field} at index ${index}`);
           break;
         }
       }
@@ -151,29 +155,54 @@ function getTableDataRows(tableContainer: HTMLElement) {
       console.log(`Processing presentation row ${index}`, presentationRow);
       
       // 获取孙元素（固定行和可滚动行）
-      const grandchildren = presentationRow.querySelectorAll('* > *');
-      console.log(`Found grandchildren: ${grandchildren.length}`, grandchildren);
-      
-      if (grandchildren.length >= 2) {
-        const fixed = grandchildren[0] as HTMLElement;
-        const scrollable = grandchildren[1] as HTMLElement;
+      const children = presentationRow.children;
+      if (children.length >= 1) {
+        const firstChild = children[0] as HTMLElement;
+        const grandchildren = firstChild.children;
+        console.log(`Found grandchildren: ${grandchildren.length}`, grandchildren);
         
-        console.log(`Found fixed row:`, fixed);
-        console.log(`Found scrollable row:`, scrollable);
-        
-        rowPairs.push({
-          fixed: fixed,
-          scrollable: scrollable
-        });
+        if (grandchildren.length >= 2) {
+          const fixed = grandchildren[0] as HTMLElement;
+          const scrollable = grandchildren[1] as HTMLElement;
+          
+          console.log(`Found fixed row:`, fixed);
+          console.log(`Found scrollable row:`, scrollable);
+          
+          rowPairs.push({
+            fixed: fixed,
+            scrollable: scrollable
+          });
+        }
       }
     });
-    
   } catch (error) {
     console.error('Error getting table data rows:', error);
   }
   
   console.log('Found row pairs:', rowPairs.length);
   return rowPairs;
+}
+
+// 清理广告名称
+function cleanAdName(name: string): string {
+  // 移除常见的额外文本
+  const unwantedTexts = [
+    '图表编辑复制打开下拉菜单',
+    '图表编辑',
+    '复制',
+    '打开',
+    '下拉菜单'
+  ];
+  
+  let cleanedName = name;
+  for (const text of unwantedTexts) {
+    cleanedName = cleanedName.replace(text, '').trim();
+  }
+  
+  // 移除数字后缀（如 -102）
+  cleanedName = cleanedName.replace(/\s*-\s*\d+$/, '').trim();
+  
+  return cleanedName;
 }
 
 // 从DOM提取广告数据
@@ -201,11 +230,8 @@ function extractAdsFromDom() {
     rowPairs.forEach((rowPair, rowIndex) => {
       const { fixed, scrollable } = rowPair;
       
-      // 提取广告ID（从行索引生成）
-      const adId = `ad_${rowIndex}`;
-      
       // 提取广告名称 - 从固定行获取
-      let name = `广告 ${rowIndex}`;
+      let name = '';
       const nameElements = fixed.querySelectorAll('div, span');
       for (const element of nameElements) {
         const text = element.textContent?.trim();
@@ -214,6 +240,18 @@ function extractAdsFromDom() {
           break;
         }
       }
+      
+      // 清理广告名称
+      name = cleanAdName(name);
+      
+      // 跳过没有有效名称的行
+      if (!name || name === '' || name.match(/^广告\s*\d+$/)) {
+        console.log(`Skipping row ${rowIndex} with invalid name: ${name}`);
+        return;
+      }
+      
+      // 提取广告ID（从行索引生成）
+      const adId = `ad_${rowIndex}`;
       
       // 解析数值的辅助函数
       const parseNumber = (element) => {
@@ -337,6 +375,9 @@ async function syncAdDataToPage() {
           break;
         }
       }
+      
+      // 清理广告名称
+      name = cleanAdName(name);
       
       if (!name) return;
       
