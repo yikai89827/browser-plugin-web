@@ -11,7 +11,42 @@ interface AdData {
   status: string;
   campaign_id: string;
   adset_id: string;
+  impressions: number;
+  increase_impressions: number;
+  reach: number;
+  increase_reach: number;
+  spend: number;
+  increase_spend: number;
+  results: number;
+  increase_results: number;
+  cost_per_result: number;
+  other_events: number;
   [key: string]: any;
+}
+
+// 从DOM获取广告数据
+async function getAdsFromDom(): Promise<AdData[]> {
+  return new Promise((resolve) => {
+    // 向content script发送消息，请求DOM数据
+    browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        browser.tabs.sendMessage(
+          tabs[0].id!,
+          { action: 'getAdsFromDom' },
+          (response) => {
+            console.log('Received ads:', response);
+            if (response && response.ads) {
+              resolve(response.ads);
+            } else {
+              resolve([]);
+            }
+          }
+        );
+      } else {
+        resolve([]);
+      }
+    });
+  });
 }
 
 // 响应数据类型
@@ -109,56 +144,116 @@ const fetchAds = async () => {
   //   }
   // ];
   try {
-    const accessToken = await browserStorage.get('lyRequestHeadersToken');
-    const url = await browserStorage.get('lyRequestHeadersUrl');
-    // const apiIndex = await browserStorage.get('lyRequestHeadersUrlIndex');
-
+    // 从DOM获取广告数据
+    // 首先尝试通过content script获取DOM数据
+    const domAds = await getAdsFromDom();
     
-    // const response = await axios.get<ApiResponse>(
-    //   `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
-    //   {
-    //     params: {
-    //       access_token: accessToken,
-    //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-    //       limit: 200,
-    //     }
-    //   }
-    // );
-    // const response = await axios.get<ApiResponse>(
-    //   `https://adsmanager-graph.facebook.com/v22.0/act_${accountId}/lightads`,
-    //   {
-    //     params: {
-    //       access_token: accessToken,
-    //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-    //       limit: 200,
-    //     }
-    //   }
-    // );
-    const response = await axios.get<ApiResponse>(
-      url,
-      {
-        params: {
-          access_token: accessToken,
-          fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-          limit: 200,
+    if (domAds && domAds.length > 0) {
+      ads.value = domAds;
+    } else {
+      // 注释掉原来的API调用代码，保留作为备份
+      /*
+      const accessToken = await browserStorage.get('lyRequestHeadersToken');
+      const url = await browserStorage.get('lyRequestHeadersUrl');
+      // const apiIndex = await browserStorage.get('lyRequestHeadersUrlIndex');
+
+      
+      // const response = await axios.get<ApiResponse>(
+      //   `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
+      //   {
+      //     params: {
+      //       access_token: accessToken,
+      //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+      //       limit: 200,
+      //     }
+      //   }
+      // );
+      // const response = await axios.get<ApiResponse>(
+      //   `https://adsmanager-graph.facebook.com/v22.0/act_${accountId}/lightads`,
+      //   {
+      //     params: {
+      //       access_token: accessToken,
+      //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+      //       limit: 200,
+      //     }
+      //   }
+      // );
+      const response = await axios.get<ApiResponse>(
+        url,
+        {
+          params: {
+            access_token: accessToken,
+            fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
+            limit: 200,
+          }
+        }
+      );
+      console.log('%c 响应数据：', 'color:green;', response.data);
+      
+      ads.value = (response.data.data || []).map(ad => ({
+        ...ad,
+        increase_impressions: ad.increase_impressions || 0,
+        increase_reach: ad.increase_reach || 0,
+        increase_spend: ad.increase_spend || 0,
+        increase_results: ad.increase_results || 0,
+        other_events: ad.other_events || 0
+      }));
+      */
+      
+      // 如果DOM和API获取都失败，从存储中获取广告数据
+      const storageItems = await browserStorage.get(null);
+      const storedAds: AdData[] = [];
+      
+      for (const key in storageItems) {
+        if (key.startsWith('ad_')) {
+          storedAds.push(storageItems[key]);
         }
       }
-    );
-    console.log('%c 响应数据：', 'color:green;', response.data);
-    
-    ads.value = (response.data.data || []).map(ad => ({
-      ...ad,
-      increase_impressions: ad.increase_impressions || 0,
-      increase_reach: ad.increase_reach || 0,
-      increase_spend: ad.increase_spend || 0,
-      increase_results: ad.increase_results || 0,
-      other_events: ad.other_events || 0
-    }));
-    
-    // 如果没有数据，添加mock数据用于展示
-    if (ads.value.length === 0) {
-      console.log('%c 响应数据：', 'color:green;', ads.value);
+      
+      if (storedAds.length > 0) {
+        ads.value = storedAds;
+      } else {
+        // 如果没有存储的数据，使用mock数据
+        ads.value = [
+          {
+            id: '123456789',
+            name: '测试广告1',
+            status: 'ACTIVE',
+            campaign_id: '987654321',
+            adset_id: '112233445',
+            impressions: 1000,
+            increase_impressions: 10,
+            reach: 800,
+            increase_reach: 5,
+            spend: 100,
+            increase_spend: 2,
+            results: 50,
+            increase_results: 15,
+            cost_per_result: 2,
+            other_events: 10
+          },
+          {
+            id: '987654321',
+            name: '测试广告2',
+            status: 'PAUSED',
+            campaign_id: '123456789',
+            adset_id: '554433221',
+            impressions: 2000,
+            increase_impressions: 15,
+            reach: 1500,
+            increase_reach: 8,
+            spend: 200,
+            increase_spend: 5,
+            results: 100,
+            increase_results: 20,
+            cost_per_result: 2,
+            other_events: 20
+          }
+        ];
+      }
     }
+    
+    console.log('获取广告列表成功:', ads.value);
   } catch (err: any) {
     error.value = `获取广告列表失败: ${err.message}`;
     console.error('获取广告列表失败:', err);

@@ -23,7 +23,7 @@ export const getWebRequestHeaders = () => {
                 if (url && url.includes('facebook.com')) {
                     // 原生方法将URL参数转换为JSON并打印
                     if(!apis.some(api => url.includes(api))){
-                        console.log('%c 不是广告相关接口：', 'color:red;', url);
+                        // console.log('%c 不是广告相关接口：', 'color:red;', url);
                         return;
                     }
                     const path = url.split('?access_token=')[0];
@@ -45,7 +45,7 @@ export const getWebRequestHeaders = () => {
                     } catch (error) {
                         console.error('Error parsing URL:', error);
                     }
-                    console.log('%c  请求头：', 'color:red;', requestHeaders);  
+                    // console.log('%c  请求头：', 'color:red;', requestHeaders);  
                     // 存储请求头   
                     browserStorage.get('lyRequestHeaders').then(header => {
                         // if (!header) {
