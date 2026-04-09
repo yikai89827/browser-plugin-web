@@ -83,14 +83,10 @@ function getColumnIndices() {
     headerCells.forEach((cell, index) => {
       // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
       const cellId = cell?.children[0]?.children[0]?.id || '';
-      console.log(`Checking cell ID: ${cellId}`, cell); 
 
       for (const [field, idPattern] of Object.entries(columnMapping)) {
-        console.log(`${cellId}=====1=======Checking field ${field} with pattern ${idPattern}`);
         if (cellId.includes(idPattern)) {
-          console.log(`${cellId}=====2=======Matched field ${field} with pattern ${idPattern}`);
           columnIndices[field] = index;
-          console.log(`Found column ${field} at index ${index}`);
           break;
         }
       }
@@ -175,6 +171,7 @@ function getTableDataRows(tableContainer: HTMLElement) {
         }
       }
     });
+    
   } catch (error) {
     console.error('Error getting table data rows:', error);
   }
@@ -191,7 +188,12 @@ function cleanAdName(name: string): string {
     '图表编辑',
     '复制',
     '打开',
-    '下拉菜单'
+    '下拉菜单',
+    'ChartsEditDuplicateOpen Drop-down',
+    'Edit',
+    'Duplicate',
+    'Open',
+    'Drop-down'
   ];
   
   let cleanedName = name;
@@ -206,10 +208,11 @@ function cleanAdName(name: string): string {
 }
 
 // 解析数值
-function parseNumber(text: string): number {
+function parseNumber(text: string): number | string {
   if (!text) return 0;
   const cleanedText = text.replace(/[^0-9.]/g, '');
-  return parseFloat(cleanedText) || 0;
+  const num = parseFloat(cleanedText);
+  return isNaN(num) ? '-' : num;
 }
 
 // 从DOM提取广告数据
@@ -217,11 +220,6 @@ function extractAdsFromDom() {
   const ads = [];
   
   try {
-    // 如果列索引为空，先获取
-    if (Object.keys(columnIndices).length === 0) {
-      getColumnIndices();
-    }
-    
     // 找到表格容器
     const tableContainer = findTableContainer();
     
@@ -229,6 +227,54 @@ function extractAdsFromDom() {
       console.log('Table container not found');
       return ads;
     }
+    
+    // 找到表头行
+    const headerRow = tableContainer.querySelector('[role="row"]');
+    if (!headerRow) {
+      console.log('Header row not found');
+      return ads;
+    }
+    
+    // 解析表头，确定各列的索引
+    const headerColumns = Array.from(headerRow.querySelectorAll('div, span'));
+    const columnMapping = {};
+    
+    // 首先找出固定列的数量（通常只有名称列是固定的）
+    let fixedColumnCount = 0;
+    headerColumns.forEach((column, index) => {
+      const text = column.textContent?.trim().toLowerCase();
+      if (text) {
+        console.log(`Header column ${index}: ${text}`);
+        
+        // 匹配常见的表头文本
+        if (text.includes('name') || text.includes('名称')) {
+          columnMapping.name = index;
+          fixedColumnCount = index + 1; // 固定列数量
+        } else if (text.includes('result') || text.includes('成效')|| text.includes('成效')) {
+          // 滚动列的索引需要减去固定列的数量
+          columnMapping.results = index - fixedColumnCount;
+        } else if (text.includes('spend') || text.includes('花费') || text.includes('金额')|| text.includes('支出金额')) {
+          columnMapping.spend = index - fixedColumnCount;
+        } else if (text.includes('impression') || text.includes('展示')|| text.includes('印象')) {
+          columnMapping.impressions = index - fixedColumnCount;
+        } else if (text.includes('reach') || text.includes('覆盖')|| text.includes('抵达')) {
+          columnMapping.reach = index - fixedColumnCount;
+        } else if (text.includes('budget') || text.includes('预算')) {
+          columnMapping.budget = index - fixedColumnCount;
+        } else if (text.includes('per') || text.includes('单次')|| text.includes('每次结果成本')) {
+          columnMapping.costPerResult = index - fixedColumnCount;
+        }
+      }
+    });
+    
+    // 如果没有找到名称列，假设固定列只有1列
+    if (fixedColumnCount === 0) {
+      fixedColumnCount = 1;
+      console.log('No name column found, assuming 1 fixed column');
+    }
+    
+    console.log('Fixed column count:', fixedColumnCount);
+    console.log('Column mapping:', columnMapping);
     
     // 获取表格数据行对
     const rowPairs = getTableDataRows(tableContainer);
@@ -293,35 +339,26 @@ function extractAdsFromDom() {
         }
       });
       
-      // 根据截图分析，可滚动行的列顺序可能是：
-      // 0: 成效 (Results)
-      // 1: 单次成效 (Cost per result)
-      // 2: 预算 (Budget)
-      // 3: 花费金额 (Spend)
-      // 4: 展示次数 (Impressions)
-      // 5: 覆盖人数 (Reach)
-      
-      // 尝试从可滚动行提取数据
-      scrollableElements.forEach((element, index) => {
-        const text = element.textContent?.trim();
-        if (text) {
-          // 尝试根据位置推断数据类型
-          switch (index) {
-            case 0:
-              ad.results = parseNumber(text);
-              break;
-            case 1:
-              ad.cost_per_result = parseNumber(text);
-              break;
-            case 3:
-              ad.spend = parseNumber(text);
-              break;
-            case 4:
-              ad.impressions = parseNumber(text);
-              break;
-            case 5:
-              ad.reach = parseNumber(text);
-              break;
+      // 根据表头映射提取数据
+      Object.entries(columnMapping).forEach(([key, index]) => {
+        // 跳过预算和单次成效
+        if (key === 'budget' || key === 'costPerResult') {
+          return;
+        }
+        
+        if (scrollableElements[index]) {
+          const text = scrollableElements[index].textContent?.trim();
+          if (text) {
+            console.log(`Processing ${key} at index ${index}: ${text}`);
+            
+            // 尝试解析数值
+            const cleanedText = text.replace(/[^0-9.]/g, '');
+            const num = parseFloat(cleanedText);
+            
+            if (!isNaN(num) || cleanedText === '0') {
+              ad[key] = cleanedText === '0' ? 0 : num;
+              console.log(`Extracted ${key} for ${name}: ${ad[key]} (raw: ${text})`);
+            }
           }
         }
       });
@@ -424,27 +461,29 @@ async function syncAdDataToPage() {
         }
         
         if (input instanceof HTMLInputElement) {
-          switch (index) {
-            case 4:
-              // 更新展示次数增加字段
+          // 尝试根据元素位置更新数据
+          const text = element.textContent?.trim();
+          if (text) {
+            // 跳过预算和单次成效列
+            if (text.toLowerCase().includes('budget') || text.includes('预算') || 
+                text.toLowerCase().includes('per') || text.includes('单次')) {
+              return;
+            }
+            
+            // 根据索引位置更新对应的增加字段
+            if (index === 4 && adData.increase_impressions > 0) {
               input.value = adData.increase_impressions.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
-              break;
-            case 5:
-              // 更新覆盖人数增加字段
+            } else if (index === 5 && adData.increase_reach > 0) {
               input.value = adData.increase_reach.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
-              break;
-            case 3:
-              // 更新花费金额增值字段
+            } else if (index === 3 && adData.increase_spend > 0) {
               input.value = adData.increase_spend.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
-              break;
-            case 0:
-              // 更新加成效字段
+            } else if (index === 0 && adData.increase_results > 0) {
               input.value = adData.increase_results.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
-              break;
+            }
           }
         } else {
           // 如果没有输入元素，记录日志
