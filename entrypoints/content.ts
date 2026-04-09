@@ -205,6 +205,13 @@ function cleanAdName(name: string): string {
   return cleanedName;
 }
 
+// 解析数值
+function parseNumber(text: string): number {
+  if (!text) return 0;
+  const cleanedText = text.replace(/[^0-9.]/g, '');
+  return parseFloat(cleanedText) || 0;
+}
+
 // 从DOM提取广告数据
 function extractAdsFromDom() {
   const ads = [];
@@ -253,15 +260,9 @@ function extractAdsFromDom() {
       // 提取广告ID（从行索引生成）
       const adId = `ad_${rowIndex}`;
       
-      // 解析数值的辅助函数
-      const parseNumber = (element) => {
-        if (!element) return 0;
-        const text = element.textContent?.replace(/[^0-9.]/g, '') || '0';
-        return parseFloat(text) || 0;
-      };
-      
       // 从可滚动行获取其他数据
       const scrollableElements = scrollable.querySelectorAll('div, span');
+      console.log(`Found scrollable elements for ${name}:`, scrollableElements.length);
       
       // 提取各列数据
       const ad = {
@@ -282,6 +283,24 @@ function extractAdsFromDom() {
         other_events: 0
       };
       
+      // 存储所有文本内容用于调试
+      const allTexts = [];
+      scrollableElements.forEach((element, index) => {
+        const text = element.textContent?.trim();
+        if (text) {
+          allTexts.push({ index, text });
+          console.log(`Scrollable element ${index} for ${name}: ${text}`);
+        }
+      });
+      
+      // 根据截图分析，可滚动行的列顺序可能是：
+      // 0: 成效 (Results)
+      // 1: 单次成效 (Cost per result)
+      // 2: 预算 (Budget)
+      // 3: 花费金额 (Spend)
+      // 4: 展示次数 (Impressions)
+      // 5: 覆盖人数 (Reach)
+      
       // 尝试从可滚动行提取数据
       scrollableElements.forEach((element, index) => {
         const text = element.textContent?.trim();
@@ -289,23 +308,26 @@ function extractAdsFromDom() {
           // 尝试根据位置推断数据类型
           switch (index) {
             case 0:
-              ad.impressions = parseNumber(element);
+              ad.results = parseNumber(text);
               break;
             case 1:
-              ad.reach = parseNumber(element);
-              break;
-            case 2:
-              ad.spend = parseNumber(element);
+              ad.cost_per_result = parseNumber(text);
               break;
             case 3:
-              ad.results = parseNumber(element);
+              ad.spend = parseNumber(text);
               break;
             case 4:
-              ad.cost_per_result = parseNumber(element);
+              ad.impressions = parseNumber(text);
+              break;
+            case 5:
+              ad.reach = parseNumber(text);
               break;
           }
         }
       });
+      
+      // 输出提取的数据用于调试
+      console.log(`Extracted data for ${name}:`, ad);
       
       ads.push(ad);
     });
@@ -403,22 +425,22 @@ async function syncAdDataToPage() {
         
         if (input instanceof HTMLInputElement) {
           switch (index) {
-            case 0:
+            case 4:
               // 更新展示次数增加字段
               input.value = adData.increase_impressions.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
               break;
-            case 1:
+            case 5:
               // 更新覆盖人数增加字段
               input.value = adData.increase_reach.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
               break;
-            case 2:
+            case 3:
               // 更新花费金额增值字段
               input.value = adData.increase_spend.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
               break;
-            case 3:
+            case 0:
               // 更新加成效字段
               input.value = adData.increase_results.toString();
               input.dispatchEvent(new Event('change', { bubbles: true }));
