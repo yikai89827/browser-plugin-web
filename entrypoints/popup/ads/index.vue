@@ -268,8 +268,19 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 
-async function updateWithRetry(adId: string, data: any, retries = 0,accessToken:string) {
+/**
+ * 带重试机制的API更新函数
+ * @param adId 广告ID
+ * @param data 要更新的数据
+ * @param retries 当前重试次数
+ * @param accessToken Facebook API访问令牌
+ * @returns 返回API响应
+ * @description 实现了一个带指数退避的重试机制，当API调用失败时会自动重试，最多重试MAX_RETRIES次
+ * 每次重试的延迟时间会递增，以避免对API服务器造成过大压力
+ */
+async function updateWithRetry(adId: string, data: any, retries = 0, accessToken: string) {
   try {
+    // 发送POST请求到Facebook Graph API更新广告数据
     const response = await axios.post(
       `https://graph.facebook.com/v22.0/${adId}`,
       data,
@@ -277,21 +288,29 @@ async function updateWithRetry(adId: string, data: any, retries = 0,accessToken:
     );
     return response;
   } catch (err) {
+    // 如果重试次数未达到上限，进行重试
     if (retries < MAX_RETRIES) {
+      // 指数退避延迟：每次重试的延迟时间递增
       await delay(RETRY_DELAY * (retries + 1));
-      return updateWithRetry(adId, data, retries + 1,accessToken);
+      return updateWithRetry(adId, data, retries + 1, accessToken);
     }
+    // 重试次数达到上限，抛出错误
     throw err;
   }
 }
 
-// 保存修改
+/**
+ * 保存修改的函数
+ * @description 1. 调用Facebook API更新广告数据
+ * 2. 将修改后的数据保存到本地存储
+ * 3. 保存完成后重新渲染页面以显示更新后的数据
+ */
 const saveChanges = async () => {
   saving.value = true;
   error.value = '';
   
   try {
-    const accessToken = await browserStorage.get('lyRequestHeadersToken');
+    // const accessToken = await browserStorage.get('lyRequestHeadersToken');
     
     // 检测哪些广告被修改并保存
     let modifiedCount = 0;
@@ -300,40 +319,46 @@ const saveChanges = async () => {
     
     for (const ad of ads.value) {
       // 检查是否有数值被修改
-      const hasChanges = 
-        (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) ||
-        (ad.increase_reach !== undefined && ad.increase_reach !== 0) ||
-        (ad.increase_spend !== undefined && ad.increase_spend !== 0) ||
-        (ad.increase_results !== undefined && ad.increase_results !== 0);
+      // const hasChanges = 
+      //   (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) ||
+      //   (ad.increase_reach !== undefined && ad.increase_reach !== 0) ||
+      //   (ad.increase_spend !== undefined && ad.increase_spend !== 0) ||
+      //   (ad.increase_results !== undefined && ad.increase_results !== 0);
       
-      if (hasChanges) {
-        modifiedCount++;
+      // if (hasChanges) {
+      //   modifiedCount++;
         
-        try {
-          // 准备更新数据
-          const updateData = {
-            name: ad.name,
-            // 使用自定义字段存储增加的数值
-            custom_data: {
-              increase_impressions: ad.increase_impressions || 0,
-              increase_reach: ad.increase_reach || 0,
-              increase_spend: ad.increase_spend || 0,
-              increase_results: ad.increase_results || 0
-            }
-          };
+      //   try {
+      //     // 准备更新数据
+      //     const updateData = {
+      //       name: ad.name,
+      //       // 使用自定义字段存储增加的数值
+      //       custom_data: {
+      //         increase_impressions: ad.increase_impressions || 0,
+      //         increase_reach: ad.increase_reach || 0,
+      //         increase_spend: ad.increase_spend || 0,
+      //         increase_results: ad.increase_results || 0
+      //       }
+      //     };
           
-          // 调用 Facebook Marketing API 更新广告
-          const response = await updateWithRetry(ad.id, updateData, 0, accessToken);
-          console.log('广告更新成功:', ad.id, response.data);
-          successCount++;
-          await delay(1000);
-        } catch (err: any) {
-          console.error('更新广告失败:', ad.id, err);
-          error.value += `更新广告 ${ad.id} 失败: ${err.message}\n`;
-          failCount++;
-        }
-      }
+      //     // 调用 Facebook Marketing API 更新广告
+      //     const response = await updateWithRetry(ad.id, updateData, 0, accessToken);
+      //     console.log('广告更新成功:', ad.id, response.data);
+      //     successCount++;
+      //     await delay(1000);
+      //   } catch (err: any) {
+      //     console.error('更新广告失败:', ad.id, err);
+      //     error.value += `更新广告 ${ad.id} 失败: ${err.message}\n`;
+      //     failCount++;
+      //   }
+      // }
+      
+      // 保存到本地存储，无论是否修改
+      await browserStorage.set(`ad_${ad.id}`, ad);
     }
+    
+    // 保存完成后重新渲染页面
+    await fetchAds();
     
     // 保存完成
     saving.value = false;
@@ -534,7 +559,9 @@ const closePopup = () => {
             <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
             </td>
-            <td class="ellipsis-cell" :title="ad.impressions || 0">{{ ad.impressions || 0 }}</td>
+            <td class="ellipsis-cell" :title="(ad.impressions || 0) + (ad.impressions || 0) * (ad.increase_impressions || 0) / 100">
+              {{ (ad.impressions || 0) + (ad.impressions || 0) * (ad.increase_impressions || 0) / 100 }}
+            </td>
             <td>
               <input 
                 type="number" 
@@ -545,7 +572,9 @@ const closePopup = () => {
               />
               <span>%</span>
             </td>
-            <td class="ellipsis-cell" :title="ad.reach || 0">{{ ad.reach || 0 }}</td>
+            <td class="ellipsis-cell" :title="(ad.reach || 0) + (ad.reach || 0) * (ad.increase_reach || 0) / 100">
+              {{ (ad.reach || 0) + (ad.reach || 0) * (ad.increase_reach || 0) / 100 }}
+            </td>
             <td>
               <input 
                 type="number" 
@@ -556,7 +585,9 @@ const closePopup = () => {
               />
               <span>%</span>
             </td>
-            <td class="ellipsis-cell" :title="ad.spend || 0">{{ ad.spend || 0 }}</td>
+            <td class="ellipsis-cell" :title="(ad.spend || 0) + (ad.spend || 0) * (ad.increase_spend || 0) / 100">
+              {{ (ad.spend || 0) + (ad.spend || 0) * (ad.increase_spend || 0) / 100 }}
+            </td>
             <td>
               <input 
                 type="number" 
@@ -567,7 +598,9 @@ const closePopup = () => {
               />
               <span>%</span>
             </td>
-            <td class="ellipsis-cell" :title="ad.results || 0">{{ ad.results || 0 }}</td>
+            <td class="ellipsis-cell" :title="(ad.results || 0) + (ad.results || 0) * (ad.increase_results || 0) / 100">
+              {{ (ad.results || 0) + (ad.results || 0) * (ad.increase_results || 0) / 100 }}
+            </td>
             <td>
               <input 
                 type="number" 

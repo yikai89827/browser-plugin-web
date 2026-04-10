@@ -144,7 +144,8 @@ function getTableDataRows(tableContainer: HTMLElement) {
     console.log('Found table body:', tableBody);
     
     // 找到所有role=presentation的元素（每一行的容器）
-    const presentationRows = tableBody.querySelectorAll('[role="presentation"]');
+    // 使用更精确的选择器，只在当前表格容器内查找
+    const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
     console.log('Found presentation rows:', presentationRows.length);
     
     presentationRows.forEach((presentationRow, index) => {
@@ -236,13 +237,14 @@ function extractAdsFromDom() {
     }
     
     // 解析表头，确定各列的索引
-    const headerColumns = Array.from(headerRow.querySelectorAll('div, span'));
+    const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
     const columnMapping = {};
     
     // 首先找出固定列的数量（通常只有名称列是固定的）
     let fixedColumnCount = 0;
-    headerColumns.forEach((column, index) => {
-      const text = column.textContent?.trim().toLowerCase();
+    headerCells.forEach((cell, index) => {
+      // 获取单元格的文本内容，排除子元素的文本
+      const text = cell.textContent?.trim().toLowerCase();
       if (text) {
         console.log(`Header column ${index}: ${text}`);
         
@@ -250,18 +252,18 @@ function extractAdsFromDom() {
         if (text.includes('name') || text.includes('名称')) {
           columnMapping.name = index;
           fixedColumnCount = index + 1; // 固定列数量
-        } else if (text.includes('result') || text.includes('成效')|| text.includes('成效')) {
+        } else if (text.includes('result') || text.includes('成效')) {
           // 滚动列的索引需要减去固定列的数量
           columnMapping.results = index - fixedColumnCount;
-        } else if (text.includes('spend') || text.includes('花费') || text.includes('金额')|| text.includes('支出金额')) {
+        } else if (text.includes('spend') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
           columnMapping.spend = index - fixedColumnCount;
-        } else if (text.includes('impression') || text.includes('展示')|| text.includes('印象')) {
+        } else if (text.includes('impression') || text.includes('展示') || text.includes('印象')) {
           columnMapping.impressions = index - fixedColumnCount;
-        } else if (text.includes('reach') || text.includes('覆盖')|| text.includes('抵达')) {
+        } else if (text.includes('reach') || text.includes('覆盖') || text.includes('抵达')) {
           columnMapping.reach = index - fixedColumnCount;
         } else if (text.includes('budget') || text.includes('预算')) {
           columnMapping.budget = index - fixedColumnCount;
-        } else if (text.includes('per') || text.includes('单次')|| text.includes('每次结果成本')) {
+        } else if (text.includes('per') || text.includes('单次') || text.includes('每次结果成本')) {
           columnMapping.costPerResult = index - fixedColumnCount;
         }
       }
@@ -281,6 +283,7 @@ function extractAdsFromDom() {
     console.log('Found row pairs:', rowPairs.length);
     
     rowPairs.forEach((rowPair, rowIndex) => {
+      console.log(`Processing row pair ${rowIndex}`, rowPair);
       const { fixed, scrollable } = rowPair;
       
       // 提取广告名称 - 从固定行获取
