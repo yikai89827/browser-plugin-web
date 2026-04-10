@@ -14,12 +14,12 @@ interface AdData {
 
 // 列映射配置 - 表头ID到字段名的映射
 const columnMapping = {
-  name: 'reporting_table_column_name',
-  impressions: 'reporting_table_column_impressions',
-  reach: 'reporting_table_column_reach',
-  spend: 'reporting_table_column_spend',
-  results: 'reporting_table_column_results',
-  cost_per_result: 'reporting_table_column_cost_per_result'
+  name: 'reporting_table_column_name',//广告名称
+  impressions: 'reporting_table_column_impressions',//展示次数
+  reach: 'reporting_table_column_reach',//覆盖次数
+  spend: 'reporting_table_column_spend',//花费
+  results: 'reporting_table_column_results',//成效
+  cost_per_result: 'reporting_table_column_cost_per_result',//单次成效
 };
 
 // 存储列索引
@@ -144,23 +144,43 @@ function getTableDataRows(tableContainer: HTMLElement) {
     console.log('Found table body:', tableBody);
     
     // 找到所有role=presentation的元素（每一行的容器）
-    // 使用更精确的选择器，只在当前表格容器内查找
     const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
-    console.log('Found presentation rows:', presentationRows.length);
     
-    presentationRows.forEach((presentationRow, index) => {
+    // 先过滤掉没有孙子元素的节点，以及孙子元素是SVG的节点
+    const filteredPresentationRows = Array.from(presentationRows).filter((row, index) => {
+      const hasGrandchildren = row.children[0]?.children.length > 0;
+      const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
+      
+      if (!hasGrandchildren) {
+        // console.log(`Filtering out presentation row ${index} with no grandchildren`);
+        return false;
+      }
+      
+      if (!hasNonSvgchildren) {
+        // console.log(`Filtering out presentation row ${index} with only SVG grandchildren`);
+        return false;
+      }
+      
+      return true;
+    });
+     console.log('Filtered presentation rows1:', filteredPresentationRows);
+    console.log('Filtered presentation rows2:', filteredPresentationRows.length);
+    
+    // 处理过滤后的节点
+    filteredPresentationRows.forEach((presentationRow, index) => {
       console.log(`Processing presentation row ${index}`, presentationRow);
       
-      // 获取孙元素（固定行和可滚动行）
+      // 获取孙元素（固定行、滚动行和分割线）
       const children = presentationRow.children;
-      if (children.length >= 1) {
+      if (children.length === 1) { // 确保只有一个子元素
         const firstChild = children[0] as HTMLElement;
         const grandchildren = firstChild.children;
         console.log(`Found grandchildren: ${grandchildren.length}`, grandchildren);
         
-        if (grandchildren.length >= 2) {
-          const fixed = grandchildren[0] as HTMLElement;
-          const scrollable = grandchildren[1] as HTMLElement;
+        if (grandchildren.length >= 2) { // 至少有固定行和滚动行
+          const fixed = grandchildren[0] as HTMLElement; // 第一个是固定行数据
+          const scrollable = grandchildren[1] as HTMLElement; // 第二个是滚动行数据
+          // 第三个是分割线元素，忽略
           
           console.log(`Found fixed row:`, fixed);
           console.log(`Found scrollable row:`, scrollable);
@@ -238,10 +258,9 @@ function extractAdsFromDom() {
     
     // 解析表头，确定各列的索引
     const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
-    const columnMapping = {};
+    const DomColumnMapping = {};
     
     // 首先找出固定列的数量（通常只有名称列是固定的）
-    let fixedColumnCount = 0;
     headerCells.forEach((cell, index) => {
       // 获取单元格的文本内容，排除子元素的文本
       const text = cell.textContent?.trim().toLowerCase();
@@ -250,37 +269,26 @@ function extractAdsFromDom() {
         
         // 匹配常见的表头文本
         if (text.includes('name') || text.includes('名称')) {
-          columnMapping.name = index;
-          fixedColumnCount = index + 1; // 固定列数量
-        } else if (text.includes('result') || text.includes('成效')) {
+          DomColumnMapping.name = index;
+        } else if (text==='results' || text==='成效'|| text==='结果') {
           // 滚动列的索引需要减去固定列的数量
-          columnMapping.results = index - fixedColumnCount;
+          DomColumnMapping.results = index;
         } else if (text.includes('spend') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
-          columnMapping.spend = index - fixedColumnCount;
+          DomColumnMapping.spend = index;
         } else if (text.includes('impression') || text.includes('展示') || text.includes('印象')) {
-          columnMapping.impressions = index - fixedColumnCount;
+          DomColumnMapping.impressions = index;  
         } else if (text.includes('reach') || text.includes('覆盖') || text.includes('抵达')) {
-          columnMapping.reach = index - fixedColumnCount;
-        } else if (text.includes('budget') || text.includes('预算')) {
-          columnMapping.budget = index - fixedColumnCount;
+          DomColumnMapping.reach = index;
         } else if (text.includes('per') || text.includes('单次') || text.includes('每次结果成本')) {
-          columnMapping.costPerResult = index - fixedColumnCount;
+          DomColumnMapping.costPerResult = index;
         }
       }
     });
-    
-    // 如果没有找到名称列，假设固定列只有1列
-    if (fixedColumnCount === 0) {
-      fixedColumnCount = 1;
-      console.log('No name column found, assuming 1 fixed column');
-    }
-    
-    console.log('Fixed column count:', fixedColumnCount);
-    console.log('Column mapping:', columnMapping);
+    console.log('Column mapping:', DomColumnMapping);
     
     // 获取表格数据行对
     const rowPairs = getTableDataRows(tableContainer);
-    console.log('Found row pairs:', rowPairs.length);
+    console.log('Found row pairs:',rowPairs, rowPairs.length);
     
     rowPairs.forEach((rowPair, rowIndex) => {
       console.log(`Processing row pair ${rowIndex}`, rowPair);
@@ -289,6 +297,7 @@ function extractAdsFromDom() {
       // 提取广告名称 - 从固定行获取
       let name = '';
       const nameElements = fixed.querySelectorAll('div, span');
+      console.log(`Found fixed length:`, fixed.children.length);
       for (const element of nameElements) {
         const text = element.textContent?.trim();
         if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
@@ -302,7 +311,7 @@ function extractAdsFromDom() {
       
       // 跳过没有有效名称的行
       if (!name || name === '' || name.match(/^广告\s*\d+$/)) {
-        console.log(`Skipping row ${rowIndex} with invalid name: ${name}`);
+        // console.log(`Skipping row ${rowIndex} with invalid name: ${name}`);
         return;
       }
       
@@ -311,7 +320,7 @@ function extractAdsFromDom() {
       
       // 从可滚动行获取其他数据
       const scrollableElements = scrollable.querySelectorAll('div, span');
-      console.log(`Found scrollable elements for ${name}:`, scrollableElements.length);
+      // console.log(`Found scrollable elements for ${name}:`, scrollableElements.length);
       
       // 提取各列数据
       const ad = {
@@ -332,27 +341,25 @@ function extractAdsFromDom() {
         other_events: 0
       };
       
-      // 存储所有文本内容用于调试
-      const allTexts = [];
-      scrollableElements.forEach((element, index) => {
-        const text = element.textContent?.trim();
-        if (text) {
-          allTexts.push({ index, text });
-          console.log(`Scrollable element ${index} for ${name}: ${text}`);
-        }
-      });
+      // // 存储所有文本内容用于调试
+      // const allTexts = [];
+      // scrollableElements.forEach((element, index) => {
+      //   const text = element.textContent?.trim();
+      //   if (text) {
+      //     allTexts.push({ index, text });
+      //     // console.log(`Scrollable element ${index} for ${name}: ${text}`);
+      //   }
+      // });
       
       // 根据表头映射提取数据
-      Object.entries(columnMapping).forEach(([key, index]) => {
-        // 跳过预算和单次成效
-        if (key === 'budget' || key === 'costPerResult') {
-          return;
-        }
+      Object.entries(DomColumnMapping).forEach(([key, index]) => {
+        console.log(`${name}Processing ${key} at index ${fixIndex}: ${text}`);
+        const fixIndex = index - fixed.children.length;
         
-        if (scrollableElements[index]) {
-          const text = scrollableElements[index].textContent?.trim();
+        if (scrollableElements[fixIndex]) {
+          const text = scrollableElements[fixIndex].textContent?.trim();
           if (text) {
-            console.log(`Processing ${key} at index ${index}: ${text}`);
+            console.log(`${name}Processing ${key} at index ${fixIndex}: ${text}`);
             
             // 尝试解析数值
             const cleanedText = text.replace(/[^0-9.]/g, '');
@@ -467,12 +474,6 @@ async function syncAdDataToPage() {
           // 尝试根据元素位置更新数据
           const text = element.textContent?.trim();
           if (text) {
-            // 跳过预算和单次成效列
-            if (text.toLowerCase().includes('budget') || text.includes('预算') || 
-                text.toLowerCase().includes('per') || text.includes('单次')) {
-              return;
-            }
-            
             // 根据索引位置更新对应的增加字段
             if (index === 4 && adData.increase_impressions > 0) {
               input.value = adData.increase_impressions.toString();
