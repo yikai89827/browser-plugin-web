@@ -35,6 +35,16 @@ export default {
       if (message.action === 'getAdsFromDom') {
         const ads = extractAdsFromDom();
         sendResponse({ ads });
+      } else if (message.action === 'refreshPageWithData') {
+        // 收到刷新页面的请求，重新同步数据
+        syncAdDataToPage().then(() => {
+          sendResponse({ success: true });
+        }).catch((error) => {
+          console.error('Error refreshing page data:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        // 返回true表示异步响应
+        return true;
       }
     });
     
@@ -297,7 +307,7 @@ function extractAdsFromDom() {
       // 提取广告名称 - 从固定行获取
       let name = '';
       const nameElements = fixed.querySelectorAll('div, span');
-      console.log(`Found fixed length:`, fixed.children.length);
+      console.log(`Found fixed length:`, fixed.children[0]?.children?.length-1 || 0);
       for (const element of nameElements) {
         const text = element.textContent?.trim();
         if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
@@ -319,7 +329,7 @@ function extractAdsFromDom() {
       const adId = `ad_${rowIndex}`;
       
       // 从可滚动行获取其他数据
-      const scrollableElements = scrollable.querySelectorAll('div, span');
+      const scrollableElements = scrollable.children[0]?.children || [];
       // console.log(`Found scrollable elements for ${name}:`, scrollableElements.length);
       
       // 提取各列数据
@@ -341,32 +351,49 @@ function extractAdsFromDom() {
         other_events: 0
       };
       
+      // 检查本地存储中是否有对应的广告数据
+      // 注意：这里需要在同步环境中检查，所以使用try-catch
+      try {
+        // 尝试从本地存储中获取保存的广告数据
+        const storedAdData = localStorage.getItem(`ad_${adId}_updated`);
+        if (storedAdData) {
+          const parsedAdData = JSON.parse(storedAdData);
+          // 保留原始值，只恢复增加的值
+          ad.increase_impressions = parsedAdData.increase_impressions || 0;
+          ad.increase_reach = parsedAdData.increase_reach || 0;
+          ad.increase_spend = parsedAdData.increase_spend || 0;
+          ad.increase_results = parsedAdData.increase_results || 0;
+          console.log(`Found stored ad data for ${name}:`, parsedAdData);
+        }
+      } catch (error) {
+        console.error('Error getting stored ad data:', error);
+      }
+      
       // // 存储所有文本内容用于调试
-      // const allTexts = [];
-      // scrollableElements.forEach((element, index) => {
-      //   const text = element.textContent?.trim();
-      //   if (text) {
-      //     allTexts.push({ index, text });
-      //     // console.log(`Scrollable element ${index} for ${name}: ${text}`);
-      //   }
-      // });
+      const allTexts = [];
+      Array.from(scrollableElements).forEach((element, index) => {
+        const text = element.textContent?.trim();
+        if (text) {
+          allTexts.push(`${index}: ${text}`);
+        }
+      });
+      console.log(`Found scrollable elements:`, allTexts);
       
       // 根据表头映射提取数据
       Object.entries(DomColumnMapping).forEach(([key, index]) => {
-        console.log(`${name}Processing ${key} at index ${fixIndex}: ${text}`);
-        const fixIndex = index - fixed.children.length;
+        const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
+        console.log(`${name}: Processing ${key} at fixIndex: ${fixIndex} index :${index}`);
         
         if (scrollableElements[fixIndex]) {
           const text = scrollableElements[fixIndex].textContent?.trim();
           if (text) {
-            console.log(`${name}Processing ${key} at index ${fixIndex}: ${text}`);
-            
+            console.log(`${name}: Processing ${key} at index ${fixIndex}: ${text}`);
             // 尝试解析数值
             const cleanedText = text.replace(/[^0-9.]/g, '');
             const num = parseFloat(cleanedText);
             
             if (!isNaN(num) || cleanedText === '0') {
-              ad[key] = cleanedText === '0' ? 0 : num;
+              ad[key] = cleanedText === '0' ? (text?.includes('—') ? '—' : 0) : num;
               console.log(`Extracted ${key} for ${name}: ${ad[key]} (raw: ${text})`);
             }
           }
@@ -403,21 +430,37 @@ async function syncAdDataToPage() {
     
     // 获取存储的所有广告数据
     const storageItems = await browserStorage.get(null);
-    const adDataList: AdData[] = [];
     
-    // 筛选出广告数据
+    // 筛选出广告数据和列修改值
+    const adDataMap = new Map();
+    const columnModifications = new Map();
+    
     for (const key in storageItems) {
-      if (key.startsWith('ad_')) {
-        adDataList.push(storageItems[key]);
+      if (key.endsWith('_updated')) {
+        // 完整的广告数据
+        const adData = storageItems[key];
+        adDataMap.set(adData.id, adData);
+      } else if (key.includes('_column_')) {
+        // 列修改值
+        const parts = key.split('_column_');
+        if (parts.length === 2) {
+          const adId = parts[0];
+          const columnIndex = parts[1];
+          if (!columnModifications.has(adId)) {
+            columnModifications.set(adId, new Map());
+          }
+          columnModifications.get(adId)?.set(columnIndex, storageItems[key]);
+        }
       }
     }
     
-    if (adDataList.length === 0) {
+    if (adDataMap.size === 0 && columnModifications.size === 0) {
       console.log('No ad data found in storage');
       return;
     }
     
-    console.log('Found ad data:', adDataList);
+    console.log('Found ad data map:', adDataMap);
+    console.log('Found column modifications:', columnModifications);
     
     // 找到表格容器
     const tableContainer = findTableContainer();
@@ -431,7 +474,7 @@ async function syncAdDataToPage() {
     const rowPairs = getTableDataRows(tableContainer);
     console.log('Found rows for sync:', rowPairs.length);
     
-    rowPairs.forEach((rowPair) => {
+    rowPairs.forEach((rowPair, rowIndex) => {
       const { fixed, scrollable } = rowPair;
       
       // 提取广告名称用于匹配
@@ -450,48 +493,102 @@ async function syncAdDataToPage() {
       
       if (!name) return;
       
-      // 查找对应的广告数据
-      const adData = adDataList.find(data => data.name === name);
-      if (!adData) return;
+      // 生成广告ID（与popup中的ID对应）
+      const adId = `ad_${rowIndex}`;
       
-      console.log('Syncing data for ad:', name);
+      // 查找对应的广告数据
+      const adData = adDataMap.get(adId);
+      const columnMods = columnModifications.get(adId);
+      
+      if (!adData && !columnMods) return;
+      
+      console.log('Syncing data for ad:', name, 'ID:', adId);
       
       // 从可滚动行获取元素并更新
-      const scrollableElements = scrollable.querySelectorAll('div, span');
+      const scrollableElements = scrollable.children[0]?.children || [];
+      console.log(`Found scrollable elements: ${scrollableElements.length}`);
       
       // 尝试更新各列数据
-      scrollableElements.forEach((element, index) => {
-        // 查找输入元素（考虑到修改是通过弹窗进行的，可能需要特殊处理）
-        let input = element.querySelector('input');
-        
-        // 如果没有找到输入元素，尝试在子元素中查找
-        if (!input) {
-          const allElements = Array.from(element.querySelectorAll('*'));
-          input = allElements.find(el => el instanceof HTMLInputElement);
+      // 按照用户要求：
+      // 1. 插件表格左侧显示原始值（从DOM中获取的原值）
+      // 2. 右侧显示可输入的增加的值（从本地存储中获取）
+      // 3. 保存时两个值都需要保存
+      // 4. 在原页面加载完成重新渲染新值时，是把这两个值相加显示在页面上
+      // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
+      
+      // 首先获取原始值
+      const originalValues = new Map();
+      Array.from(scrollableElements).forEach((element, index) => {
+        const text = element.textContent?.trim();
+        if (text) {
+          const cleanedText = text.replace(/[^0-9.]/g, '');
+          const originalValue = parseFloat(cleanedText);
+          if (!isNaN(originalValue)) {
+            originalValues.set(index, originalValue);
+          }
         }
-        
-        if (input instanceof HTMLInputElement) {
-          // 尝试根据元素位置更新数据
-          const text = element.textContent?.trim();
-          if (text) {
-            // 根据索引位置更新对应的增加字段
-            if (index === 4 && adData.increase_impressions > 0) {
-              input.value = adData.increase_impressions.toString();
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-            } else if (index === 5 && adData.increase_reach > 0) {
-              input.value = adData.increase_reach.toString();
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-            } else if (index === 3 && adData.increase_spend > 0) {
-              input.value = adData.increase_spend.toString();
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-            } else if (index === 0 && adData.increase_results > 0) {
-              input.value = adData.increase_results.toString();
-              input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      
+      // 然后更新页面上的显示值（原始值 + 增加的值）
+      Array.from(scrollableElements).forEach((element, index) => {
+        const text = element.textContent?.trim();
+        if (text) {
+          console.log(`Processing element at index ${index}: ${text}`);
+          
+          // 检查是否有对应的列修改值
+          let increaseValue = 0;
+          
+          if (columnMods) {
+            // 根据列索引获取修改值
+            const modValue = columnMods.get(index.toString());
+            if (modValue) {
+              increaseValue = modValue;
+            }
+          } else if (adData) {
+            // 从完整广告数据中获取修改值
+            switch (index) {
+              case 0: // impressions
+                increaseValue = adData.increase_impressions || 0;
+                break;
+              case 1: // reach
+                increaseValue = adData.increase_reach || 0;
+                break;
+              case 2: // spend
+                increaseValue = adData.increase_spend || 0;
+                break;
+              case 3: // results
+                increaseValue = adData.increase_results || 0;
+                break;
             }
           }
-        } else {
-          // 如果没有输入元素，记录日志
-          console.log(`No input element found for index ${index} in ad ${name}`);
+          
+          if (increaseValue > 0) {
+            // 获取原始值
+            const originalValue = originalValues.get(index) || 0;
+            
+            // 计算新值：原始值 + 增加的值（简单加法）
+            const newValue = originalValue + increaseValue;
+            
+            // 更新元素的文本内容
+            // 注意：这里可能需要根据实际DOM结构调整更新方式
+            console.log(`Updating ad ${name} column ${index}: ${originalValue} + ${increaseValue} = ${newValue}`);
+            
+            // 尝试直接更新文本内容
+            if (element.textContent) {
+              // 保留原始格式（如货币符号、千位分隔符等）
+              // 只替换数字部分，保持其他文本元素不变
+              const formattedNewValue = newValue.toFixed(2);
+              console.log(`Formatted new value: ${formattedNewValue}`);
+              
+              // 使用正则表达式匹配数字部分，保留其他文本
+              // 匹配所有数字（包括整数和小数）
+              const updatedText = text.replace(/(\D*)(\d+(?:\.\d+)?)(\D*)/, (match, prefix, number, suffix) => {
+                return prefix + formattedNewValue + suffix;
+              });
+              console.log(`Updated text: ${updatedText}`);
+              // element.textContent = updatedText;
+            }
+          }
         }
       });
     });

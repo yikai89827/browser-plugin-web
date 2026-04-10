@@ -205,7 +205,7 @@ const fetchAds = async () => {
       const storedAds: AdData[] = [];
       
       for (const key in storageItems) {
-        if (key.startsWith('ad_')) {
+        if (key.startsWith('ad_') && key.endsWith('_updated')) {
           storedAds.push(storageItems[key]);
         }
       }
@@ -301,74 +301,65 @@ async function updateWithRetry(adId: string, data: any, retries = 0, accessToken
 
 /**
  * 保存修改的函数
- * @description 1. 调用Facebook API更新广告数据
- * 2. 将修改后的数据保存到本地存储
- * 3. 保存完成后重新渲染页面以显示更新后的数据
+ * @description 1. 将修改后的数据保存到本地存储
+ * 2. 向content script发送消息，通知页面刷新
+ * 3. 本地缓存key设计：ad_{adId}_column_{columnIndex}，直接表明修改数据在页面所在列索引
  */
 const saveChanges = async () => {
   saving.value = true;
   error.value = '';
   
   try {
-    // const accessToken = await browserStorage.get('lyRequestHeadersToken');
-    
     // 检测哪些广告被修改并保存
     let modifiedCount = 0;
-    let successCount = 0;
-    let failCount = 0;
     
     for (const ad of ads.value) {
       // 检查是否有数值被修改
-      // const hasChanges = 
-      //   (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) ||
-      //   (ad.increase_reach !== undefined && ad.increase_reach !== 0) ||
-      //   (ad.increase_spend !== undefined && ad.increase_spend !== 0) ||
-      //   (ad.increase_results !== undefined && ad.increase_results !== 0);
+      const hasChanges = 
+        (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) ||
+        (ad.increase_reach !== undefined && ad.increase_reach !== 0) ||
+        (ad.increase_spend !== undefined && ad.increase_spend !== 0) ||
+        (ad.increase_results !== undefined && ad.increase_results !== 0);
       
-      // if (hasChanges) {
-      //   modifiedCount++;
+      if (hasChanges) {
+        modifiedCount++;
+        console.log(`Modified ad: ${ad.id}`, ad);
+        // 保存到本地存储，使用设计的key格式
+        // 保存完整的广告数据
+        await browserStorage.set(`ad_${ad.id}_updated`, ad);
         
-      //   try {
-      //     // 准备更新数据
-      //     const updateData = {
-      //       name: ad.name,
-      //       // 使用自定义字段存储增加的数值
-      //       custom_data: {
-      //         increase_impressions: ad.increase_impressions || 0,
-      //         increase_reach: ad.increase_reach || 0,
-      //         increase_spend: ad.increase_spend || 0,
-      //         increase_results: ad.increase_results || 0
-      //       }
-      //     };
-          
-      //     // 调用 Facebook Marketing API 更新广告
-      //     const response = await updateWithRetry(ad.id, updateData, 0, accessToken);
-      //     console.log('广告更新成功:', ad.id, response.data);
-      //     successCount++;
-      //     await delay(1000);
-      //   } catch (err: any) {
-      //     console.error('更新广告失败:', ad.id, err);
-      //     error.value += `更新广告 ${ad.id} 失败: ${err.message}\n`;
-      //     failCount++;
-      //   }
-      // }
-      
-      // 保存到本地存储，无论是否修改
-      await browserStorage.set(`ad_${ad.id}`, ad);
+        // 保存各列的修改值，使用列索引作为key的一部分
+        // 这里假设列索引为：impressions=0, reach=1, spend=2, results=3
+        await browserStorage.set(`ad_${ad.id}_column_0`, ad.increase_impressions || 0);
+        await browserStorage.set(`ad_${ad.id}_column_1`, ad.increase_reach || 0);
+        await browserStorage.set(`ad_${ad.id}_column_2`, ad.increase_spend || 0);
+        await browserStorage.set(`ad_${ad.id}_column_3`, ad.increase_results || 0);
+      }
     }
     
+    // 向content script发送消息，通知页面刷新
+    browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        browser.tabs.sendMessage(
+          tabs[0].id!,
+          { action: 'refreshPageWithData' },
+          (response) => {
+            console.log('Content script response:', response);
+          }
+        );
+      }
+    });
+    
     // 保存完成后重新渲染页面
-    await fetchAds();
+    // await fetchAds();
     
     // 保存完成
     saving.value = false;
     
     if (modifiedCount === 0) {
       alert('没有需要保存的修改');
-    } else if (failCount === 0) {
-      alert(`保存成功！共更新 ${successCount} 个广告`);
     } else {
-      alert(`保存完成！成功 ${successCount} 个，失败 ${failCount} 个`);
+      alert(`保存成功！共更新 ${modifiedCount} 个广告`);
     }
   } catch (err: any) {
     error.value = `保存失败: ${err.message}`;
@@ -559,8 +550,8 @@ const closePopup = () => {
             <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
             </td>
-            <td class="ellipsis-cell" :title="(ad.impressions || 0) + (ad.impressions || 0) * (ad.increase_impressions || 0) / 100">
-              {{ (ad.impressions || 0) + (ad.impressions || 0) * (ad.increase_impressions || 0) / 100 }}
+            <td class="ellipsis-cell" :title="(ad.impressions || 0) + (ad.increase_impressions || 0)">
+              {{ (ad.impressions || 0) + (ad.increase_impressions || 0) }}
             </td>
             <td>
               <input 
@@ -568,12 +559,10 @@ const closePopup = () => {
                 v-model="ad.increase_impressions" 
                 class="editable-input"
                 min="0"
-                max="100"
               />
-              <span>%</span>
             </td>
-            <td class="ellipsis-cell" :title="(ad.reach || 0) + (ad.reach || 0) * (ad.increase_reach || 0) / 100">
-              {{ (ad.reach || 0) + (ad.reach || 0) * (ad.increase_reach || 0) / 100 }}
+            <td class="ellipsis-cell" :title="(ad.reach || 0) + (ad.increase_reach || 0)">
+              {{ (ad.reach || 0) + (ad.increase_reach || 0) }}
             </td>
             <td>
               <input 
@@ -581,12 +570,10 @@ const closePopup = () => {
                 v-model="ad.increase_reach" 
                 class="editable-input"
                 min="0"
-                max="100"
               />
-              <span>%</span>
             </td>
-            <td class="ellipsis-cell" :title="(ad.spend || 0) + (ad.spend || 0) * (ad.increase_spend || 0) / 100">
-              {{ (ad.spend || 0) + (ad.spend || 0) * (ad.increase_spend || 0) / 100 }}
+            <td class="ellipsis-cell" :title="(ad.spend || 0) + (ad.increase_spend || 0)">
+              {{ (ad.spend || 0) + (ad.increase_spend || 0) }}
             </td>
             <td>
               <input 
@@ -594,12 +581,10 @@ const closePopup = () => {
                 v-model="ad.increase_spend" 
                 class="editable-input"
                 min="0"
-                max="100"
               />
-              <span>%</span>
             </td>
-            <td class="ellipsis-cell" :title="(ad.results || 0) + (ad.results || 0) * (ad.increase_results || 0) / 100">
-              {{ (ad.results || 0) + (ad.results || 0) * (ad.increase_results || 0) / 100 }}
+            <td class="ellipsis-cell" :title="(ad.results || 0) + (ad.increase_results || 0)">
+              {{ (ad.results || 0) + (ad.increase_results || 0) }}
             </td>
             <td>
               <input 
@@ -607,9 +592,7 @@ const closePopup = () => {
                 v-model="ad.increase_results" 
                 class="editable-input"
                 min="0"
-                max="100"
               />
-              <span>%</span>
             </td>
             <td class="ellipsis-cell" :title="ad.cost_per_result || 0">{{ ad.cost_per_result || 0 }}</td>
             <td class="event-dropdown-cell">
