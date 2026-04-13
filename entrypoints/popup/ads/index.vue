@@ -19,7 +19,7 @@ interface AdData {
   increase_spend: number;
   results: number;
   increase_results: number;
-  cost_per_result: number;
+  costPerResult: number;
   other_events: number;
   [key: string]: any;
 }
@@ -65,6 +65,15 @@ const dataProtectionEnabled = ref(true);
 const dropdownOpen = ref<Record<string, boolean>>({});
 const dropdownRefs = ref<Record<string, HTMLElement>>({});
 const dropdownPositions = ref<Record<string, { top: number; left: number }>>({});
+
+// 获取日期，优先使用选择的日期，无选择时使用当天日期
+const getCurrentDate = () => {
+  if (selectedDate.value) {
+    return selectedDate.value;
+  }
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
 
 // 列映射，用于存储从content script返回的列索引信息
 const columnMapping = ref<any>({});
@@ -125,7 +134,7 @@ const fetchAds = async () => {
   //     increase_spend: 2,
   //     results: 50,
   //     increase_results: 15,
-  //     cost_per_result: 2,
+  //     costPerResult: 2,
   //     other_events: 10
   //   },
   //   {
@@ -142,123 +151,37 @@ const fetchAds = async () => {
   //     increase_spend: 5,
   //     results: 100,
   //     increase_results: 20,
-  //     cost_per_result: 2,
+  //     costPerResult: 2,
   //     other_events: 20
   //   }
   // ];
   try {
-    // 从DOM获取广告数据
-    // 首先尝试通过content script获取DOM数据
-    const { ads: domAds, DomColumnMapping: receivedColumnMapping } = await getAdsFromDom();
-    console.log('Received ads:', domAds);
-    console.log('Received column mapping:', receivedColumnMapping);
-    columnMapping.value = receivedColumnMapping;
-    browserStorage.set('DomColumnMapping', receivedColumnMapping);
+    // 先从缓存中查询数据
+    const currentDate = getCurrentDate();
+    const cachedAds = await browserStorage.get(`ads_${currentDate}`);
+    const cachedColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
     
-    if (domAds && domAds.length > 0) {
-      ads.value = domAds;
+    if (cachedAds && cachedAds.length > 0) {
+      console.log('从缓存中读取广告数据:', cachedAds);
+      ads.value = cachedAds;
+      if (cachedColumnMapping) {
+        columnMapping.value = cachedColumnMapping;
+      }
     } else {
-      // 注释掉原来的API调用代码，保留作为备份
-      /*
-      const accessToken = await browserStorage.get('lyRequestHeadersToken');
-      const url = await browserStorage.get('lyRequestHeadersUrl');
-      // const apiIndex = await browserStorage.get('lyRequestHeadersUrlIndex');
-
+      // 从DOM获取广告数据
+      const { ads: domAds, DomColumnMapping: receivedColumnMapping } = await getAdsFromDom();
+      console.log('Received ads:', domAds);
+      console.log('Received column mapping:', receivedColumnMapping);
       
-      // const response = await axios.get<ApiResponse>(
-      //   `https://graph.facebook.com/v22.0/act_${accountId}/ads`,
-      //   {
-      //     params: {
-      //       access_token: accessToken,
-      //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-      //       limit: 200,
-      //     }
-      //   }
-      // );
-      // const response = await axios.get<ApiResponse>(
-      //   `https://adsmanager-graph.facebook.com/v22.0/act_${accountId}/lightads`,
-      //   {
-      //     params: {
-      //       access_token: accessToken,
-      //       fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-      //       limit: 200,
-      //     }
-      //   }
-      // );
-      const response = await axios.get<ApiResponse>(
-        url,
-        {
-          params: {
-            access_token: accessToken,
-            fields: 'id,name,status,campaign_id,adset_id,impressions,reach,spend,results,cost_per_result',
-            limit: 200,
-          }
-        }
-      );
-      console.log('%c 响应数据：', 'color:green;', response.data);
-      
-      ads.value = (response.data.data || []).map(ad => ({
-        ...ad,
-        increase_impressions: ad.increase_impressions || 0,
-        increase_reach: ad.increase_reach || 0,
-        increase_spend: ad.increase_spend || 0,
-        increase_results: ad.increase_results || 0,
-        other_events: ad.other_events || 0
-      }));
-      */
-      
-      // // 如果DOM和API获取都失败，从存储中获取广告数据
-      // const storageItems = await browserStorage.get(null);
-      // const storedAds: AdData[] = [];
-      
-      // for (const key in storageItems) {
-      //   if (key.startsWith('ad_') && key.endsWith('_updated')) {
-      //     storedAds.push(storageItems[key]);
-      //   }
-      // }
-      
-      // if (storedAds.length > 0) {
-      //   ads.value = storedAds;
-      // }
-      //  else {
-      //   // 如果没有存储的数据，使用mock数据
-      //   ads.value = [
-      //     {
-      //       id: '123456789',
-      //       name: '测试广告1',
-      //       status: 'ACTIVE',
-      //       campaign_id: '987654321',
-      //       adset_id: '112233445',
-      //       impressions: 1000,
-      //       increase_impressions: 10,
-      //       reach: 800,
-      //       increase_reach: 5,
-      //       spend: 100,
-      //       increase_spend: 2,
-      //       results: 50,
-      //       increase_results: 15,
-      //       cost_per_result: 2,
-      //       other_events: 10
-      //     },
-      //     {
-      //       id: '987654321',
-      //       name: '测试广告2',
-      //       status: 'PAUSED',
-      //       campaign_id: '123456789',
-      //       adset_id: '554433221',
-      //       impressions: 2000,
-      //       increase_impressions: 15,
-      //       reach: 1500,
-      //       increase_reach: 8,
-      //       spend: 200,
-      //       increase_spend: 5,
-      //       results: 100,
-      //       increase_results: 20,
-      //       cost_per_result: 2,
-      //       other_events: 20
-      //     }
-      //   ];
-      // }
+      if (domAds && domAds.length > 0) {
+        ads.value = domAds;
+        columnMapping.value = receivedColumnMapping;
+        
+        // 缓存数据
+        await browserStorage.set(`ads_${currentDate}`, domAds);
+        await browserStorage.set(`columnMapping_${currentDate}`, receivedColumnMapping);
+        console.log('缓存广告数据成功');
+      }
     }
     
     console.log('获取广告列表成功:', ads.value);
@@ -321,29 +244,39 @@ const saveChanges = async () => {
     // 检测哪些广告被修改并保存
     let modifiedCount = 0;
     
+    // 先获取现有的缓存数组
+    const cachedData = await browserStorage.get('ad_modifications');
+    const modificationsArray = Array.isArray(cachedData) ? cachedData : [];
+    
+    // 确保modificationsArray的长度与ads.value的长度一致
+    modificationsArray.length = ads.value.length;
+    
     for (const ad of ads.value) {
       // 检查是否有数值被修改
       const hasChanges = 
-        (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) ||
-        (ad.increase_reach !== undefined && ad.increase_reach !== 0) ||
-        (ad.increase_spend !== undefined && ad.increase_spend !== 0) ||
-        (ad.increase_results !== undefined && ad.increase_results !== 0);
+        ad.increase_impressions !== undefined ||
+        ad.increase_reach !== undefined ||
+        ad.increase_spend !== undefined ||
+        ad.increase_results !== undefined;
+      
+      // 获取当前行在表格中的索引
+      const rowIndex = ads.value.indexOf(ad);
       
       if (hasChanges) {
         modifiedCount++;
         console.log(`Modified ad: ${ad.id}`, ad);
         // 构建修改的字段数据
         const modifiedFields: any= {};
-        if (ad.increase_impressions !== undefined && ad.increase_impressions !== 0) {
+        if (ad.increase_impressions !== undefined) {
           modifiedFields.impressions = ad.increase_impressions;
         }
-        if (ad.increase_reach !== undefined && ad.increase_reach !== 0) {
+        if (ad.increase_reach !== undefined) {
           modifiedFields.reach = ad.increase_reach;
         }
-        if (ad.increase_spend !== undefined && ad.increase_spend !== 0) {
+        if (ad.increase_spend !== undefined) {
           modifiedFields.spend = ad.increase_spend;
         }
-        if (ad.increase_results !== undefined && ad.increase_results !== 0) {
+        if (ad.increase_results !== undefined) {
           modifiedFields.results = ad.increase_results;
         }
         
@@ -353,22 +286,19 @@ const saveChanges = async () => {
           modifiedFields: modifiedFields
         };
         
-        // 获取当前行在表格中的索引
-        const rowIndex = ads.value.indexOf(ad);
-        
-        // 先获取现有的缓存数组
-        const cachedData = await browserStorage.get('ad_modifications');
-        const modificationsArray = Array.isArray(cachedData) ? cachedData : [];
-        
         // 将当前行数据保存到数组的对应位置
         modificationsArray[rowIndex] = rowData;
         
-        // 保存更新后的数组
-        await browserStorage.set('ad_modifications', modificationsArray);
-        
         console.log(`Saved row ${rowIndex} data:`, rowData);
+      } else {
+        // 如果没有修改，清除该位置的数据
+        modificationsArray[rowIndex] = undefined;
       }
     }
+    
+    // 保存更新后的数组
+    const currentDate = getCurrentDate();
+    await browserStorage.set(`ad_modifications_${currentDate}`, modificationsArray);
     
     // 向content script发送消息，通知页面刷新
     browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -388,12 +318,7 @@ const saveChanges = async () => {
     
     // 保存完成
     saving.value = false;
-    
-    if (modifiedCount === 0) {
-      alert('没有需要保存的修改');
-    } else {
-      alert(`保存成功！共更新 ${modifiedCount} 个广告`);
-    }
+
   } catch (err: any) {
     error.value = `保存失败: ${err.message}`;
     console.error('保存失败:', err);
@@ -583,8 +508,8 @@ const closePopup = () => {
             <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
             </td>
-            <td class="ellipsis-cell" :title="ad.impressions || '-' ">
-              {{ ad.impressions || '-' }}
+            <td class="ellipsis-cell" :title="ad.reach || '-' ">
+              {{ ad.reach || '-' }}
             </td>
             <td>
               <input 
@@ -594,8 +519,8 @@ const closePopup = () => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.reach || '-' ">
-              {{ ad.reach || '-' }}
+            <td class="ellipsis-cell" :title="ad.impressions || '-' ">
+              {{ ad.impressions|| '-' }}
             </td>
             <td>
               <input 
@@ -627,8 +552,8 @@ const closePopup = () => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.cost_per_result || '-' ">
-              {{ ad.cost_per_result || '-' }}</td>
+            <td class="ellipsis-cell" :title="ad.costPerResult || '-' ">
+              {{ ad.costPerResult || '-' }}</td>
             <td class="event-dropdown-cell">
               <div class="event-dropdown" :ref="el => setDropdownRef(el, ad.id)">
                 <button 
