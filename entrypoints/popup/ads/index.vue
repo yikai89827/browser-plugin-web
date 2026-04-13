@@ -484,124 +484,108 @@ const closePopup = () => {
   window.close();
 };
 
+// 检查缓存数据
+const checkCacheOnMount = async () => {
+  try {
+    // 获取当前选择的日期
+    const currentDate = getCurrentDate();
+    
+    // 从content script获取缓存数据，与点击获取按钮的逻辑保持一致
+    const cachedData = await sendMessageToContent('getCachedData', { date: currentDate });
+    console.log('%c从content缓存中读取数据:', 'color: #007bff;font-size: 30px;', cachedData);
+    
+    if (cachedData && cachedData.ads && cachedData.ads.length > 0) {
+      console.log('从content缓存中读取广告数据:', cachedData.ads);
+      ads.value = cachedData.ads;
+      if (cachedData.columnMapping) {
+        columnMapping.value = cachedData.columnMapping;
+      }
+      
+      // 加载并应用修改数据
+      if (cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
+        console.log('从content缓存中读取修改数据:', cachedData.modifications);
+        ads.value.forEach((ad, index) => {
+          const rowData = cachedData.modifications[index];
+          if (rowData && rowData.modifiedFields) {
+            // 恢复增加的值
+            if (rowData.modifiedFields.impressions !== undefined) {
+              ad.increase_impressions = rowData.modifiedFields.impressions;
+            }
+            if (rowData.modifiedFields.reach !== undefined) {
+              ad.increase_reach = rowData.modifiedFields.reach;
+            }
+            if (rowData.modifiedFields.spend !== undefined) {
+              ad.increase_spend = rowData.modifiedFields.spend;
+            }
+            if (rowData.modifiedFields.results !== undefined) {
+              ad.increase_results = rowData.modifiedFields.results;
+            }
+            if (rowData.modifiedFields.website_clicks !== undefined) {
+              ad.increase_website_clicks = rowData.modifiedFields.website_clicks;
+            }
+            if (rowData.modifiedFields.registrations !== undefined) {
+              ad.increase_registrations = rowData.modifiedFields.registrations;
+            }
+            if (rowData.modifiedFields.registration_cost !== undefined) {
+              ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+            }
+          }
+        });
+      }
+    } else {
+      console.log('No cached data for selected date, skipping');
+    }
+  } catch (error) {
+    console.error('Error checking cache on mount:', error);
+  }
+};
+
+// 点击弹窗以外关闭弹窗
+const handleClickOutside = (event: MouseEvent) => {
+  // 检查点击目标是否在弹窗内或在触发按钮内
+  const target = event.target as HTMLElement;
+  let isClickInside = false;
+  
+  // 检查是否点击在弹窗内
+  Object.keys(dropdownOpen.value).forEach(adId => {
+    if (dropdownOpen.value[adId]) {
+      const dropdown = dropdownRefs.value[adId];
+      if (dropdown && dropdown.contains(target)) {
+        isClickInside = true;
+      }
+    }
+  });
+  
+  // 检查是否点击在触发按钮内
+  const eventButtons = document.querySelectorAll('.event-dropdown');
+  eventButtons.forEach(button => {
+    if (button.contains(target)) {
+      isClickInside = true;
+    }
+  });
+  
+  // 如果点击在弹窗以外，关闭所有弹窗
+  if (!isClickInside) {
+    Object.keys(dropdownOpen.value).forEach(adId => {
+      dropdownOpen.value[adId] = false;
+    });
+  }
+};
+
 // 初始化
 onMounted(() => {
-  // 插件窗口打开时，检查当前选择日期的缓存数据
-  const checkCacheOnMount = async () => {
-    try {
-      // 获取当前选择的日期
-      const currentDate = getCurrentDate();
-      
-      // 检查是否有缓存数据
-      const cachedAds = await browserStorage.get(`ads_${currentDate}`);
-      const cachedColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
-      const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
-      
-      if (cachedAds && cachedAds.length > 0) {
-        console.log('从缓存中读取广告数据:', cachedAds);
-        ads.value = cachedAds;
-        if (cachedColumnMapping) {
-          columnMapping.value = cachedColumnMapping;
-        }
-        
-        // 应用修改数据到广告对象中
-        if (modificationsArray && Array.isArray(modificationsArray)) {
-          console.log('从缓存中读取修改数据:', modificationsArray);
-          ads.value.forEach((ad, index) => {
-            const rowData = modificationsArray[index];
-            if (rowData && rowData.modifiedFields) {
-              // 恢复增加的值
-              if (rowData.modifiedFields.impressions !== undefined) {
-                ad.increase_impressions = rowData.modifiedFields.impressions;
-              }
-              if (rowData.modifiedFields.reach !== undefined) {
-                ad.increase_reach = rowData.modifiedFields.reach;
-              }
-              if (rowData.modifiedFields.spend !== undefined) {
-                ad.increase_spend = rowData.modifiedFields.spend;
-              }
-              if (rowData.modifiedFields.results !== undefined) {
-                ad.increase_results = rowData.modifiedFields.results;
-              }
-              if (rowData.modifiedFields.website_clicks !== undefined) {
-                ad.increase_website_clicks = rowData.modifiedFields.website_clicks;
-              }
-              if (rowData.modifiedFields.registrations !== undefined) {
-                ad.increase_registrations = rowData.modifiedFields.registrations;
-              }
-              if (rowData.modifiedFields.registration_cost !== undefined) {
-                ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
-              }
-            }
-          });
-        }
-      } else {
-        console.log('No cached data for selected date, skipping');
-      }
-    } catch (error) {
-      console.error('Error checking cache on mount:', error);
-    }
-  };
-  
   // 执行缓存检查
   checkCacheOnMount();
   
-  // 监听token变化
-  browserStorage.watch('lyResponseHeadersToken', (newToken) => {
-    console.log('Token changed:', newToken);
-    // 可以在这里添加逻辑，比如重新获取广告数据
-  });
-  
-  // 初始检查是否有存储的token
-  browserStorage.get('lyResponseHeadersToken').then(token => {
-    if (token) {
-      console.log('Found stored token:', token);
-    } else {
-      console.log('No stored token found');
-    }
-  });
-  
-  // 点击弹窗以外关闭弹窗
-  const handleClickOutside = (event: MouseEvent) => {
-    // 检查点击目标是否在弹窗内或在触发按钮内
-    const target = event.target as HTMLElement;
-    let isClickInside = false;
-    
-    // 检查是否点击在弹窗内
-    Object.keys(dropdownOpen.value).forEach(adId => {
-      if (dropdownOpen.value[adId]) {
-        const dropdown = dropdownRefs.value[adId];
-        if (dropdown && dropdown.contains(target)) {
-          isClickInside = true;
-        }
-      }
-    });
-    
-    // 检查是否点击在触发按钮内
-    const eventButtons = document.querySelectorAll('.event-dropdown');
-    eventButtons.forEach(button => {
-      if (button.contains(target)) {
-        isClickInside = true;
-      }
-    });
-    
-    // 如果点击在弹窗以外，关闭所有弹窗
-    if (!isClickInside) {
-      Object.keys(dropdownOpen.value).forEach(adId => {
-        dropdownOpen.value[adId] = false;
-      });
-    }
-  };
+
   
   // 挂载时添加事件监听器
-  onMounted(() => {
-    document.addEventListener('click', handleClickOutside);
-  });
-  
-  // 卸载时移除事件监听器
-  onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside);
-  });
+  document.addEventListener('click', handleClickOutside);
+});
+
+// 卸载时移除事件监听器
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 

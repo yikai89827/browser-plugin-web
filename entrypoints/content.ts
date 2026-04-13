@@ -25,6 +25,12 @@ const columnMapping = {
 // 存储列索引
 let columnIndices: Record<string, number> = {};
 
+// 获取当前日期，格式为YYYY-MM-DD
+function getCurrentDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 export default {
   matches: ['*://*.facebook.com/adsmanager/*'],
   main() {
@@ -109,28 +115,107 @@ export default {
       }
     });
     
-    // 等待页面加载完成
-    setTimeout(async () => {
-      // 先获取列索引
-      getColumnIndices();
-      await syncAdDataToPage();
-    }, 0);
+    // 立即开始获取缓存数据
+    let cachedModifications = null;
+    let cachedColumnMapping = null;
+    let isSyncing = false;
+    const currentDate = getCurrentDate();
     
-    // 监听页面变化
-    let timer = null;
-    const observer = new MutationObserver(async () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
-        // 先获取列索引
-        getColumnIndices();
-        await syncAdDataToPage();
-      }, 0);
+    // 预加载缓存数据
+    const loadCachedData = async () => {
+      try {
+        // 尝试获取按日期存储的修改数据
+        let modifications = await browserStorage.get(`ad_modifications_${currentDate}`);
+        let columnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+        
+        // 如果没有按日期存储的数据，尝试获取旧的存储
+        if (!modifications || !Array.isArray(modifications) || modifications.length === 0) {
+          modifications = await browserStorage.get('ad_modifications');
+          console.log('Using old ad_modifications:', modifications);
+        }
+        
+        if (!columnMapping || Object.keys(columnMapping).length === 0) {
+          columnMapping = await browserStorage.get('columnMapping');
+          console.log('Using old columnMapping:', columnMapping);
+        }
+        
+        cachedModifications = modifications;
+        cachedColumnMapping = columnMapping;
+        console.log('Preloaded cached data:', { modifications, columnMapping });
+        
+        // 数据加载完成后立即尝试同步
+        if (cachedModifications) {
+          await syncAdDataToPage();
+        }
+      } catch (error) {
+        console.error('Error loading cached data:', error);
+      }
+    };
+    
+    // 立即加载缓存数据
+    loadCachedData();
+    
+    // 防抖函数
+    let syncTimeout = null;
+    const debouncedSync = async () => {
+      clearTimeout(syncTimeout);
+      syncTimeout = setTimeout(async () => {
+        if (!isSyncing) {
+          isSyncing = true;
+          try {
+            await getColumnIndices();
+            await syncAdDataToPage();
+          } catch (error) {
+            console.error('Error in debounced sync:', error);
+          } finally {
+            isSyncing = false;
+          }
+        }
+      }, 100);
+    };
+    
+    // 使用MutationObserver来拦截页面渲染
+    const observer = new MutationObserver((mutations) => {
+      // 检查是否有表格相关的DOM变化
+      const hasTableChanges = mutations.some(mutation => {
+        // 检查添加的节点
+        const hasAddedTableNodes = Array.from(mutation.addedNodes).some(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as HTMLElement;
+            return element.querySelector('[role="table"]') || 
+                   element.querySelector('[role="row"]') ||
+                   element.querySelector('[role="columnheader"]') ||
+                   element.classList.contains('_3hi') || // 表格容器类
+                   element.classList.contains('_1mie'); // 表格容器类
+          }
+          return false;
+        });
+        
+        // 检查属性变化（例如样式变化）
+        const hasAttributeChanges = mutation.type === 'attributes' && 
+                                   mutation.target.nodeType === Node.ELEMENT_NODE &&
+                                   (mutation.attributeName === 'style' || 
+                                    mutation.attributeName === 'class');
+        
+        return hasAddedTableNodes || hasAttributeChanges;
+      });
+      
+      if (hasTableChanges) {
+        debouncedSync();
+      }
     });
     
+    // 开始观察页面变化
     observer.observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true // 增加对属性变化的监听
     });
+    
+    // 同时设置多个定时器，确保在页面加载的不同阶段都能同步数据
+    setTimeout(debouncedSync, 0);    // 立即执行
+    setTimeout(debouncedSync, 500);  // 半秒后执行
+    setTimeout(debouncedSync, 1000); // 1秒后执行
   }
 };
 
@@ -169,7 +254,18 @@ async function getColumnIndices() {
       }
     });
     
-    console.log('Column indices:', columnIndices);
+    // 确保所有必要的列都被找到
+    const requiredFields = ['impressions', 'reach', 'spend', 'results', 'costPerResult'];
+    const missingFields = requiredFields.filter(field => !columnIndices[field]);
+    
+    if (missingFields.length > 0) {
+      console.log('Missing column indices for fields:', missingFields);
+      // 尝试再次获取，可能表头还没有完全加载
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await getColumnIndices();
+    } else {
+      console.log('Column indices:', columnIndices);
+    }
   } catch (error) {
     console.error('Error getting column indices:', error);
   }
@@ -590,32 +686,27 @@ async function syncAdDataToPage(sortInfo = null) {
     
     console.log('Extension context is valid');
     
-    // 获取当前日期，格式为YYYY-MM-DD
-    const getCurrentDate = () => {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    };
-    
-    // 如果列索引为空，先获取
+    // 确保列索引已获取
     if (Object.keys(columnIndices).length === 0) {
       console.log('Column indices are empty, getting them');
-      getColumnIndices();
+      await getColumnIndices();
       console.log('Got column indices:', columnIndices);
     }
     
     // 获取存储的所有广告数据
     console.log('Getting storage items');
     const currentDate = getCurrentDate();
-    const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
-    if(!modificationsArray) {
-      console.log('No storage items found');
-      return;
-    }
-    console.log('Got storage items:', modificationsArray,);
+    let modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
     
+    // 如果没有按日期存储的数据，尝试获取旧的存储
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
-      console.log('No ad data found in storage');
-      return;
+      modificationsArray = await browserStorage.get('ad_modifications');
+      console.log('Using old ad_modifications:', modificationsArray);
+      
+      if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
+        console.log('No ad data found in storage');
+        return;
+      }
     }
     
     // 过滤出有效的修改数据
@@ -719,8 +810,15 @@ async function syncAdDataToPage(sortInfo = null) {
           console.log('Using old DomColumnMapping:', oldDomColumnMapping);
           DomColumnMapping = oldDomColumnMapping;
         } else {
-          console.error('No DomColumnMapping found');
-          return;
+          // 尝试获取不带日期的columnMapping
+          const oldColumnMapping = await browserStorage.get('columnMapping');
+          if (oldColumnMapping && Object.keys(oldColumnMapping).length > 0) {
+            console.log('Using old columnMapping:', oldColumnMapping);
+            DomColumnMapping = oldColumnMapping;
+          } else {
+            console.error('No DomColumnMapping found');
+            return;
+          }
         }
       }
       
