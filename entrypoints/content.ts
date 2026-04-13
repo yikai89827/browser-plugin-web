@@ -291,18 +291,18 @@ async function extractAdsFromDom() {
         console.log(`Header column ${index}: ${text}`);
         
         // 匹配常见的表头文本
-        if (text.includes('name') || text.includes('名称')) {
+        if (text==='Campaign' || text==='活动'||text==='ad set' || text==='广告组'|| text==='ad' || text==='广告') {
           DomColumnMapping.name = index;
         } else if (text==='results' || text==='成效'|| text==='结果') {
           // 滚动列的索引需要减去固定列的数量
           DomColumnMapping.results = index;
-        } else if (text.includes('amount spent') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
+        } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
           DomColumnMapping.amountSpent = index;
-        } else if (text.includes('impressions') || text.includes('展示') || text.includes('印象')) {
+        } else if (text==='impressions' || text==='展示' || text==='印象') {
           DomColumnMapping.impressions = index;  
-        } else if (text.includes('reach') || text.includes('覆盖') || text.includes('抵达')) {
+        } else if (text==='reach' || text==='覆盖' || text==='抵达') {
           DomColumnMapping.reach = index;
-        } else if (text.includes('cost per result') || text.includes('单次') || text.includes('每次结果成本')) {
+        } else if (text==='cost per result' || text==='单次成效' || text==='每次结果成本') {
           DomColumnMapping.costPerResult = index;
         }
       }
@@ -398,10 +398,11 @@ async function extractAdsFromDom() {
           allTexts.push(`${index}: ${text}`);
         }
       });
-      console.log(`Found scrollable elements:`, allTexts);
+      console.log(`Found scrollable elements:`,DomColumnMapping, allTexts);
       
       // 根据表头映射提取数据
       Object.entries(DomColumnMapping).forEach(([key, index]) => {
+        console.log(`${name}: Processing ${key} at index ${index}`);
         // 计算滚动列的索引（减去固定列的数量）
         const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
         console.log(`${name}: Processing ${key} at fixIndex: ${fixIndex} index :${index}`);
