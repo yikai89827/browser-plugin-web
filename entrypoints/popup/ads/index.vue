@@ -25,7 +25,7 @@ interface AdData {
 }
 
 // 从DOM获取广告数据
-async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any }> {
+async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any }> {
   return new Promise((resolve) => {
     // 向content script发送消息，请求DOM数据
     browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -36,14 +36,18 @@ async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any }
           (response) => {
             console.log('Received ads:', response);
             if (response && response.ads) {
-              resolve({ ads: response.ads, DomColumnMapping: response.DomColumnMapping || {} });
+              resolve({ 
+                ads: response.ads, 
+                DomColumnMapping: response.DomColumnMapping || {},
+                sortInfo: response.sortInfo || { field: null, direction: null }
+              });
             } else {
-              resolve({ ads: [], DomColumnMapping: {} });
+              resolve({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
             }
           }
         );
       } else {
-        resolve({ ads: [], DomColumnMapping: {} });
+        resolve({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
       }
     });
   });
@@ -160,6 +164,7 @@ const fetchAds = async () => {
     const currentDate = getCurrentDate();
     const cachedAds = await browserStorage.get(`ads_${currentDate}`);
     const cachedColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+    const cachedSortInfo = await browserStorage.get(`sortInfo_${currentDate}`);
     
     if (cachedAds && cachedAds.length > 0) {
       console.log('从缓存中读取广告数据:', cachedAds);
@@ -167,11 +172,15 @@ const fetchAds = async () => {
       if (cachedColumnMapping) {
         columnMapping.value = cachedColumnMapping;
       }
+      if (cachedSortInfo) {
+        console.log('从缓存中读取排序信息:', cachedSortInfo);
+      }
     } else {
       // 从DOM获取广告数据
-      const { ads: domAds, DomColumnMapping: receivedColumnMapping } = await getAdsFromDom();
+      const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo } = await getAdsFromDom();
       console.log('Received ads:', domAds);
       console.log('Received column mapping:', receivedColumnMapping);
+      console.log('Received sort info:', receivedSortInfo);
       
       if (domAds && domAds.length > 0) {
         ads.value = domAds;
@@ -180,6 +189,7 @@ const fetchAds = async () => {
         // 缓存数据
         await browserStorage.set(`ads_${currentDate}`, domAds);
         await browserStorage.set(`columnMapping_${currentDate}`, receivedColumnMapping);
+        await browserStorage.set(`sortInfo_${currentDate}`, receivedSortInfo);
         console.log('缓存广告数据成功');
       }
     }
@@ -269,7 +279,8 @@ const saveChanges = async () => {
     let modifiedCount = 0;
     
     // 先获取现有的缓存数组
-    const cachedData = await browserStorage.get('ad_modifications');
+    const currentDate = getCurrentDate();
+    const cachedData = await browserStorage.get(`ad_modifications_${currentDate}`);
     const modificationsArray = Array.isArray(cachedData) ? cachedData : [];
     
     // 确保modificationsArray的长度与ads.value的长度一致
@@ -321,15 +332,18 @@ const saveChanges = async () => {
     }
     
     // 保存更新后的数组
-    const currentDate = getCurrentDate();
     await browserStorage.set(`ad_modifications_${currentDate}`, modificationsArray);
+    
+    // 获取当前排序信息
+    const sortInfo = await browserStorage.get(`sortInfo_${currentDate}`);
+    console.log('Current sort info:', sortInfo);
     
     // 向content script发送消息，通知页面刷新
     browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         browser.tabs.sendMessage(
           tabs[0].id!,
-          { action: 'refreshPageWithData' },
+          { action: 'refreshPageWithData', sortInfo },
           (response) => {
             console.log('Content script response:', response);
           }

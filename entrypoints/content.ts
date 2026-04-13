@@ -44,7 +44,8 @@ export default {
         return true;
       } else if (message.action === 'refreshPageWithData') {
         // 收到刷新页面的请求，重新同步数据
-        syncAdDataToPage().then(() => {
+        const sortInfo = message.sortInfo;
+        syncAdDataToPage(sortInfo).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('Error refreshing page data:', error);
@@ -73,10 +74,10 @@ export default {
       // }, 2000);
     // });
     
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    // observer.observe(document.body, {
+    //   childList: true,
+    //   subtree: true
+    // });
   }
 };
 
@@ -283,12 +284,49 @@ async function extractAdsFromDom() {
     // 解析表头，确定各列的索引
     const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
     
+    // 存储排序信息
+    const sortInfo = {
+      field: null,
+      direction: null
+    };
+    
     // 首先找出固定列的数量（通常只有名称列是固定的）
     headerCells.forEach((cell, index) => {
       // 获取单元格的文本内容，排除子元素的文本
       const text = cell.textContent?.trim().toLowerCase();
       if (text) {
         console.log(`Header column ${index}: ${text}`);
+        
+        // 检查排序箭头
+        const arrowElement = cell.querySelector('div[role="img"]');
+        if (arrowElement) {
+          const arrowText = arrowElement.textContent?.trim();
+          if (arrowText === '↓') {
+            sortInfo.direction = 'desc';
+            // 确定排序字段
+            if (text==='results' || text==='成效'|| text==='结果') {
+              sortInfo.field = 'results';
+            } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
+              sortInfo.field = 'spend';
+            } else if (text==='impressions' || text==='展示' || text==='印象') {
+              sortInfo.field = 'impressions';  
+            } else if (text==='reach' || text==='覆盖' || text==='抵达') {
+              sortInfo.field = 'reach';
+            }
+          } else if (arrowText === '↑') {
+            sortInfo.direction = 'asc';
+            // 确定排序字段
+            if (text==='results' || text==='成效'|| text==='结果') {
+              sortInfo.field = 'results';
+            } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
+              sortInfo.field = 'spend';
+            } else if (text==='impressions' || text==='展示' || text==='印象') {
+              sortInfo.field = 'impressions';  
+            } else if (text==='reach' || text==='覆盖' || text==='抵达') {
+              sortInfo.field = 'reach';
+            }
+          }
+        }
         
         // 匹配常见的表头文本
         if (text==='Campaign' || text==='活动'||text==='ad set' || text==='广告组'|| text==='ad' || text==='广告') {
@@ -307,6 +345,7 @@ async function extractAdsFromDom() {
         }
       }
     });
+    console.log('Sort info:', sortInfo);
     console.log('Dom Column mapping:', DomColumnMapping);
     
     // 获取表格数据行对
@@ -466,12 +505,12 @@ async function extractAdsFromDom() {
     console.error('Error extracting ads from DOM:', error);
   }
   
-  return { ads, DomColumnMapping };
+  return { ads, DomColumnMapping, sortInfo };
 }
 
 // 同步广告数据到页面
-async function syncAdDataToPage() {
-  console.log('Starting syncAdDataToPage function');
+async function syncAdDataToPage(sortInfo = null) {
+  console.log('Starting syncAdDataToPage function with sort info:', sortInfo);
   try {
     // 检查扩展上下文是否有效
     if (!browser || !browser.storage) {
@@ -507,6 +546,27 @@ async function syncAdDataToPage() {
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
       console.log('No ad data found in storage');
       return;
+    }
+    
+    // 过滤出有效的修改数据
+    const validModifications = modificationsArray.filter(item => item !== undefined);
+    console.log('Valid modifications:', validModifications);
+    
+    // 根据排序信息对数据进行排序
+    if (sortInfo && sortInfo.field && sortInfo.direction) {
+      console.log('Sorting data by:', sortInfo.field, sortInfo.direction);
+      validModifications.sort((a, b) => {
+        const field = sortInfo.field;
+        const valueA = a.completeData[field] || 0;
+        const valueB = b.completeData[field] || 0;
+        
+        if (sortInfo.direction === 'asc') {
+          return valueA - valueB;
+        } else {
+          return valueB - valueA;
+        }
+      });
+      console.log('Sorted modifications:', validModifications);
     }
     
     console.log('Found modifications array:', modificationsArray);
@@ -550,7 +610,14 @@ async function syncAdDataToPage() {
       const adId = `ad_${rowIndex}`;
       
       // 从修改数组中获取对应行的数据
-      const rowData = modificationsArray[rowIndex];
+      let rowData;
+      if (sortInfo && sortInfo.field && sortInfo.direction) {
+        // 如果有排序信息，使用排序后的数据
+        rowData = validModifications[rowIndex];
+      } else {
+        // 否则使用原始数组的数据
+        rowData = modificationsArray[rowIndex];
+      }
       
       if (!rowData) return;
       
@@ -640,6 +707,17 @@ async function syncAdDataToPage() {
             
           // 只有当当前列有修改时才更新
           if (hasModification) {
+            // 检查原始值是否为--且新增值为0
+            const currentText = element.textContent?.trim();
+            const isOriginalDash = currentText.includes('—');
+            const isIncreaseZero = increaseValue === 0;
+            
+            // 如果原始值是--且新增值为0，则不更新
+            if (isOriginalDash && isIncreaseZero) {
+              console.log(`Skipping update for ad ${name} column ${index}: original value is — and increase value is 0`);
+              return;
+            }
+            
             // 当increaseValue为0时，也需要更新，恢复为原始值
             // 计算新值：使用插件传来的原值 + 增加的值
             const newValue = originalValueFromData + increaseValue;
