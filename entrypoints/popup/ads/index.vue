@@ -21,6 +21,12 @@ interface AdData {
   increase_results: number;
   costPerResult: number;
   other_events: number;
+  website_clicks: number;
+  increase_website_clicks: number;
+  registrations: number;
+  increase_registrations: number;
+  registration_cost: number;
+  increase_registration_cost: number;
   [key: string]: any;
 }
 
@@ -73,7 +79,9 @@ const selectedDate = ref(new Date().toISOString().split('T')[0]);
 const dataProtectionEnabled = ref(true);
 const dropdownOpen = ref<Record<string, boolean>>({});
 const dropdownRefs = ref<Record<string, HTMLElement>>({});
-const dropdownPositions = ref<Record<string, { top: number; left: number }>>({});
+const dropdownPositions = ref<Record<string, {
+  right: any; top: number; left: number 
+}>>({});
 
 // 获取日期，优先使用选择的日期，无选择时使用当天日期
 const getCurrentDate = () => {
@@ -87,13 +95,11 @@ const getCurrentDate = () => {
 // 列映射，用于存储从content script返回的列索引信息
 const columnMapping = ref<any>({});
 
-// 事件数据
+// 其他数据管理项
 const events = ref([
-  { id: '1', name: '查看详情' },
-  { id: '2', name: '编辑广告' },
-  { id: '3', name: '复制广告' },
-  { id: '4', name: '暂停广告' },
-  { id: '5', name: '删除广告' }
+  { id: 'website_clicks', name: '网站点击' },
+  { id: 'registrations', name: '注册' },
+  { id: 'registration_cost', name: '注册成本' }
 ]);
 
 // // 广告账户ID
@@ -186,18 +192,27 @@ const fetchAds = async () => {
           const rowData = cachedData.modifications[index];
           if (rowData && rowData.modifiedFields) {
             // 恢复增加的值
-            if (rowData.modifiedFields.impressions !== undefined) {
-              ad.increase_impressions = rowData.modifiedFields.impressions;
-            }
-            if (rowData.modifiedFields.reach !== undefined) {
-              ad.increase_reach = rowData.modifiedFields.reach;
-            }
-            if (rowData.modifiedFields.spend !== undefined) {
-              ad.increase_spend = rowData.modifiedFields.spend;
-            }
-            if (rowData.modifiedFields.results !== undefined) {
-              ad.increase_results = rowData.modifiedFields.results;
-            }
+          if (rowData.modifiedFields.impressions !== undefined) {
+            ad.increase_impressions = rowData.modifiedFields.impressions;
+          }
+          if (rowData.modifiedFields.reach !== undefined) {
+            ad.increase_reach = rowData.modifiedFields.reach;
+          }
+          if (rowData.modifiedFields.spend !== undefined) {
+            ad.increase_spend = rowData.modifiedFields.spend;
+          }
+          if (rowData.modifiedFields.results !== undefined) {
+            ad.increase_results = rowData.modifiedFields.results;
+          }
+          if (rowData.modifiedFields.website_clicks !== undefined) {
+            ad.increase_website_clicks = rowData.modifiedFields.website_clicks;
+          }
+          if (rowData.modifiedFields.registrations !== undefined) {
+            ad.increase_registrations = rowData.modifiedFields.registrations;
+          }
+          if (rowData.modifiedFields.registration_cost !== undefined) {
+            ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+          }
           }
         });
       }
@@ -293,32 +308,44 @@ const saveChanges = async () => {
     
     for (const ad of ads.value) {
       // 检查是否有数值被修改
-      const hasChanges = 
-        ad.increase_impressions !== undefined ||
-        ad.increase_reach !== undefined ||
-        ad.increase_spend !== undefined ||
-        ad.increase_results !== undefined;
-      
-      // 获取当前行在表格中的索引
-      const rowIndex = ads.value.indexOf(ad);
-      
-      if (hasChanges) {
-        modifiedCount++;
-        console.log(`Modified ad: ${ad.id}`, ad);
-        // 构建修改的字段数据
-        const modifiedFields: any= {};
-        if (ad.increase_impressions !== undefined) {
-          modifiedFields.impressions = ad.increase_impressions;
-        }
-        if (ad.increase_reach !== undefined) {
-          modifiedFields.reach = ad.increase_reach;
-        }
-        if (ad.increase_spend !== undefined) {
-          modifiedFields.spend = ad.increase_spend;
-        }
-        if (ad.increase_results !== undefined) {
-          modifiedFields.results = ad.increase_results;
-        }
+            const hasChanges = 
+              ad.increase_impressions !== undefined ||
+              ad.increase_reach !== undefined ||
+              ad.increase_spend !== undefined ||
+              ad.increase_results !== undefined ||
+              ad.increase_website_clicks !== undefined ||
+              ad.increase_registrations !== undefined ||
+              ad.increase_registration_cost !== undefined;
+            
+            // 获取当前行在表格中的索引
+            const rowIndex = ads.value.indexOf(ad);
+            
+            if (hasChanges) {
+              modifiedCount++;
+              console.log(`Modified ad: ${ad.id}`, ad);
+              // 构建修改的字段数据
+              const modifiedFields: any= {};
+              if (ad.increase_impressions !== undefined) {
+                modifiedFields.impressions = ad.increase_impressions;
+              }
+              if (ad.increase_reach !== undefined) {
+                modifiedFields.reach = ad.increase_reach;
+              }
+              if (ad.increase_spend !== undefined) {
+                modifiedFields.spend = ad.increase_spend;
+              }
+              if (ad.increase_results !== undefined) {
+                modifiedFields.results = ad.increase_results;
+              }
+              if (ad.increase_website_clicks !== undefined) {
+                modifiedFields.website_clicks = ad.increase_website_clicks;
+              }
+              if (ad.increase_registrations !== undefined) {
+                modifiedFields.registrations = ad.increase_registrations;
+              }
+              if (ad.increase_registration_cost !== undefined) {
+                modifiedFields.registration_cost = ad.increase_registration_cost;
+              }
         
         // 构建行数据对象，确保只包含可序列化的属性
         const rowData = {
@@ -337,7 +364,13 @@ const saveChanges = async () => {
             results: ad.results,
             increase_results: ad.increase_results,
             costPerResult: ad.costPerResult,
-            other_events: ad.other_events
+            other_events: ad.other_events,
+            website_clicks: ad.website_clicks || 0,
+            increase_website_clicks: ad.increase_website_clicks || 0,
+            registrations: ad.registrations || 0,
+            increase_registrations: ad.increase_registrations || 0,
+            registration_cost: ad.registration_cost || 0,
+            increase_registration_cost: ad.increase_registration_cost || 0
           },
           modifiedFields: modifiedFields
         };
@@ -389,26 +422,22 @@ const setDropdownRef = (el: HTMLElement | null, adId: string) => {
 const toggleDropdown = (adId: string, event: MouseEvent) => {
   const isOpen = !dropdownOpen.value[adId];
   dropdownOpen.value[adId] = isOpen;
-  
-  if (isOpen) {
-    // 计算下拉菜单位置
-    const button = event.target as HTMLElement;
-    const rect = button.getBoundingClientRect();
-    dropdownPositions.value[adId] = {
-      top: rect.bottom + window.scrollY,
-      left: rect.left + window.scrollX - 60 // 向左偏移，使菜单右对齐
-    };
-  }
+};
+
+// 获取其他数据的原始值
+const getOriginalValue = (ad: AdData, eventId: string): number => {
+  return ad[eventId] || 0;
+};
+
+// 获取其他数据的增加的值
+const getIncreaseValue = (ad: AdData, eventId: string): number => {
+  const increaseField = `increase_${eventId}`;
+  return ad[increaseField] || 0;
 };
 
 // 获取下拉菜单样式
 const getDropdownStyle = (adId: string) => {
-  const position = dropdownPositions.value[adId];
-  if (!position) return {};
-  return {
-    top: `${position.top}px`,
-    left: `${position.left}px`
-  };
+  return {}; // 样式已通过CSS固定，无需动态计算
 };
 
 // 触发事件
@@ -672,9 +701,23 @@ onMounted(() => {
                     v-for="event in events" 
                     :key="event.id"
                     class="event-dropdown-item"
-                    @click="triggerEvent(ad.id, event.id)"
                   >
-                    {{ event.name }}
+                    <div class="event-item-container">
+                      <div class="event-item-label">
+                        {{ event.name }}: 
+                        <span class="event-item-original">{{ getOriginalValue(ad, event.id) }}</span>
+                      </div>
+                      <div class="event-item-input">
+                        增加: {{   }}
+                        <input 
+                          type="number" 
+                          v-model.number="ad[`increase_${event.id}`]" 
+                          class="event-item-input-field"
+                          min="0"
+                          step="1"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -989,21 +1032,21 @@ input:checked + .slider:before {
 }
 
 .event-dropdown-menu {
-  position: fixed;
   background-color: #000;
   border: 1px solid #e8e8e8;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 80px;
-  z-index: 9999;
+  min-width: 250px;
+  z-index: 99999; /* 增加z-index确保悬浮于表格上面 */
   margin-top: 4px;
+  position: fixed; /* 改为固定定位 */
+  right: 70px; /* 右侧距离表格边缘70px */
+  top: 200px; /* 顶部距离，使弹窗在表头以下 */
 }
 
 .event-dropdown-item {
   padding: 8px 12px;
-  cursor: pointer;
   transition: background-color 0.2s;
-  white-space: nowrap;
   color: #fff;
   border-bottom: 1px solid #fff;
 }
@@ -1011,5 +1054,51 @@ input:checked + .slider:before {
 .event-dropdown-item:hover {
   background-color: #f5f5f5;
   color: #000;
+}
+
+.event-item-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.event-item-label {
+  font-size: 14px;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.event-item-original {
+  font-weight: bold;
+  width: 80px;
+  text-align: right;
+}
+
+.event-item-input {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #fff;
+}
+
+.event-item-input-field {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: #fff;
+  color: #000;
+  text-align: right;
+}
+
+.event-item-input-field:focus {
+  outline: none;
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
 }
 </style>

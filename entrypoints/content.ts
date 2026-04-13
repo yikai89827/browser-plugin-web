@@ -423,7 +423,13 @@ async function extractAdsFromDom() {
         results: 0,
         increase_results: 0,
         costPerResult: 0,
-        other_events: 0
+        other_events: 0,
+        website_clicks: 0,
+        increase_website_clicks: 0,
+        registrations: 0,
+        increase_registrations: 0,
+        registration_cost: 0,
+        increase_registration_cost: 0
       };
       
       // 检查本地存储中是否有对应的广告数据
@@ -445,6 +451,9 @@ async function extractAdsFromDom() {
             ad.increase_reach = rowData.modifiedFields.reach || 0;
             ad.increase_spend = rowData.modifiedFields.spend || 0;
             ad.increase_results = rowData.modifiedFields.results || 0;
+            ad.increase_website_clicks = rowData.modifiedFields.website_clicks || 0;
+            ad.increase_registrations = rowData.modifiedFields.registrations || 0;
+            ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
             console.log(`Found stored ad data for ${name}:`, rowData);
           }
         }
@@ -773,6 +782,36 @@ async function syncAdDataToPage(sortInfo = null) {
             if (rowData?.modifiedFields?.costPerResult !== undefined) {
               increaseValue = rowData.modifiedFields.costPerResult || 0;
               originalValueFromData = rowData.completeData?.costPerResult || 0;
+              hasModification = true;
+              console.log(`Processing element at index ${index}: ${text}`);
+              console.log(`Original value from data: `, originalValueFromData);
+              console.log(`Increase value: `, increaseValue);
+            }
+          } else if (index === DomColumnMapping.website_clicks-fixIndex) {
+            // 网站点击 (website_clicks)
+            if (rowData?.modifiedFields?.website_clicks !== undefined) {
+              increaseValue = rowData.modifiedFields.website_clicks || 0;
+              originalValueFromData = rowData.completeData?.website_clicks || 0;
+              hasModification = true;
+              console.log(`Processing element at index ${index}: ${text}`);
+              console.log(`Original value from data: `, originalValueFromData);
+              console.log(`Increase value: `, increaseValue);
+            }
+          } else if (index === DomColumnMapping.registrations-fixIndex) {
+            // 注册 (registrations)
+            if (rowData?.modifiedFields?.registrations !== undefined) {
+              increaseValue = rowData.modifiedFields.registrations || 0;
+              originalValueFromData = rowData.completeData?.registrations || 0;
+              hasModification = true;
+              console.log(`Processing element at index ${index}: ${text}`);
+              console.log(`Original value from data: `, originalValueFromData);
+              console.log(`Increase value: `, increaseValue);
+            }
+          } else if (index === DomColumnMapping.registration_cost-fixIndex) {
+            // 注册成本 (registration_cost)
+            if (rowData?.modifiedFields?.registration_cost !== undefined) {
+              increaseValue = rowData.modifiedFields.registration_cost || 0;
+              originalValueFromData = rowData.completeData?.registration_cost || 0;
               hasModification = true;
               console.log(`Processing element at index ${index}: ${text}`);
               console.log(`Original value from data: `, originalValueFromData);
