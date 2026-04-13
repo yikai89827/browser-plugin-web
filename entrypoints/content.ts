@@ -110,27 +110,27 @@ export default {
     });
     
     // 等待页面加载完成
-    // setTimeout(async () => {
-    //   // 先获取列索引
-    //   getColumnIndices();
-    //   await syncAdDataToPage();
-    // }, 2000);
+    setTimeout(async () => {
+      // 先获取列索引
+      getColumnIndices();
+      await syncAdDataToPage();
+    }, 0);
     
-    // // 监听页面变化
-    // let timer = null;
-    // const observer = new MutationObserver(async () => {
-      //clearTimeout(timer);
-      // timer = setTimeout(async () => {
-      //   // 先获取列索引
-      //   getColumnIndices();
-      //   await syncAdDataToPage();
-      // }, 2000);
-    // });
+    // 监听页面变化
+    let timer = null;
+    const observer = new MutationObserver(async () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        // 先获取列索引
+        getColumnIndices();
+        await syncAdDataToPage();
+      }, 0);
+    });
     
-    // observer.observe(document.body, {
-    //   childList: true,
-    //   subtree: true
-    // });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   }
 };
 

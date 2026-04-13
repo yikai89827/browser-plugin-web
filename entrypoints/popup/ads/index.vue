@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { browser } from "wxt/browser";
 import axios from "axios";
 import { browserStorage } from "../../../utils/storage";
@@ -420,6 +420,14 @@ const setDropdownRef = (el: HTMLElement | null, adId: string) => {
 
 // 切换下拉菜单
 const toggleDropdown = (adId: string, event: MouseEvent) => {
+  // 先关闭所有其他弹窗
+  Object.keys(dropdownOpen.value).forEach(id => {
+    if (id !== adId) {
+      dropdownOpen.value[id] = false;
+    }
+  });
+  
+  // 切换当前弹窗的状态
   const isOpen = !dropdownOpen.value[adId];
   dropdownOpen.value[adId] = isOpen;
 };
@@ -515,6 +523,15 @@ onMounted(() => {
               if (rowData.modifiedFields.results !== undefined) {
                 ad.increase_results = rowData.modifiedFields.results;
               }
+              if (rowData.modifiedFields.website_clicks !== undefined) {
+                ad.increase_website_clicks = rowData.modifiedFields.website_clicks;
+              }
+              if (rowData.modifiedFields.registrations !== undefined) {
+                ad.increase_registrations = rowData.modifiedFields.registrations;
+              }
+              if (rowData.modifiedFields.registration_cost !== undefined) {
+                ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+              }
             }
           });
         }
@@ -542,6 +559,48 @@ onMounted(() => {
     } else {
       console.log('No stored token found');
     }
+  });
+  
+  // 点击弹窗以外关闭弹窗
+  const handleClickOutside = (event: MouseEvent) => {
+    // 检查点击目标是否在弹窗内或在触发按钮内
+    const target = event.target as HTMLElement;
+    let isClickInside = false;
+    
+    // 检查是否点击在弹窗内
+    Object.keys(dropdownOpen.value).forEach(adId => {
+      if (dropdownOpen.value[adId]) {
+        const dropdown = dropdownRefs.value[adId];
+        if (dropdown && dropdown.contains(target)) {
+          isClickInside = true;
+        }
+      }
+    });
+    
+    // 检查是否点击在触发按钮内
+    const eventButtons = document.querySelectorAll('.event-dropdown');
+    eventButtons.forEach(button => {
+      if (button.contains(target)) {
+        isClickInside = true;
+      }
+    });
+    
+    // 如果点击在弹窗以外，关闭所有弹窗
+    if (!isClickInside) {
+      Object.keys(dropdownOpen.value).forEach(adId => {
+        dropdownOpen.value[adId] = false;
+      });
+    }
+  };
+  
+  // 挂载时添加事件监听器
+  onMounted(() => {
+    document.addEventListener('click', handleClickOutside);
+  });
+  
+  // 卸载时移除事件监听器
+  onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside);
   });
 });
 </script>
@@ -708,7 +767,7 @@ onMounted(() => {
                         <span class="event-item-original">{{ getOriginalValue(ad, event.id) }}</span>
                       </div>
                       <div class="event-item-input">
-                        增加: {{   }}
+                        增加:
                         <input 
                           type="number" 
                           v-model.number="ad[`increase_${event.id}`]" 
@@ -1052,7 +1111,7 @@ input:checked + .slider:before {
 }
 
 .event-dropdown-item:hover {
-  background-color: #f5f5f5;
+  background-color: #c1c1c1;
   color: #000;
 }
 
