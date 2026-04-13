@@ -15,8 +15,8 @@ interface AdData {
   increase_impressions: number;
   reach: number;
   increase_reach: number;
-  spend: number;
-  increase_spend: number;
+  amountSpent: number;
+  increase_amountSpent: number;
   results: number;
   increase_results: number;
   costPerResult: number;
@@ -130,8 +130,8 @@ const fetchAds = async () => {
   //     increase_impressions: 10,
   //     reach: 800,
   //     increase_reach: 5,
-  //     spend: 100,
-  //     increase_spend: 2,
+  //     amountSpent: 100,
+  //     increase_amountSpent: 2,
   //     results: 50,
   //     increase_results: 15,
   //     costPerResult: 2,
@@ -147,8 +147,8 @@ const fetchAds = async () => {
   //     increase_impressions: 15,
   //     reach: 1500,
   //     increase_reach: 8,
-  //     spend: 200,
-  //     increase_spend: 5,
+  //     amountSpent: 200,
+  //     increase_amountSpent: 5,
   //     results: 100,
   //     increase_results: 20,
   //     costPerResult: 2,
@@ -256,7 +256,7 @@ const saveChanges = async () => {
       const hasChanges = 
         ad.increase_impressions !== undefined ||
         ad.increase_reach !== undefined ||
-        ad.increase_spend !== undefined ||
+        ad.increase_amountSpent !== undefined ||
         ad.increase_results !== undefined;
       
       // 获取当前行在表格中的索引
@@ -273,8 +273,8 @@ const saveChanges = async () => {
         if (ad.increase_reach !== undefined) {
           modifiedFields.reach = ad.increase_reach;
         }
-        if (ad.increase_spend !== undefined) {
-          modifiedFields.spend = ad.increase_spend;
+        if (ad.increase_amountSpent !== undefined) {
+          modifiedFields.amountSpent = ad.increase_amountSpent;
         }
         if (ad.increase_results !== undefined) {
           modifiedFields.results = ad.increase_results;
@@ -555,13 +555,13 @@ onMounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.spend || '0' ">
-              {{ ad.spend || '0' }}
+            <td class="ellipsis-cell" :title="ad.amountSpent || '0' ">
+              {{ ad.amountSpent || '0' }}
             </td>
             <td>
               <input 
                 type="number" 
-                v-model="ad.increase_spend" 
+                v-model="ad.increase_amountSpent" 
                 class="editable-input"
                 min="0"
               />

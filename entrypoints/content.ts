@@ -7,7 +7,7 @@ interface AdData {
   name: string;
   increase_impressions: number;
   increase_reach: number;
-  increase_spend: number;
+  increase_amountSpent: number;
   increase_results: number;
   updated_at: string;
 }
@@ -17,7 +17,7 @@ const columnMapping = {
   name: 'reporting_table_column_name',//广告名称
   impressions: 'reporting_table_column_impressions',//展示次数
   reach: 'reporting_table_column_reach',//覆盖次数
-  spend: 'reporting_table_column_spend',//花费
+  amountSpent: 'reporting_table_column_amountSpent',//花费
   results: 'reporting_table_column_results',//成效
   costPerResult: 'reporting_table_column_costPerResult',//单次成效
 };
@@ -296,8 +296,8 @@ async function extractAdsFromDom() {
         } else if (text==='results' || text==='成效'|| text==='结果') {
           // 滚动列的索引需要减去固定列的数量
           DomColumnMapping.results = index;
-        } else if (text.includes('spend') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
-          DomColumnMapping.spend = index;
+        } else if (text.includes('amountSpent') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
+          DomColumnMapping.amountSpent = index;
         } else if (text.includes('impression') || text.includes('展示') || text.includes('印象')) {
           DomColumnMapping.impressions = index;  
         } else if (text.includes('reach') || text.includes('覆盖') || text.includes('抵达')) {
@@ -356,8 +356,8 @@ async function extractAdsFromDom() {
         increase_impressions: 0,
         reach: 0,
         increase_reach: 0,
-        spend: 0,
-        increase_spend: 0,
+        amountSpent: 0,
+        increase_amountSpent: 0,
         results: 0,
         increase_results: 0,
         costPerResult: 0,
@@ -381,7 +381,7 @@ async function extractAdsFromDom() {
             // 恢复增加的值
             ad.increase_impressions = rowData.modifiedFields.impressions || 0;
             ad.increase_reach = rowData.modifiedFields.reach || 0;
-            ad.increase_spend = rowData.modifiedFields.spend || 0;
+            ad.increase_amountSpent = rowData.modifiedFields.amountSpent || 0;
             ad.increase_results = rowData.modifiedFields.results || 0;
             console.log(`Found stored ad data for ${name}:`, rowData);
           }
@@ -409,25 +409,6 @@ async function extractAdsFromDom() {
         // 尝试使用计算的fixIndex
         let targetElement = scrollableElements[fixIndex];
         
-        // 如果找不到元素，尝试遍历所有滚动元素来查找正确的数据
-        if (!targetElement) {
-          console.log(`${name}: Element not found at fixIndex ${fixIndex}, searching through all scrollable elements`);
-          
-          // 遍历所有滚动元素，尝试找到包含数字的元素
-          for (let i = 0; i < scrollableElements.length; i++) {
-            const element = scrollableElements[i];
-            const text = element.textContent?.trim();
-            if (text) {
-              const cleanedText = text.replace(/[^0-9.]/g, '');
-              const num = parseFloat(cleanedText);
-              if (!isNaN(num) || cleanedText === '0') {
-                console.log(`${name}: Found potential ${key} value at index ${i}: ${text}`);
-                targetElement = element;
-                break;
-              }
-            }
-          }
-        }
         
         if (targetElement) {
           const text = targetElement.textContent?.trim();
@@ -447,8 +428,8 @@ async function extractAdsFromDom() {
                   originalValue = originalValue - ad.increase_impressions;
                 } else if (key === 'reach' && ad.increase_reach !== undefined && ad.increase_reach !== 0) {
                   originalValue = originalValue - ad.increase_reach;
-                } else if (key === 'spend' && ad.increase_spend !== undefined && ad.increase_spend !== 0) {
-                  originalValue = originalValue - ad.increase_spend;
+                } else if (key === 'amountSpent' && ad.increase_amountSpent !== undefined && ad.increase_amountSpent !== 0) {
+                  originalValue = originalValue - ad.increase_amountSpent;
                 } else if (key === 'results' && ad.increase_results !== undefined && ad.increase_results !== 0) {
                   originalValue = originalValue - ad.increase_results;
                 }
@@ -624,11 +605,11 @@ async function syncAdDataToPage() {
               console.log(`Original value from data: `, originalValueFromData);
               console.log(`Increase value: `, increaseValue);
             }
-          } else if (index === DomColumnMapping.spend-fixIndex) {
-            // 花费 (spend)
-            if (rowData?.modifiedFields?.spend !== undefined) {
-              increaseValue = rowData.modifiedFields.spend || 0;
-              originalValueFromData = rowData.completeData?.spend || 0;
+          } else if (index === DomColumnMapping.amountSpent-fixIndex) {
+            // 花费 (amountSpent)
+            if (rowData?.modifiedFields?.amountSpent !== undefined) {
+              increaseValue = rowData.modifiedFields.amountSpent || 0;
+              originalValueFromData = rowData.completeData?.amountSpent || 0;
               hasModification = true;
               console.log(`Processing element at index ${index}: ${text}`);
               console.log(`Original value from data: `, originalValueFromData);
@@ -682,9 +663,9 @@ async function syncAdDataToPage() {
                 const originalText = el.innerText;
                 
                 // 根据字段类型决定显示格式
-                if (index === DomColumnMapping.spend-fixIndex) {
+                if (index === DomColumnMapping.amountSpent-fixIndex) {
                   // 花费字段：保留2位小数，保留货币符号
-                  console.log(`Updating spend field: ${newValue.toFixed(2)}`);
+                  console.log(`Updating amountSpent field: ${newValue.toFixed(2)}`);
                   
                   // 提取货币符号（如果有）
                   const currencyMatch = originalText.match(/^[^0-9]+/);
@@ -695,7 +676,7 @@ async function syncAdDataToPage() {
                   el.innerText = currencySymbol + newValue.toFixed(2);
                 } else {
                   // 其他字段：整数
-                  console.log(`Updating non-spend field: ${Math.round(newValue)}`);
+                  console.log(`Updating non-amountSpent field: ${Math.round(newValue)}`);
                   el.innerText = Math.round(newValue).toString();
                 }
               }
