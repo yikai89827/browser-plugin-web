@@ -391,22 +391,46 @@ async function extractAdsFromDom() {
       }
       
       // // 存储所有文本内容用于调试
-      // const allTexts = [];
-      // Array.from(scrollableElements).forEach((element, index) => {
-      //   const text = element.textContent?.trim();
-      //   if (text) {
-      //     allTexts.push(`${index}: ${text}`);
-      //   }
-      // });
-      // console.log(`Found scrollable elements:`, allTexts);
+      const allTexts = [];
+      Array.from(scrollableElements).forEach((element, index) => {
+        const text = element.textContent?.trim();
+        if (text) {
+          allTexts.push(`${index}: ${text}`);
+        }
+      });
+      console.log(`Found scrollable elements:`, allTexts);
       
       // 根据表头映射提取数据
       Object.entries(DomColumnMapping).forEach(([key, index]) => {
+        // 计算滚动列的索引（减去固定列的数量）
         const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
         console.log(`${name}: Processing ${key} at fixIndex: ${fixIndex} index :${index}`);
         
-        if (scrollableElements[fixIndex]) {
-          const text = scrollableElements[fixIndex].textContent?.trim();
+        // 尝试使用计算的fixIndex
+        let targetElement = scrollableElements[fixIndex];
+        
+        // 如果找不到元素，尝试遍历所有滚动元素来查找正确的数据
+        if (!targetElement) {
+          console.log(`${name}: Element not found at fixIndex ${fixIndex}, searching through all scrollable elements`);
+          
+          // 遍历所有滚动元素，尝试找到包含数字的元素
+          for (let i = 0; i < scrollableElements.length; i++) {
+            const element = scrollableElements[i];
+            const text = element.textContent?.trim();
+            if (text) {
+              const cleanedText = text.replace(/[^0-9.]/g, '');
+              const num = parseFloat(cleanedText);
+              if (!isNaN(num) || cleanedText === '0') {
+                console.log(`${name}: Found potential ${key} value at index ${i}: ${text}`);
+                targetElement = element;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (targetElement) {
+          const text = targetElement.textContent?.trim();
           if (text) {
             console.log(`${name}: Processing ${key} at index ${fixIndex}: ${text}`);
             // 尝试解析数值
@@ -434,6 +458,8 @@ async function extractAdsFromDom() {
               console.log(`Extracted ${key} for ${name}: ${ad[key]} (raw: ${text}, increase: ${ad[`increase_${key}`]})`);
             }
           }
+        } else {
+          console.log(`${name}: No element found for ${key} at index ${fixIndex}`);
         }
       });
       

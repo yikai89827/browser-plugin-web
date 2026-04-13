@@ -539,7 +539,7 @@ onMounted(() => {
             <td>
               <input 
                 type="number" 
-                v-model="ad.increase_impressions" 
+                v-model="ad.increase_reach" 
                 class="editable-input"
                 min="0"
               />
@@ -550,7 +550,7 @@ onMounted(() => {
             <td>
               <input 
                 type="number" 
-                v-model="ad.increase_reach" 
+                v-model="ad.increase_impressions" 
                 class="editable-input"
                 min="0"
               />
