@@ -24,33 +24,38 @@ interface AdData {
   [key: string]: any;
 }
 
-// 从DOM获取广告数据
-async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any }> {
+// 向content script发送消息的通用函数
+function sendMessageToContent(action: string, data?: any): Promise<any> {
   return new Promise((resolve) => {
-    // 向content script发送消息，请求DOM数据
     browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         browser.tabs.sendMessage(
           tabs[0].id!,
-          { action: 'getAdsFromDom' },
+          { action, ...data },
           (response) => {
-            console.log('Received ads:', response);
-            if (response && response.ads) {
-              resolve({ 
-                ads: response.ads, 
-                DomColumnMapping: response.DomColumnMapping || {},
-                sortInfo: response.sortInfo || { field: null, direction: null }
-              });
-            } else {
-              resolve({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
-            }
+            console.log(`Received response for ${action}:`, response);
+            resolve(response);
           }
         );
       } else {
-        resolve({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
+        resolve(null);
       }
     });
   });
+}
+
+// 从DOM获取广告数据
+async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any }> {
+  const response = await sendMessageToContent('getAdsFromDom');
+  if (response && response.ads) {
+    return { 
+      ads: response.ads, 
+      DomColumnMapping: response.DomColumnMapping || {},
+      sortInfo: response.sortInfo || { field: null, direction: null }
+    };
+  } else {
+    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } };
+  }
 }
 
 // 响应数据类型
@@ -160,20 +165,41 @@ const fetchAds = async () => {
   //   }
   // ];
   try {
-    // 先从缓存中查询数据
+    // 先从content script获取缓存数据
     const currentDate = getCurrentDate();
-    const cachedAds = await browserStorage.get(`ads_${currentDate}`);
-    const cachedColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
-    const cachedSortInfo = await browserStorage.get(`sortInfo_${currentDate}`);
+    const cachedData = await sendMessageToContent('getCachedData', { date: currentDate });
     
-    if (cachedAds && cachedAds.length > 0) {
-      console.log('从缓存中读取广告数据:', cachedAds);
-      ads.value = cachedAds;
-      if (cachedColumnMapping) {
-        columnMapping.value = cachedColumnMapping;
+    if (cachedData && cachedData.ads && cachedData.ads.length > 0) {
+      console.log('从content缓存中读取广告数据:', cachedData.ads);
+      ads.value = cachedData.ads;
+      if (cachedData.columnMapping) {
+        columnMapping.value = cachedData.columnMapping;
       }
-      if (cachedSortInfo) {
-        console.log('从缓存中读取排序信息:', cachedSortInfo);
+      if (cachedData.sortInfo) {
+        console.log('从content缓存中读取排序信息:', cachedData.sortInfo);
+      }
+      
+      // 加载并应用修改数据
+      if (cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
+        console.log('从content缓存中读取修改数据:', cachedData.modifications);
+        ads.value.forEach((ad, index) => {
+          const rowData = cachedData.modifications[index];
+          if (rowData && rowData.modifiedFields) {
+            // 恢复增加的值
+            if (rowData.modifiedFields.impressions !== undefined) {
+              ad.increase_impressions = rowData.modifiedFields.impressions;
+            }
+            if (rowData.modifiedFields.reach !== undefined) {
+              ad.increase_reach = rowData.modifiedFields.reach;
+            }
+            if (rowData.modifiedFields.spend !== undefined) {
+              ad.increase_spend = rowData.modifiedFields.spend;
+            }
+            if (rowData.modifiedFields.results !== undefined) {
+              ad.increase_results = rowData.modifiedFields.results;
+            }
+          }
+        });
       }
     } else {
       // 从DOM获取广告数据
@@ -186,36 +212,15 @@ const fetchAds = async () => {
         ads.value = domAds;
         columnMapping.value = receivedColumnMapping;
         
-        // 缓存数据
-        await browserStorage.set(`ads_${currentDate}`, domAds);
-        await browserStorage.set(`columnMapping_${currentDate}`, receivedColumnMapping);
-        await browserStorage.set(`sortInfo_${currentDate}`, receivedSortInfo);
-        console.log('缓存广告数据成功');
+        // 缓存数据到content script
+        await sendMessageToContent('saveCachedData', {
+          date: currentDate,
+          ads: domAds,
+          columnMapping: receivedColumnMapping,
+          sortInfo: receivedSortInfo
+        });
+        console.log('缓存广告数据到content成功');
       }
-    }
-    
-    // 加载并应用修改数据
-    const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
-    if (modificationsArray && Array.isArray(modificationsArray) && ads.value.length > 0) {
-      console.log('从缓存中读取修改数据:', modificationsArray);
-      ads.value.forEach((ad, index) => {
-        const rowData = modificationsArray[index];
-        if (rowData && rowData.modifiedFields) {
-          // 恢复增加的值
-          if (rowData.modifiedFields.impressions !== undefined) {
-            ad.increase_impressions = rowData.modifiedFields.impressions;
-          }
-          if (rowData.modifiedFields.reach !== undefined) {
-            ad.increase_reach = rowData.modifiedFields.reach;
-          }
-          if (rowData.modifiedFields.spend !== undefined) {
-            ad.increase_spend = rowData.modifiedFields.spend;
-          }
-          if (rowData.modifiedFields.results !== undefined) {
-            ad.increase_results = rowData.modifiedFields.results;
-          }
-        }
-      });
     }
     
     console.log('获取广告列表成功:', ads.value);
@@ -315,9 +320,25 @@ const saveChanges = async () => {
           modifiedFields.results = ad.increase_results;
         }
         
-        // 构建行数据对象
+        // 构建行数据对象，确保只包含可序列化的属性
         const rowData = {
-          completeData: ad,
+          completeData: {
+            id: ad.id,
+            name: ad.name,
+            status: ad.status,
+            campaign_id: ad.campaign_id,
+            adset_id: ad.adset_id,
+            impressions: ad.impressions,
+            increase_impressions: ad.increase_impressions,
+            reach: ad.reach,
+            increase_reach: ad.increase_reach,
+            spend: ad.spend,
+            increase_spend: ad.increase_spend,
+            results: ad.results,
+            increase_results: ad.increase_results,
+            costPerResult: ad.costPerResult,
+            other_events: ad.other_events
+          },
           modifiedFields: modifiedFields
         };
         
@@ -331,25 +352,18 @@ const saveChanges = async () => {
       }
     }
     
-    // 保存更新后的数组
-    await browserStorage.set(`ad_modifications_${currentDate}`, modificationsArray);
+    // 保存更新后的数组到content script
+    await sendMessageToContent('saveModifications', {
+      date: currentDate,
+      modifications: modificationsArray
+    });
     
     // 获取当前排序信息
-    const sortInfo = await browserStorage.get(`sortInfo_${currentDate}`);
+    const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
     console.log('Current sort info:', sortInfo);
     
     // 向content script发送消息，通知页面刷新
-    browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        browser.tabs.sendMessage(
-          tabs[0].id!,
-          { action: 'refreshPageWithData', sortInfo },
-          (response) => {
-            console.log('Content script response:', response);
-          }
-        );
-      }
-    });
+    await sendMessageToContent('refreshPageWithData', { sortInfo });
     
     // 保存完成后重新渲染页面
     // await fetchAds();

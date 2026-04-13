@@ -34,11 +34,11 @@ export default {
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'getAdsFromDom') {
         // 处理异步的extractAdsFromDom函数
-        extractAdsFromDom().then(({ ads, DomColumnMapping }) => {
-          sendResponse({ ads, DomColumnMapping });
+        extractAdsFromDom().then(({ ads, DomColumnMapping, sortInfo }) => {
+          sendResponse({ ads, DomColumnMapping, sortInfo });
         }).catch((error) => {
           console.error('Error extracting ads from DOM:', error);
-          sendResponse({ ads: [], DomColumnMapping: {} });
+          sendResponse({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
         });
         // 返回true表示异步响应
         return true;
@@ -50,6 +50,59 @@ export default {
         }).catch((error) => {
           console.error('Error refreshing page data:', error);
           sendResponse({ success: false, error: error.message });
+        });
+        // 返回true表示异步响应
+        return true;
+      } else if (message.action === 'getCachedData') {
+        // 从缓存中获取数据
+        const date = message.date;
+        Promise.all([
+          browserStorage.get(`ads_${date}`),
+          browserStorage.get(`columnMapping_${date}`),
+          browserStorage.get(`sortInfo_${date}`),
+          browserStorage.get(`ad_modifications_${date}`)
+        ]).then(([ads, columnMapping, sortInfo, modifications]) => {
+          sendResponse({ ads, columnMapping, sortInfo, modifications });
+        }).catch((error) => {
+          console.error('Error getting cached data:', error);
+          sendResponse({ ads: [], columnMapping: {}, sortInfo: { field: null, direction: null }, modifications: [] });
+        });
+        // 返回true表示异步响应
+        return true;
+      } else if (message.action === 'saveCachedData') {
+        // 保存缓存数据
+        const { date, ads, columnMapping, sortInfo } = message;
+        Promise.all([
+          browserStorage.set(`ads_${date}`, ads),
+          browserStorage.set(`columnMapping_${date}`, columnMapping),
+          browserStorage.set(`sortInfo_${date}`, sortInfo)
+        ]).then(() => {
+          sendResponse({ success: true });
+        }).catch((error) => {
+          console.error('Error saving cached data:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        // 返回true表示异步响应
+        return true;
+      } else if (message.action === 'saveModifications') {
+        // 保存修改数据
+        const { date, modifications } = message;
+        browserStorage.set(`ad_modifications_${date}`, modifications).then(() => {
+          sendResponse({ success: true });
+        }).catch((error) => {
+          console.error('Error saving modifications:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        // 返回true表示异步响应
+        return true;
+      } else if (message.action === 'getSortInfo') {
+        // 获取排序信息
+        const date = message.date;
+        browserStorage.get(`sortInfo_${date}`).then((sortInfo) => {
+          sendResponse(sortInfo);
+        }).catch((error) => {
+          console.error('Error getting sort info:', error);
+          sendResponse({ field: null, direction: null });
         });
         // 返回true表示异步响应
         return true;
@@ -297,37 +350,6 @@ async function extractAdsFromDom() {
       if (text) {
         console.log(`Header column ${index}: ${text}`);
         
-        // 检查排序箭头
-        const arrowElement = cell.querySelector('div[role="img"]');
-        if (arrowElement) {
-          const arrowText = arrowElement.textContent?.trim();
-          if (arrowText === '↓') {
-            sortInfo.direction = 'desc';
-            // 确定排序字段
-            if (text==='results' || text==='成效'|| text==='结果') {
-              sortInfo.field = 'results';
-            } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
-              sortInfo.field = 'spend';
-            } else if (text==='impressions' || text==='展示' || text==='印象') {
-              sortInfo.field = 'impressions';  
-            } else if (text==='reach' || text==='覆盖' || text==='抵达') {
-              sortInfo.field = 'reach';
-            }
-          } else if (arrowText === '↑') {
-            sortInfo.direction = 'asc';
-            // 确定排序字段
-            if (text==='results' || text==='成效'|| text==='结果') {
-              sortInfo.field = 'results';
-            } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
-              sortInfo.field = 'spend';
-            } else if (text==='impressions' || text==='展示' || text==='印象') {
-              sortInfo.field = 'impressions';  
-            } else if (text==='reach' || text==='覆盖' || text==='抵达') {
-              sortInfo.field = 'reach';
-            }
-          }
-        }
-        
         // 匹配常见的表头文本
         if (text==='Campaign' || text==='活动'||text==='ad set' || text==='广告组'|| text==='ad' || text==='广告') {
           DomColumnMapping.name = index;
@@ -345,7 +367,6 @@ async function extractAdsFromDom() {
         }
       }
     });
-    console.log('Sort info:', sortInfo);
     console.log('Dom Column mapping:', DomColumnMapping);
     
     // 获取表格数据行对
@@ -491,6 +512,44 @@ async function extractAdsFromDom() {
     });
     
     console.log('Extracted ads from DOM:', ads);
+    
+    // 根据数据判断排序字段和方向
+    if (ads.length > 1) {
+      // 可能的排序字段
+      const possibleFields = ['impressions', 'reach', 'spend', 'results'];
+      
+      for (const field of possibleFields) {
+        // 检查是否按该字段降序排序
+        let isDescending = true;
+        for (let i = 0; i < ads.length - 1; i++) {
+          if (ads[i][field] < ads[i + 1][field]) {
+            isDescending = false;
+            break;
+          }
+        }
+        
+        // 检查是否按该字段升序排序
+        let isAscending = true;
+        for (let i = 0; i < ads.length - 1; i++) {
+          if (ads[i][field] > ads[i + 1][field]) {
+            isAscending = false;
+            break;
+          }
+        }
+        
+        if (isDescending) {
+          sortInfo.field = field;
+          sortInfo.direction = 'desc';
+          break;
+        } else if (isAscending) {
+          sortInfo.field = field;
+          sortInfo.direction = 'asc';
+          break;
+        }
+      }
+    }
+    
+    console.log('Detected sort info:', sortInfo);
     
     // 保存DomColumnMapping到浏览器存储
     try {
