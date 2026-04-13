@@ -296,13 +296,13 @@ async function extractAdsFromDom() {
         } else if (text==='results' || text==='成效'|| text==='结果') {
           // 滚动列的索引需要减去固定列的数量
           DomColumnMapping.results = index;
-        } else if (text.includes('amountSpent') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
+        } else if (text.includes('amount spent') || text.includes('花费') || text.includes('金额') || text.includes('支出金额')) {
           DomColumnMapping.amountSpent = index;
-        } else if (text.includes('impression') || text.includes('展示') || text.includes('印象')) {
+        } else if (text.includes('impressions') || text.includes('展示') || text.includes('印象')) {
           DomColumnMapping.impressions = index;  
         } else if (text.includes('reach') || text.includes('覆盖') || text.includes('抵达')) {
           DomColumnMapping.reach = index;
-        } else if (text.includes('per') || text.includes('单次') || text.includes('每次结果成本')) {
+        } else if (text.includes('cost per result') || text.includes('单次') || text.includes('每次结果成本')) {
           DomColumnMapping.costPerResult = index;
         }
       }
