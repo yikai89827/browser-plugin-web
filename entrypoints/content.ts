@@ -373,7 +373,9 @@ async function extractAdsFromDom() {
     const rowPairs = getTableDataRows(tableContainer);
     console.log('Found row pairs:',rowPairs, rowPairs.length);
     
-    rowPairs.forEach(async (rowPair, rowIndex) => {
+    // 使用for循环代替forEach，确保异步操作按顺序完成
+    for (let rowIndex = 0; rowIndex < rowPairs.length; rowIndex++) {
+      const rowPair = rowPairs[rowIndex];
       console.log(`Processing row pair ${rowIndex}`, rowPair);
       const { fixed, scrollable } = rowPair;
       
@@ -395,7 +397,7 @@ async function extractAdsFromDom() {
       // 跳过没有有效名称的行
       if (!name || name === '' || name.match(/^广告\s*\d+$/)) {
         // console.log(`Skipping row ${rowIndex} with invalid name: ${name}`);
-        return;
+        continue;
       }
       
       // 提取广告ID（从行索引生成）
@@ -509,7 +511,7 @@ async function extractAdsFromDom() {
       console.log(`Extracted data for ${name}:`, ad);
       
       ads.push(ad);
-    });
+    }
     
     console.log('Extracted ads from DOM:', ads);
     
@@ -697,8 +699,22 @@ async function syncAdDataToPage(sortInfo = null) {
       // 3. 保存时两个值都需要保存
       // 4. 在原页面加载完成重新渲染新值时，是把这两个值相加显示在页面上
       // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
-      const DomColumnMapping = await browserStorage.get('DomColumnMapping');
+      const currentDate = getCurrentDate();
+      let DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
       console.log('Dom Column mapping:', DomColumnMapping);
+      
+      // 如果没有找到按日期存储的DomColumnMapping，尝试获取旧的存储
+      if (!DomColumnMapping || Object.keys(DomColumnMapping).length === 0) {
+        const oldDomColumnMapping = await browserStorage.get('DomColumnMapping');
+        if (oldDomColumnMapping && Object.keys(oldDomColumnMapping).length > 0) {
+          console.log('Using old DomColumnMapping:', oldDomColumnMapping);
+          DomColumnMapping = oldDomColumnMapping;
+        } else {
+          console.error('No DomColumnMapping found');
+          return;
+        }
+      }
+      
       const fixIndex = fixed.children[0]?.children?.length-1;
       
       // 然后更新页面上的显示值（原始值 + 增加的值）
