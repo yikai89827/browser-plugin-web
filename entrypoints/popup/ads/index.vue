@@ -256,7 +256,7 @@ const saveChanges = async () => {
       const hasChanges = 
         ad.increase_impressions !== undefined ||
         ad.increase_reach !== undefined ||
-        ad.increase_amountSpent !== undefined ||
+        ad.increase_spend !== undefined ||
         ad.increase_results !== undefined;
       
       // 获取当前行在表格中的索引
@@ -273,8 +273,8 @@ const saveChanges = async () => {
         if (ad.increase_reach !== undefined) {
           modifiedFields.reach = ad.increase_reach;
         }
-        if (ad.increase_amountSpent !== undefined) {
-          modifiedFields.amountSpent = ad.increase_amountSpent;
+        if (ad.increase_spend !== undefined) {
+          modifiedFields.spend = ad.increase_spend;
         }
         if (ad.increase_results !== undefined) {
           modifiedFields.results = ad.increase_results;
@@ -555,13 +555,13 @@ onMounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.amountSpent || '0' ">
-              {{ ad.amountSpent || '0' }}
+            <td class="ellipsis-cell" :title="ad.spend || '0' ">
+              {{ ad.spend || '0' }}
             </td>
             <td>
               <input 
                 type="number" 
-                v-model="ad.increase_amountSpent" 
+                v-model="ad.increase_spend" 
                 class="editable-input"
                 min="0"
               />
