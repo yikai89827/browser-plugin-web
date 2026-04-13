@@ -17,7 +17,7 @@ const columnMapping = {
   name: 'reporting_table_column_name',//广告名称
   impressions: 'reporting_table_column_impressions',//展示次数
   reach: 'reporting_table_column_reach',//覆盖次数
-  spend: 'reporting_table_column_amountSpent',//花费
+  spend: 'reporting_table_column_spend',//花费
   results: 'reporting_table_column_results',//成效
   costPerResult: 'reporting_table_column_costPerResult',//单次成效
 };
@@ -297,7 +297,7 @@ async function extractAdsFromDom() {
           // 滚动列的索引需要减去固定列的数量
           DomColumnMapping.results = index;
         } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
-          DomColumnMapping.amountSpent = index;
+          DomColumnMapping.spend = index;
         } else if (text==='impressions' || text==='展示' || text==='印象') {
           DomColumnMapping.impressions = index;  
         } else if (text==='reach' || text==='覆盖' || text==='抵达') {

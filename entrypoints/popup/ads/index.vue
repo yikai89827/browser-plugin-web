@@ -15,8 +15,8 @@ interface AdData {
   increase_impressions: number;
   reach: number;
   increase_reach: number;
-  amountSpent: number;
-  increase_amountSpent: number;
+  spend: number;
+  increase_spend: number;
   results: number;
   increase_results: number;
   costPerResult: number;
@@ -130,8 +130,8 @@ const fetchAds = async () => {
   //     increase_impressions: 10,
   //     reach: 800,
   //     increase_reach: 5,
-  //     amountSpent: 100,
-  //     increase_amountSpent: 2,
+  //     spend: 100,
+  //     increase_spend: 2,
   //     results: 50,
   //     increase_results: 15,
   //     costPerResult: 2,
@@ -147,8 +147,8 @@ const fetchAds = async () => {
   //     increase_impressions: 15,
   //     reach: 1500,
   //     increase_reach: 8,
-  //     amountSpent: 200,
-  //     increase_amountSpent: 5,
+  //     spend: 200,
+  //     increase_spend: 5,
   //     results: 100,
   //     increase_results: 20,
   //     costPerResult: 2,
@@ -182,6 +182,30 @@ const fetchAds = async () => {
         await browserStorage.set(`columnMapping_${currentDate}`, receivedColumnMapping);
         console.log('缓存广告数据成功');
       }
+    }
+    
+    // 加载并应用修改数据
+    const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
+    if (modificationsArray && Array.isArray(modificationsArray) && ads.value.length > 0) {
+      console.log('从缓存中读取修改数据:', modificationsArray);
+      ads.value.forEach((ad, index) => {
+        const rowData = modificationsArray[index];
+        if (rowData && rowData.modifiedFields) {
+          // 恢复增加的值
+          if (rowData.modifiedFields.impressions !== undefined) {
+            ad.increase_impressions = rowData.modifiedFields.impressions;
+          }
+          if (rowData.modifiedFields.reach !== undefined) {
+            ad.increase_reach = rowData.modifiedFields.reach;
+          }
+          if (rowData.modifiedFields.spend !== undefined) {
+            ad.increase_spend = rowData.modifiedFields.spend;
+          }
+          if (rowData.modifiedFields.results !== undefined) {
+            ad.increase_results = rowData.modifiedFields.results;
+          }
+        }
+      });
     }
     
     console.log('获取广告列表成功:', ads.value);
@@ -406,12 +430,36 @@ onMounted(() => {
       // 检查是否有缓存数据
       const cachedAds = await browserStorage.get(`ads_${currentDate}`);
       const cachedColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+      const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
       
       if (cachedAds && cachedAds.length > 0) {
         console.log('从缓存中读取广告数据:', cachedAds);
         ads.value = cachedAds;
         if (cachedColumnMapping) {
           columnMapping.value = cachedColumnMapping;
+        }
+        
+        // 应用修改数据到广告对象中
+        if (modificationsArray && Array.isArray(modificationsArray)) {
+          console.log('从缓存中读取修改数据:', modificationsArray);
+          ads.value.forEach((ad, index) => {
+            const rowData = modificationsArray[index];
+            if (rowData && rowData.modifiedFields) {
+              // 恢复增加的值
+              if (rowData.modifiedFields.impressions !== undefined) {
+                ad.increase_impressions = rowData.modifiedFields.impressions;
+              }
+              if (rowData.modifiedFields.reach !== undefined) {
+                ad.increase_reach = rowData.modifiedFields.reach;
+              }
+              if (rowData.modifiedFields.spend !== undefined) {
+                ad.increase_spend = rowData.modifiedFields.spend;
+              }
+              if (rowData.modifiedFields.results !== undefined) {
+                ad.increase_results = rowData.modifiedFields.results;
+              }
+            }
+          });
         }
       } else {
         console.log('No cached data for selected date, skipping');
