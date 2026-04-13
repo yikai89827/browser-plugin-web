@@ -265,30 +265,30 @@ async function extractAdsFromDom() {
   const ads = [];
   const DomColumnMapping = {};
   
+  // 存储排序信息
+  const sortInfo = {
+    field: null,
+    direction: null
+  };
+  
   try {
     // 找到表格容器
     const tableContainer = findTableContainer();
     
     if (!tableContainer) {
       console.log('Table container not found');
-      return { ads, DomColumnMapping };
+      return { ads, DomColumnMapping, sortInfo };
     }
     
     // 找到表头行
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
       console.log('Header row not found');
-      return { ads, DomColumnMapping };
+      return { ads, DomColumnMapping, sortInfo };
     }
     
     // 解析表头，确定各列的索引
     const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
-    
-    // 存储排序信息
-    const sortInfo = {
-      field: null,
-      direction: null
-    };
     
     // 首先找出固定列的数量（通常只有名称列是固定的）
     headerCells.forEach((cell, index) => {
