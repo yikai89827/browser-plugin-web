@@ -1080,7 +1080,8 @@ input:checked + .slider:before {
   z-index: 99999; /* 增加z-index确保悬浮于表格上面 */
   margin-top: 4px;
   position: fixed; /* 改为固定定位 */
-  right: 70px; /* 右侧距离表格边缘70px */
+  left: 50%;
+  transform: translateX(-50%);
   top: 200px; /* 顶部距离，使弹窗在表头以下 */
 }
 
