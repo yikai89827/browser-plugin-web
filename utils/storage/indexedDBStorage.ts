@@ -101,7 +101,7 @@ class IndexedDBStorage implements StorageWrapper {
 
                     request.onerror = () => {
                         const error = (request.error || new Error('Unknown error'));
-                        reject(new Error(`Failed to get value from IndexedDB: ${error.message}`));
+                        reject(new Error(`从IndexedDB获取数据失败: ${error.message}`)); 
                     };
 
                     request.onsuccess = () => {
@@ -110,7 +110,7 @@ class IndexedDBStorage implements StorageWrapper {
                 });
             });
         } catch (error) {
-            console.error('IndexedDB get error:', error);
+            console.error('从IndexedDB数据错误:', error);
             return this.memoryStorage.get(key) as T ?? null;
         }
     }
@@ -130,7 +130,8 @@ class IndexedDBStorage implements StorageWrapper {
                     const request = store.put(value, key);
 
                     request.onerror = () => {
-                        reject(new Error('Failed to set value in IndexedDB'));
+                        const error = (request.error || new Error('Unknown error'));
+                        reject(new Error(`保存IndexedDB数据失败: ${error.message}`));
                     };
 
                     request.onsuccess = () => {
@@ -143,7 +144,7 @@ class IndexedDBStorage implements StorageWrapper {
                 });
             });
         } catch (error) {
-            console.error('IndexedDB set error:', error);
+            console.error('保存IndexedDB数据错误:', error);
             this.memoryStorage.set(key, value);
             this.notifyWatchers(key, value);
         }
@@ -164,7 +165,7 @@ class IndexedDBStorage implements StorageWrapper {
                     const request = store.delete(key);
 
                     request.onerror = () => {
-                        reject(new Error('Failed to remove value from IndexedDB'));
+                        reject(new Error('删除IndexedDB数据失败'));
                     };
 
                     request.onsuccess = () => {
@@ -177,7 +178,7 @@ class IndexedDBStorage implements StorageWrapper {
                 });
             });
         } catch (error) {
-            console.error('IndexedDB remove error:', error);
+            console.error('删除IndexedDB数据错误:', error);
             this.memoryStorage.delete(key);
             this.notifyWatchers(key, null);
         }
@@ -190,7 +191,7 @@ class IndexedDBStorage implements StorageWrapper {
                 try {
                     callback(value);
                 } catch (error) {
-                    console.error('Error in watcher callback:', error);
+                    console.error('IndexedDB监听回调错误:', error);
                 }
             });
         }

@@ -216,9 +216,9 @@ const fetchAds = async () => {
     } else {
       // 从DOM获取广告数据
       const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo } = await getAdsFromDom();
-      console.log('Received ads:', domAds);
-      console.log('Received column mapping:', receivedColumnMapping);
-      console.log('Received sort info:', receivedSortInfo);
+      console.log('从DOM获取广告数据成功:', domAds);
+      console.log('从DOM获取列映射成功:', receivedColumnMapping);
+      console.log('从DOM获取排序信息成功:', receivedSortInfo);
       
       if (domAds && domAds.length > 0) {
         ads.value = domAds;
@@ -390,7 +390,7 @@ const saveChanges = async () => {
     
     // 获取当前排序信息
     const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
-    console.log('Current sort info:', sortInfo);
+    console.log('当前排序信息:', sortInfo);
     
     // 向content script发送消息，通知页面刷新
     await sendMessageToContent('refreshPageWithData', { sortInfo });
@@ -447,7 +447,7 @@ const getDropdownStyle = (adId: string) => {
 
 // 触发事件
 const triggerEvent = (adId: string, eventId: string) => {
-  console.log('Triggering event', eventId, 'for ad', adId);
+  console.log('触发事件:', eventId, '广告:', adId);
   
   // 关闭下拉菜单
   dropdownOpen.value[adId] = false;
@@ -530,10 +530,10 @@ const checkCacheOnMount = async () => {
         });
       }
     } else {
-      console.log('No cached data for selected date, skipping');
+      console.log('没有缓存数据，跳过加载');
     }
   } catch (error) {
-    console.error('Error checking cache on mount:', error);
+    console.error('检查缓存数据错误:', error);
   }
 };
 

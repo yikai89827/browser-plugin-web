@@ -140,7 +140,7 @@ function createOverlay() {
   // 找到表格容器
   const tableContainer = findTableContainer();
   if (!tableContainer) {
-    console.log('Table container not found, using full page overlay');
+    console.log('未找到表格容器，使用全屏覆盖层');
     // 如果找不到表格容器，使用全屏遮盖层
     overlayElement = document.createElement('div');
     overlayElement.style.position = 'fixed';
@@ -225,7 +225,7 @@ function removeOverlay() {
 export default {
   matches: ['*://*.facebook.com/adsmanager/*'],
   main() {
-    console.log('Content script loaded for Facebook Ads Manager');
+    console.log('Facebook Ads Manager 内容脚本已加载');
     
     // 创建遮盖层，在数据同步完成前显示
     createOverlay();
@@ -237,7 +237,7 @@ export default {
         extractAdsFromDom().then(({ ads, DomColumnMapping, sortInfo }) => {
           sendResponse({ ads, DomColumnMapping, sortInfo });
         }).catch((error) => {
-          console.error('Error extracting ads from DOM:', error);
+          console.error('提取广告数据错误:', error);
           sendResponse({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
         });
         // 返回true表示异步响应
@@ -250,7 +250,7 @@ export default {
         syncAdDataToPage(sortInfo).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
-          console.error('Error refreshing page data:', error);
+          console.error('刷新页面数据错误:', error);
           sendResponse({ success: false, error: error.message });
         });
         // 返回true表示异步响应
@@ -272,7 +272,7 @@ export default {
         ]).then(([ads, columnMapping, sortInfo, modifications]) => {
           sendResponse({ ads, columnMapping, sortInfo, modifications });
         }).catch((error) => {
-          console.error('Error getting cached data:', error);
+          console.error('获取缓存数据错误:', error);
           sendResponse({ ads: [], columnMapping: {}, sortInfo: { field: null, direction: null }, modifications: [] });
         });
         // 返回true表示异步响应
@@ -292,7 +292,7 @@ export default {
         ]).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
-          console.error('Error saving cached data:', error);
+          console.error('保存缓存数据错误:', error);
           sendResponse({ success: false, error: error.message });
         });
         // 返回true表示异步响应
@@ -305,7 +305,7 @@ export default {
         browserStorage.set(modificationsKey, modifications).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
-          console.error('Error saving modifications:', error);
+          console.error('保存修改数据错误:', error);
           sendResponse({ success: false, error: error.message });
         });
         // 返回true表示异步响应
@@ -318,7 +318,7 @@ export default {
         browserStorage.get(sortInfoKey).then((sortInfo) => {
           sendResponse(sortInfo);
         }).catch((error) => {
-          console.error('Error getting sort info:', error);
+          console.error('获取排序信息错误:', error);
           sendResponse({ field: null, direction: null });
         });
         // 返回true表示异步响应
@@ -348,14 +348,14 @@ export default {
         
         cachedModifications = modifications;
         cachedColumnMapping = columnMapping;
-        console.log('Preloaded cached data:', { modifications, columnMapping, pageState });
+        console.log('预加载缓存数据:', { modifications, columnMapping, pageState });
         
         // 数据加载完成后立即尝试同步
         if (cachedModifications) {
           await syncAdDataToPage();
         }
       } catch (error) {
-        console.error('Error loading cached data:', error);
+        console.error('加载缓存数据错误:', error);
       } finally {
         // 无论成功失败都关闭遮盖层
         removeOverlay();
@@ -373,7 +373,7 @@ export default {
       // 检查是否在短时间内已经执行过同步，避免频繁调用
       const now = Date.now();
       if (now - lastSyncTime < 300) {
-        console.log('Skipping sync, too soon after last sync');
+        console.log('跳过同步，距离上次同步时间太短');
         return;
       }
       
@@ -387,7 +387,7 @@ export default {
             await getColumnIndices();
             await syncAdDataToPage();
           } catch (error) {
-            console.error('Error in debounced sync:', error);
+            console.error('刷新页面数据错误:', error);
           } finally {
             isSyncing = false;
           }
@@ -421,7 +421,7 @@ export default {
       });
       
       if (hasTableChanges) {
-        console.log('Detected table changes, triggering sync');
+        console.log('检测到表格变化，触发同步');
         // 表格变化时创建遮盖层
         createOverlay();
         debouncedSync();
@@ -443,7 +443,7 @@ export default {
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
-        console.log('URL changed, reloading cached data:', currentUrl);
+        console.log('URL 已更改，重新加载缓存数据:', currentUrl);
         // URL变化时创建遮盖层
         createOverlay();
         // 重新加载缓存数据
@@ -474,7 +474,7 @@ export default {
 async function getColumnIndices(attempt = 0) {
   // 添加递归终止条件，避免无限递归
   if (attempt > 10) {
-    console.warn('Max attempts reached for getting column indices, stopping');
+    console.warn('获取列索引最大尝试次数已达，停止尝试');
     return;
   }
   
@@ -487,31 +487,31 @@ async function getColumnIndices(attempt = 0) {
     
     // 如果从缓存中获取到了列映射，直接使用
     if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
-      console.log('Using cached DomColumnMapping:', DomColumnMapping);
+      console.log('使用缓存的 DomColumnMapping:', DomColumnMapping);
       columnIndices = DomColumnMapping;
       return;
     }
     
     // 如果缓存中没有列映射，尝试从DOM中获取
-    console.log('No cached column mapping found, getting from DOM (attempt:', attempt + 1, ')');
+    console.log('未找到缓存的列映射，从DOM获取 (尝试:', attempt + 1, ')' );
     
     // 找到表格容器
     const tableContainer = findTableContainer();
     if (!tableContainer) {
-      console.log('Table container not found');
+      console.log('未找到表格容器');
       return;
     }
     
     // 找到表头行
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
-      console.log('Header row not found');
+      console.log('未找到表头行');
       return;
     }
     
     // 获取所有表头单元格
     const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
-    console.log('Found header cells:', headerCells.length);
+    console.log('找到表头单元格:', headerCells.length);
     
     headerCells.forEach((cell, index) => {
       // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
@@ -532,15 +532,15 @@ async function getColumnIndices(attempt = 0) {
     const missingFields = requiredFields.filter(field => !columnIndices[field]);
     
     if (missingFields.length > 0) {
-      console.log('Missing column indices for fields:', missingFields);
+      console.log('缺少字段的列索引:', missingFields);
       // 尝试再次获取，可能表头还没有完全加载
       await new Promise(resolve => setTimeout(resolve, 100));
       await getColumnIndices(attempt + 1);
     } else {
-      console.log('Column indices:', columnIndices);
+      console.log('列索引:', columnIndices);
       // 保存列映射到缓存
       await browserStorage.set(columnMappingKey, columnIndices);
-      console.log('Saved column mapping to cache:', columnMappingKey);
+      console.log('已保存列映射到缓存:', columnMappingKey);
     }
   } catch (error) {
     console.error('Error getting column indices:', error);
@@ -567,7 +567,7 @@ function findTableContainer() {
     }
   }
   
-  console.log('Table container not found with any selector');
+  console.log('未找到任何匹配的表格容器');
   return null;
 }
 
@@ -579,18 +579,18 @@ function getTableDataRows(tableContainer: HTMLElement) {
     // 找到表头行
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
-      console.log('Header row not found');
+      console.log('未找到表头行');
       return rowPairs;
     }
     
     // 获取表头行的下一个兄弟元素（表体元素）
     const tableBody = headerRow.nextElementSibling;
     if (!tableBody) {
-      console.log('Table body not found');
+      console.log('未找到表体');
       return rowPairs;
     }
     
-    console.log('Found table body:', tableBody);
+    console.log('找到表体:', tableBody);
     
     // 找到所有role=presentation的元素（每一行的容器）
     const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
@@ -612,8 +612,8 @@ function getTableDataRows(tableContainer: HTMLElement) {
       
       return true;
     });
-     console.log('Filtered presentation rows1:', filteredPresentationRows);
-    console.log('Filtered presentation rows2:', filteredPresentationRows.length);
+     console.log('过滤后的展示行1:', filteredPresentationRows);
+    console.log('过滤后的展示行2:', filteredPresentationRows.length);
     
     // 处理过滤后的节点
     filteredPresentationRows.forEach((presentationRow, index) => {
@@ -646,7 +646,7 @@ function getTableDataRows(tableContainer: HTMLElement) {
     console.error('Error getting table data rows:', error);
   }
   
-  console.log('Found row pairs:', rowPairs.length);
+  console.log('找到行对:', rowPairs.length);
   return rowPairs;
 }
 
@@ -701,14 +701,14 @@ async function extractAdsFromDom() {
     const tableContainer = findTableContainer();
     
     if (!tableContainer) {
-      console.log('Table container not found');
+      console.log('未找到表格容器');
       return { ads, DomColumnMapping, sortInfo };
     }
     
     // 找到表头行
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
-      console.log('Header row not found');
+      console.log('未找到表头行');
       return { ads, DomColumnMapping, sortInfo };
     }
     
@@ -745,11 +745,11 @@ async function extractAdsFromDom() {
         }
       }
     });
-    console.log('Dom Column mapping:', DomColumnMapping);
+    console.log('DOM 列映射:', DomColumnMapping);
     
     // 获取表格数据行对
     const rowPairs = getTableDataRows(tableContainer);
-    console.log('Found row pairs:',rowPairs, rowPairs.length);
+    console.log('找到行对:',rowPairs, rowPairs.length);
     
     // 使用for循环代替forEach，确保异步操作按顺序完成
     for (let rowIndex = 0; rowIndex < rowPairs.length; rowIndex++) {
@@ -884,17 +884,17 @@ async function extractAdsFromDom() {
             }
           }
         } else {
-          console.log(`${name}: No element found for ${key} at index ${fixIndex}`);
+          console.log(`${name}: 未找到 ${key} 元素 at index ${fixIndex}`);
         }
       });
       
       // 输出提取的数据用于调试
-      console.log(`Extracted data for ${name}:`, ad);
+      console.log(`提取数据 ${name}:`, ad);
       
       ads.push(ad);
     }
     
-    console.log('Extracted ads from DOM:', ads);
+    console.log('从DOM提取的广告:', ads);
     
     // 检测排序信息
     try {
@@ -904,10 +904,10 @@ async function extractAdsFromDom() {
         sortInfo.direction = sortDirection;
       }
     } catch (error) {
-      console.error('Error detecting sort info:', error);
+      console.error('检测排序信息错误:', error);
     }
     
-    console.log('Detected sort info:', sortInfo);
+    console.log('检测到的排序信息:', sortInfo);
     
     // 保存DomColumnMapping到浏览器存储
     try {
@@ -915,13 +915,13 @@ async function extractAdsFromDom() {
         // 使用新的缓存键生成函数
         const columnMappingKey = generateCacheKey('columnMapping');
         await browser.storage.local.set({ [columnMappingKey]: DomColumnMapping });
-        console.log('Saved DomColumnMapping to storage:', columnMappingKey, DomColumnMapping);
+        console.log('已保存DomColumnMapping到存储:', columnMappingKey, DomColumnMapping);
       }
     } catch (error) {
-      console.error('Error saving DomColumnMapping:', error);
+      console.error('保存DomColumnMapping错误:', error);
     }
   } catch (error) {
-    console.error('Error extracting ads from DOM:', error);
+    console.error('提取广告数据错误:', error);
   }
   
   return { ads, DomColumnMapping, sortInfo };
@@ -929,48 +929,48 @@ async function extractAdsFromDom() {
 
 // 同步广告数据到页面
 async function syncAdDataToPage(sortInfo = null) {
-  console.log('Starting syncAdDataToPage function with sort info:', sortInfo);
+  console.log('开始syncAdDataToPage函数，排序信息:', sortInfo);
   try {
     // 检查扩展上下文是否有效
     if (!browser || !browser.storage) {
-      console.error('Extension context invalid');
+      console.error('扩展上下文无效');
       return;
     }
     
-    console.log('Extension context is valid');
+    console.log('扩展上下文有效');
     
     // 确保列索引已获取
     if (Object.keys(columnIndices).length === 0) {
-      console.log('Column indices are empty, getting them');
+      console.log('列索引为空，获取列索引');
       await getColumnIndices();
-      console.log('Got column indices:', columnIndices);
+      console.log('获取到列索引:', columnIndices);
     }
     
     // 获取当前页面状态
     const pageState = getCurrentPageState();
-    console.log('Current page state:', pageState);
+    console.log('当前页面状态:', pageState);
     
     // 使用传入的排序信息或当前页面的排序状态
     const currentSortInfo = sortInfo || { field: pageState.sortField, direction: pageState.sortDirection };
-    console.log('Using sort info:', currentSortInfo);
+    console.log('使用排序信息:', currentSortInfo);
     
     // 获取存储的所有广告数据
-    console.log('Getting storage items');
+    console.log('获取存储项');
     const modificationsKey = generateCacheKey('ad_modifications');
     const modificationsArray = await browserStorage.get(modificationsKey);
     
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
-      console.log('No ad data found in storage');
+      console.log('存储中未找到广告数据');
       return;
     }
     
     // 过滤出有效的修改数据
     const validModifications = modificationsArray.filter(item => item !== undefined);
-    console.log('Valid modifications:', validModifications);
+    console.log('有效的修改数据:', validModifications);
     
     // 根据排序信息对数据进行排序
     if (currentSortInfo && currentSortInfo.field && currentSortInfo.direction) {
-      console.log('Sorting data by:', currentSortInfo.field, currentSortInfo.direction);
+      console.log('按以下字段排序:', currentSortInfo.field, currentSortInfo.direction);
       validModifications.sort((a, b) => {
         const field = currentSortInfo.field;
         const valueA = a.completeData[field] || 0;
@@ -982,26 +982,26 @@ async function syncAdDataToPage(sortInfo = null) {
           return valueB - valueA;
         }
       });
-      console.log('Sorted modifications:', validModifications);
+      console.log('排序后的修改数据:', validModifications);
     }
     
-    console.log('Found modifications array:', modificationsArray);
+    console.log('找到修改数组:', modificationsArray);
     
     // 找到表格容器
-    console.log('Finding table container');
+    console.log('找到表格容器');
     const tableContainer = findTableContainer();
     
     if (!tableContainer) {
-      console.log('Table container not found for sync');
+      console.log('未找到表格容器');
       return;
     }
     
-    console.log('Found table container:', tableContainer);
+    console.log('表格容器信息:', tableContainer);
     
     // 获取表格数据行对
-    console.log('Getting table data rows');
+    console.log('获取表格数据行对');
     const rowPairs = getTableDataRows(tableContainer);
-    console.log('Found rows for sync:', rowPairs.length);
+    console.log('找到行对:', rowPairs.length);
     
     rowPairs.forEach(async(rowPair, rowIndex) => {
       const { fixed, scrollable } = rowPair;
@@ -1037,17 +1037,17 @@ async function syncAdDataToPage(sortInfo = null) {
       
       if (!rowData) return;
       
-      console.log('Syncing data for ad:', name, 'ID:', adId, 'Row data:', rowData);
+      console.log('同步广告数据:', name, 'ID:', adId, '行数据:', rowData);
       
       // 检查整行是否有修改
       if (!rowData.modifiedFields || Object.keys(rowData.modifiedFields).length === 0) {
-        console.log(`No modifications for ad ${name}, skipping update`);
+        console.log(`广告数据未修改: ${name}, 跳过更新`);
         return;
       }
       
       // 从可滚动行获取元素并更新
       const scrollableElements = scrollable.children[0]?.children || [];
-      console.log(`Found scrollable elements: ${scrollableElements.length}`);
+      console.log(`可滚动元素数量: ${scrollableElements.length}`);
       
       // 1. 插件表格左侧显示原始值（从DOM中获取的原值）
       // 2. 右侧显示可输入的增加的值（从本地存储中获取）
@@ -1056,10 +1056,10 @@ async function syncAdDataToPage(sortInfo = null) {
       // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
       const columnMappingKey = generateCacheKey('columnMapping');
       const DomColumnMapping = await browserStorage.get(columnMappingKey);
-      console.log('Dom Column mapping:', DomColumnMapping);
+      console.log('Dom 列映射:', DomColumnMapping);
       
       if (!DomColumnMapping || Object.keys(DomColumnMapping).length === 0) {
-        console.error('No DomColumnMapping found');
+        console.error('未找到列映射');
         return;
       }
       
@@ -1069,7 +1069,7 @@ async function syncAdDataToPage(sortInfo = null) {
       try {
         isUpdatingDOM = true;
         Array.from(scrollableElements).forEach((element, index) => {
-          console.log(`Processing element at index ${index}: `,DomColumnMapping, element);
+          console.log(`处理元素 ${index}: `,DomColumnMapping, element);
           const text = element.textContent?.trim();
           if (text) {
             // 检查是否有对应的列修改值
@@ -1084,9 +1084,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.results || 0;
                 originalValueFromData = rowData.completeData?.results || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.reach-fixIndex) {
               // 覆盖人数 (reach)
@@ -1094,9 +1094,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.reach || 0;
                 originalValueFromData = rowData.completeData?.reach || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.spend-fixIndex) {
               // 花费 (spend)
@@ -1104,9 +1104,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.spend || 0;
                 originalValueFromData = rowData.completeData?.spend || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.impressions-fixIndex) {
               // 展示次数 (impressions)
@@ -1114,9 +1114,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.impressions || 0;
                 originalValueFromData = rowData.completeData?.impressions || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.costPerResult-fixIndex) {
               // 每次结果成本 (costPerResult)
@@ -1124,9 +1124,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.costPerResult || 0;
                 originalValueFromData = rowData.completeData?.costPerResult || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.website_clicks-fixIndex) {
               // 网站点击 (website_clicks)
@@ -1134,9 +1134,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.website_clicks || 0;
                 originalValueFromData = rowData.completeData?.website_clicks || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.registrations-fixIndex) {
               // 注册 (registrations)
@@ -1144,9 +1144,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.registrations || 0;
                 originalValueFromData = rowData.completeData?.registrations || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             } else if (index === DomColumnMapping.registration_cost-fixIndex) {
               // 注册成本 (registration_cost)
@@ -1154,9 +1154,9 @@ async function syncAdDataToPage(sortInfo = null) {
                 increaseValue = rowData.modifiedFields.registration_cost || 0;
                 originalValueFromData = rowData.completeData?.registration_cost || 0;
                 hasModification = true;
-                console.log(`Processing element at index ${index}: ${text}`);
-                console.log(`Original value from data: `, originalValueFromData);
-                console.log(`Increase value: `, increaseValue);
+                console.log(`处理元素 ${index}: ${text}`);
+                console.log(`原始值从数据中获取: `, originalValueFromData);
+                console.log(`增加值: `, increaseValue);
               }
             }
               
@@ -1169,7 +1169,7 @@ async function syncAdDataToPage(sortInfo = null) {
               
               // 如果原始值是--且新增值为0，则不更新
               if (isOriginalDash && isIncreaseZero) {
-                console.log(`Skipping update for ad ${name} column ${index}: original value is — and increase value is 0`);
+                console.log(`跳过更新元素 ${index}: original值为 — and 增加值为 0`);
                 return;
               }
               
@@ -1178,7 +1178,7 @@ async function syncAdDataToPage(sortInfo = null) {
               const newValue = originalValueFromData + increaseValue;
               
               // 更新元素的文本内容
-              console.log(`Updating ad ${name} column ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
+              console.log(`更新元素 ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
               
               // 递归查找并更新DOM元素
               function findAndUpdateElement(el: Element) {
@@ -1187,11 +1187,11 @@ async function syncAdDataToPage(sortInfo = null) {
                   if(el.children?.[0] instanceof HTMLElement){
                     findAndUpdateElement(el.children?.[0]);
                   } else {
-                    console.log(`Skipping non-HTMLElement child: ${el.children?.[0]}`);
+                    console.log(`跳过非HTMLElement子元素: ${el.children?.[0]}`);
                   }
                 } else {
                   // 找到最终的文本元素
-                  console.log(`Updating element innerText: ${el.innerText}`);
+                  console.log(`更新元素文本: ${el.innerText}`);
                   
                   // 保存原始文本，用于提取货币符号
                   const originalText = el.innerText;
@@ -1199,18 +1199,18 @@ async function syncAdDataToPage(sortInfo = null) {
                   // 根据字段类型决定显示格式
                   if (index === DomColumnMapping.spend-fixIndex) {
                     // 花费字段：保留2位小数，保留货币符号
-                    console.log(`Updating spend field: ${newValue.toFixed(2)}`);
+                    console.log(`更新元素文本: ${newValue.toFixed(2)}`);
                     
                     // 提取货币符号（如果有）
                     const currencyMatch = originalText.match(/^[^0-9]+/);
                     const currencySymbol = currencyMatch ? currencyMatch[0] : '';
                     
                     // 保留货币符号并更新数值
-                    console.log(`Currency symbol: ${currencySymbol}`);
+                    console.log(`货币符号更新: ${currencySymbol}`);
                     el.innerText = currencySymbol + newValue.toFixed(2);
                   } else {
                     // 其他字段：整数
-                    console.log(`Updating non-spend field: ${Math.round(newValue)}`);
+                    console.log(`更新元素文本: ${Math.round(newValue)}`);
                     el.innerText = Math.round(newValue).toString();
                   }
                 }
@@ -1219,7 +1219,7 @@ async function syncAdDataToPage(sortInfo = null) {
               // 开始递归查找
               findAndUpdateElement(element);
             } else {
-              console.log(`No modification for ad ${name} column ${index}, skipping update`);
+              console.log(`元素 ${index} 未修改，跳过更新`);
             }
           }
         });
@@ -1230,9 +1230,9 @@ async function syncAdDataToPage(sortInfo = null) {
   } catch (error: any) {
     // 处理扩展上下文无效的错误
     if (error.message && error.message.includes('Extension context invalidated')) {
-      console.warn('Extension context invalidated, stopping sync');
+      console.warn('扩展上下文无效, 停止同步广告数据');
     } else {
-      console.error('Error syncing ad data:', error);
+      console.error('Error:', error);
     }
   } finally {
     // 无论成功失败都关闭遮盖层
