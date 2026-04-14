@@ -9,6 +9,9 @@ interface AdData {
   increase_reach: number;
   increase_spend: number;
   increase_results: number;
+  increase_website_clicks: number;
+  increase_registrations: number;
+  increase_registration_cost: number;
   updated_at: string;
 }
 
@@ -20,6 +23,9 @@ const columnMapping = {
   spend: 'reporting_table_column_spend',//花费
   results: 'reporting_table_column_results',//成效
   costPerResult: 'reporting_table_column_costPerResult',//单次成效
+  website_clicks: 'reporting_table_column_website_clicks',//网站点击
+  registrations: 'reporting_table_column_registrations',//注册
+  registration_cost: 'reporting_table_column_registration_cost',//注册成本
 };
 
 // 存储列索引
@@ -124,20 +130,9 @@ export default {
     // 预加载缓存数据
     const loadCachedData = async () => {
       try {
-        // 尝试获取按日期存储的修改数据
-        let modifications = await browserStorage.get(`ad_modifications_${currentDate}`);
-        let columnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
-        
-        // 如果没有按日期存储的数据，尝试获取旧的存储
-        if (!modifications || !Array.isArray(modifications) || modifications.length === 0) {
-          modifications = await browserStorage.get('ad_modifications');
-          console.log('Using old ad_modifications:', modifications);
-        }
-        
-        if (!columnMapping || Object.keys(columnMapping).length === 0) {
-          columnMapping = await browserStorage.get('columnMapping');
-          console.log('Using old columnMapping:', columnMapping);
-        }
+        // 只获取按日期存储的修改数据
+        const modifications = await browserStorage.get(`ad_modifications_${currentDate}`);
+        const columnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
         
         cachedModifications = modifications;
         cachedColumnMapping = columnMapping;
@@ -171,7 +166,7 @@ export default {
             isSyncing = false;
           }
         }
-      }, 100);
+      }, 0);
     };
     
     // 使用MutationObserver来拦截页面渲染
@@ -224,6 +219,20 @@ async function getColumnIndices() {
   columnIndices = {};
   
   try {
+    // 首先尝试从缓存中获取列映射
+    // const currentDate = getCurrentDate();
+    // const DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+    
+    // // 如果从缓存中获取到了列映射，直接使用
+    // if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
+    //   console.log('Using cached DomColumnMapping:', DomColumnMapping);
+    //   columnIndices = DomColumnMapping;
+    //   return;
+    // }
+    
+    // // 如果缓存中没有列映射，尝试从DOM中获取
+    // console.log('No cached column mapping found, getting from DOM');
+    
     // 找到表格容器
     const tableContainer = findTableContainer();
     if (!tableContainer) {
@@ -245,17 +254,19 @@ async function getColumnIndices() {
     headerCells.forEach((cell, index) => {
       // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
       const cellId = cell?.children[0]?.children[0]?.id || '';
+      console.log(`Header cell ${index} ID:`, cellId);
 
       for (const [field, idPattern] of Object.entries(columnMapping)) {
         if (cellId.includes(idPattern)) {
           columnIndices[field] = index;
+          console.log(`Found field ${field} at index ${index}`);
           break;
         }
       }
     });
     
     // 确保所有必要的列都被找到
-    const requiredFields = ['impressions', 'reach', 'spend', 'results', 'costPerResult'];
+    const requiredFields = ['impressions', 'reach', 'spend', 'results', 'costPerResult', 'website_clicks', 'registrations', 'registration_cost'];
     const missingFields = requiredFields.filter(field => !columnIndices[field]);
     
     if (missingFields.length > 0) {
@@ -696,17 +707,11 @@ async function syncAdDataToPage(sortInfo = null) {
     // 获取存储的所有广告数据
     console.log('Getting storage items');
     const currentDate = getCurrentDate();
-    let modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
+    const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
     
-    // 如果没有按日期存储的数据，尝试获取旧的存储
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
-      modificationsArray = await browserStorage.get('ad_modifications');
-      console.log('Using old ad_modifications:', modificationsArray);
-      
-      if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
-        console.log('No ad data found in storage');
-        return;
-      }
+      console.log('No ad data found in storage');
+      return;
     }
     
     // 过滤出有效的修改数据
@@ -800,26 +805,12 @@ async function syncAdDataToPage(sortInfo = null) {
       // 4. 在原页面加载完成重新渲染新值时，是把这两个值相加显示在页面上
       // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
       const currentDate = getCurrentDate();
-      let DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+      const DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
       console.log('Dom Column mapping:', DomColumnMapping);
       
-      // 如果没有找到按日期存储的DomColumnMapping，尝试获取旧的存储
       if (!DomColumnMapping || Object.keys(DomColumnMapping).length === 0) {
-        const oldDomColumnMapping = await browserStorage.get('DomColumnMapping');
-        if (oldDomColumnMapping && Object.keys(oldDomColumnMapping).length > 0) {
-          console.log('Using old DomColumnMapping:', oldDomColumnMapping);
-          DomColumnMapping = oldDomColumnMapping;
-        } else {
-          // 尝试获取不带日期的columnMapping
-          const oldColumnMapping = await browserStorage.get('columnMapping');
-          if (oldColumnMapping && Object.keys(oldColumnMapping).length > 0) {
-            console.log('Using old columnMapping:', oldColumnMapping);
-            DomColumnMapping = oldColumnMapping;
-          } else {
-            console.error('No DomColumnMapping found');
-            return;
-          }
-        }
+        console.error('No DomColumnMapping found');
+        return;
       }
       
       const fixIndex = fixed.children[0]?.children?.length-1;

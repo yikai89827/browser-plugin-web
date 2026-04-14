@@ -1136,7 +1136,7 @@ input:checked + .slider:before {
   font-size: 14px;
   background-color: #fff;
   color: #000;
-  text-align: right;
+  text-align: left;
 }
 
 .event-item-input-field:focus {
