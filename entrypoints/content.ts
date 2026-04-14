@@ -695,6 +695,25 @@ function parseNumber(text: string): number | string {
 
 // 从DOM提取广告数据
 async function extractAdsFromDom() {
+  // 首先检查是否有缓存数据
+  const currentDate = getCurrentDate();
+  const adsKey = generateCacheKey('ads');
+  const columnMappingKey = generateCacheKey('columnMapping');
+  const sortInfoKey = generateCacheKey('sortInfo');
+  
+  const [cachedAds, cachedColumnMapping, cachedSortInfo] = await Promise.all([
+    browserStorage.get(adsKey),
+    browserStorage.get(columnMappingKey),
+    browserStorage.get(sortInfoKey)
+  ]);
+  
+  // 如果有缓存数据，直接返回缓存数据
+  if (cachedAds && cachedAds.length > 0 && cachedColumnMapping && Object.keys(cachedColumnMapping).length > 0) {
+    console.log('使用缓存数据，跳过DOM提取');
+    return { ads: cachedAds, DomColumnMapping: cachedColumnMapping, sortInfo: cachedSortInfo || { field: null, direction: null } };
+  }
+  
+  // 没有缓存数据，从DOM提取
   const ads = [];
   const DomColumnMapping = {};
   
@@ -835,6 +854,7 @@ async function extractAdsFromDom() {
       // 检查本地存储中是否有对应的广告数据
       try {
         // 从新的缓存结构中获取数据
+        // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
         const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
         if (modificationsArray && Array.isArray(modificationsArray)) {
@@ -851,7 +871,7 @@ async function extractAdsFromDom() {
           }
           
           if (rowData && rowData.modifiedFields) {
-            // 恢复增加的值
+            // 恢复增加的值，但不要修改原始值
             ad.increase_impressions = rowData.modifiedFields.impressions || 0;
             ad.increase_reach = rowData.modifiedFields.reach || 0;
             ad.increase_spend = rowData.modifiedFields.spend || 0;
@@ -860,6 +880,7 @@ async function extractAdsFromDom() {
             ad.increase_registrations = rowData.modifiedFields.registrations || 0;
             ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
             console.log(`找到存储的广告数据 ${name} (ID: ${ad.id}):`, rowData);
+            console.log(`提取的原始值: ${ad.reach}, 增加值: ${ad.increase_reach}`);
           }
         }
       } catch (error) {
@@ -896,21 +917,9 @@ async function extractAdsFromDom() {
             const num = parseFloat(cleanedText);
             
             if (!isNaN(num) || cleanedText === '0') {
-              // 计算原始值
+              // 直接使用从DOM中提取的值作为原始值
+              // 当页面重新加载时，DOM中显示的就是原始值，不需要减去增加值
               let originalValue = cleanedText === '0' ? (text?.includes('—') ? '—' : 0) : num;
-              
-              // 如果有保存的增加值，需要从DOM中提取的值中减去增加值，得到原始值
-              if (typeof originalValue === 'number') {
-                if (key === 'impressions' && ad.increase_impressions !== undefined && ad.increase_impressions !== 0) {
-                  originalValue = originalValue - ad.increase_impressions;
-                } else if (key === 'reach' && ad.increase_reach !== undefined && ad.increase_reach !== 0) {
-                  originalValue = originalValue - ad.increase_reach;
-                } else if (key === 'spend' && ad.increase_spend !== undefined && ad.increase_spend !== 0) {
-                  originalValue = originalValue - ad.increase_spend;
-                } else if (key === 'results' && ad.increase_results !== undefined && ad.increase_results !== 0) {
-                  originalValue = originalValue - ad.increase_results;
-                }
-              }
               
               ad[key] = originalValue;
               console.log(`提取 ${key} for ${name}: ${ad[key]} (raw: ${text}, increase: ${ad[`increase_${key}`]})`);
@@ -998,19 +1007,26 @@ async function syncAdDataToPage(sortInfo = null) {
       return;
     }
     
-    // 过滤出有效的修改数据并转换为对象，使用广告ID作为键
+    // 过滤出有效的修改数据
     const validModifications = modificationsArray.filter(item => item !== undefined);
-    const modificationsMap = new Map();
-    validModifications.forEach(item => {
-      if (item && item.completeData && item.completeData.id) {
-        modificationsMap.set(item.completeData.id, item);
-      }
-    });
-    console.log('有效的修改数据映射:', modificationsMap);
+    console.log('有效的修改数据:', validModifications);
     
-    // 根据排序信息对数据进行排序（仅用于显示日志）
+    // 根据当前排序信息对修改数据进行排序
+    let sortedModifications = [...validModifications];
     if (currentSortInfo && currentSortInfo.field && currentSortInfo.direction) {
-      console.log('当前排序字段:', currentSortInfo.field, currentSortInfo.direction);
+      console.log('按以下字段排序修改数据:', currentSortInfo.field, currentSortInfo.direction);
+      sortedModifications.sort((a, b) => {
+        const field = currentSortInfo.field;
+        const valueA = a.completeData[field] || 0;
+        const valueB = b.completeData[field] || 0;
+        
+        if (currentSortInfo.direction === 'asc') {
+          return valueA - valueB;
+        } else {
+          return valueB - valueA;
+        }
+      });
+      console.log('排序后的修改数据:', sortedModifications);
     }
     
     console.log('找到修改数组:', modificationsArray);
@@ -1050,42 +1066,19 @@ async function syncAdDataToPage(sortInfo = null) {
       
       if (!name) return;
       
-      // 尝试从DOM中获取唯一标识符，与 extractAdsFromDom 函数保持一致
-      let adId = `ad_${rowIndex}`;
-      
-      // 检查固定行是否有唯一标识符属性
-      const fixedRowElement = fixed;
-      if (fixedRowElement) {
-        // 检查是否有data-id或其他唯一属性
-        const dataId = fixedRowElement.getAttribute('data-id') || 
-                      fixedRowElement.getAttribute('id') || 
-                      fixedRowElement.querySelector('[data-id]')?.getAttribute('data-id') ||
-                      fixedRowElement.querySelector('[id]')?.getAttribute('id');
-        
-        if (dataId) {
-          adId = `ad_${dataId}`;
-        }
-      }
-      
-      // 根据广告ID从映射中获取对应的数据
-      let rowData = modificationsMap.get(adId);
+      // 从排序后的修改数据数组中获取对应索引的数据
+      // 这样当表格排序时，修改数据也会按相同的方式排序，索引就能匹配
+      let rowData = sortedModifications[rowIndex];
       
       if (!rowData) {
         // 尝试从原始数组中查找，作为后备
-        rowData = modificationsArray.find(item => 
-          item && item.completeData && item.completeData.id === adId
-        );
-        
-        // 如果还是找不到，尝试根据广告名称查找
-        if (!rowData) {
-          rowData = modificationsArray.find(item => 
-            item && item.completeData && item.completeData.name === name
-          );
-        }
+        rowData = modificationsArray[rowIndex];
       }
       
       if (!rowData) return;
       
+      // 生成广告ID（用于日志）
+      const adId = rowData.completeData?.id || `ad_${rowIndex}`;
       console.log('同步广告数据:', name, 'ID:', adId, '行数据:', rowData);
       
       // 检查整行是否有修改
@@ -1222,8 +1215,8 @@ async function syncAdDataToPage(sortInfo = null) {
                 return;
               }
               
-              // 当increaseValue为0时，也需要更新，恢复为原始值
-              // 计算新值：使用插件传来的原值 + 增加的值
+              // 使用修改数据中保存的原始值，而不是从DOM中提取
+              // 这样可以确保即使DOM值被修改，也能使用缓存中的原始值
               const newValue = originalValueFromData + increaseValue;
               
               // 更新元素的文本内容

@@ -168,25 +168,65 @@ const fetchAds = async () => {
   //   }
   // ];
   try {
-    // 先从content script获取缓存数据
+    // 先从content script获取当前排序信息
     const currentDate = getCurrentDate();
+    const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
+    console.log('当前排序信息:', sortInfo);
+    
+    // 从content script获取缓存数据
     const cachedData = await sendMessageToContent('getCachedData', { date: currentDate });
     
     if (cachedData && cachedData.ads && cachedData.ads.length > 0) {
       console.log('从content缓存中读取广告数据:', cachedData.ads);
-      ads.value = cachedData.ads;
+      let adsData = cachedData.ads;
+      
+      // 如果有排序信息，根据排序信息对数据进行排序
+      if (sortInfo && sortInfo.field && sortInfo.direction) {
+        console.log('根据排序信息对广告数据进行排序:', sortInfo.field, sortInfo.direction);
+        adsData.sort((a, b) => {
+          const field = sortInfo.field;
+          const valueA = a[field] || 0;
+          const valueB = b[field] || 0;
+          
+          if (sortInfo.direction === 'asc') {
+            return valueA - valueB;
+          } else {
+            return valueB - valueA;
+          }
+        });
+        console.log('排序后的广告数据:', adsData);
+      }
+      
+      ads.value = adsData;
       if (cachedData.columnMapping) {
         columnMapping.value = cachedData.columnMapping;
-      }
-      if (cachedData.sortInfo) {
-        console.log('从content缓存中读取排序信息:', cachedData.sortInfo);
       }
       
       // 加载并应用修改数据
       if (cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
         console.log('从content缓存中读取修改数据:', cachedData.modifications);
+        
+        // 如果有排序信息，根据排序信息对修改数据进行排序
+        let sortedModifications = cachedData.modifications;
+        if (sortInfo && sortInfo.field && sortInfo.direction) {
+          console.log('根据排序信息对修改数据进行排序:', sortInfo.field, sortInfo.direction);
+          sortedModifications = [...cachedData.modifications].sort((a, b) => {
+            if (!a || !b || !a.completeData || !b.completeData) return 0;
+            const field = sortInfo.field;
+            const valueA = a.completeData[field] || 0;
+            const valueB = b.completeData[field] || 0;
+            
+            if (sortInfo.direction === 'asc') {
+              return valueA - valueB;
+            } else {
+              return valueB - valueA;
+            }
+          });
+          console.log('排序后的修改数据:', sortedModifications);
+        }
+        
         ads.value.forEach((ad, index) => {
-          const rowData = cachedData.modifications[index];
+          const rowData = sortedModifications[index];
           if (rowData && rowData.modifiedFields) {
             // 恢复增加的值
           if (rowData.modifiedFields.impressions !== undefined) {
