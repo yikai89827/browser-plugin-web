@@ -154,9 +154,9 @@ export default {
     let syncTimeout = null;
     let lastSyncTime = 0;
     const debouncedSync = async () => {
-      // 检查是否在短时间内已经执行过同步
+      // 检查是否在短时间内已经执行过同步，避免频繁调用
       const now = Date.now();
-      if (now - lastSyncTime < 500) {
+      if (now - lastSyncTime < 300) {
         console.log('Skipping sync, too soon after last sync');
         return;
       }
@@ -215,7 +215,9 @@ export default {
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: true // 增加对属性变化的监听
+      attributes: true, // 增加对属性变化的监听
+      characterData: true, // 增加对文本内容变化的监听
+      characterDataOldValue: true // 记录文本内容的旧值
     });
     
     // 同时设置多个定时器，确保在页面加载的不同阶段都能同步数据
@@ -228,7 +230,7 @@ export default {
 // 获取列索引
 async function getColumnIndices(attempt = 0) {
   // 添加递归终止条件，避免无限递归
-  if (attempt > 5) {
+  if (attempt > 10) {
     console.warn('Max attempts reached for getting column indices, stopping');
     return;
   }
@@ -488,6 +490,12 @@ async function extractAdsFromDom() {
           DomColumnMapping.reach = index;
         } else if (text==='cost per result' || text==='单次成效' || text==='每次结果成本') {
           DomColumnMapping.costPerResult = index;
+        }else if (text==='website clicks' || text==='网站点击' || text==='网站点击量') {
+          DomColumnMapping.website_clicks = index;
+        } else if (text==='registrations' || text==='注册' || text==='注册量') {
+          DomColumnMapping.registrations = index;
+        } else if (text==='registration cost' || text==='注册成本' || text==='注册成本') {
+          DomColumnMapping.registration_cost = index;
         }
       }
     });
