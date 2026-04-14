@@ -368,6 +368,7 @@ export default {
     // 防抖函数
     let syncTimeout = null;
     let lastSyncTime = 0;
+    let isUpdatingDOM = false;
     const debouncedSync = async () => {
       // 检查是否在短时间内已经执行过同步，避免频繁调用
       const now = Date.now();
@@ -378,7 +379,7 @@ export default {
       
       clearTimeout(syncTimeout);
       syncTimeout = setTimeout(async () => {
-        if (!isSyncing) {
+        if (!isSyncing && !isUpdatingDOM) {
           isSyncing = true;
           lastSyncTime = now;
           try {
@@ -949,6 +950,10 @@ async function syncAdDataToPage(sortInfo = null) {
     const pageState = getCurrentPageState();
     console.log('Current page state:', pageState);
     
+    // 使用传入的排序信息或当前页面的排序状态
+    const currentSortInfo = sortInfo || { field: pageState.sortField, direction: pageState.sortDirection };
+    console.log('Using sort info:', currentSortInfo);
+    
     // 获取存储的所有广告数据
     console.log('Getting storage items');
     const modificationsKey = generateCacheKey('ad_modifications');
@@ -964,14 +969,14 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('Valid modifications:', validModifications);
     
     // 根据排序信息对数据进行排序
-    if (sortInfo && sortInfo.field && sortInfo.direction) {
-      console.log('Sorting data by:', sortInfo.field, sortInfo.direction);
+    if (currentSortInfo && currentSortInfo.field && currentSortInfo.direction) {
+      console.log('Sorting data by:', currentSortInfo.field, currentSortInfo.direction);
       validModifications.sort((a, b) => {
-        const field = sortInfo.field;
+        const field = currentSortInfo.field;
         const valueA = a.completeData[field] || 0;
         const valueB = b.completeData[field] || 0;
         
-        if (sortInfo.direction === 'asc') {
+        if (currentSortInfo.direction === 'asc') {
           return valueA - valueB;
         } else {
           return valueB - valueA;
@@ -1061,161 +1066,166 @@ async function syncAdDataToPage(sortInfo = null) {
       const fixIndex = fixed.children[0]?.children?.length-1;
       
       // 然后更新页面上的显示值（原始值 + 增加的值）
-      Array.from(scrollableElements).forEach((element, index) => {
-        console.log(`Processing element at index ${index}: `,DomColumnMapping, element);
-        const text = element.textContent?.trim();
-        if (text) {
-          // 检查是否有对应的列修改值
-          let increaseValue = 0;
-          let originalValueFromData = 0;
-          let hasModification = false;
-          
-          // 根据DomColumnMapping确定字段类型
-          if (index === DomColumnMapping.results-fixIndex) {
-            // 成效 (results)
-            if (rowData?.modifiedFields?.results !== undefined) {
-              increaseValue = rowData.modifiedFields.results || 0;
-              originalValueFromData = rowData.completeData?.results || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.reach-fixIndex) {
-            // 覆盖人数 (reach)
-            if (rowData?.modifiedFields?.reach !== undefined) {
-              increaseValue = rowData.modifiedFields.reach || 0;
-              originalValueFromData = rowData.completeData?.reach || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.spend-fixIndex) {
-            // 花费 (spend)
-            if (rowData?.modifiedFields?.spend !== undefined) {
-              increaseValue = rowData.modifiedFields.spend || 0;
-              originalValueFromData = rowData.completeData?.spend || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.impressions-fixIndex) {
-            // 展示次数 (impressions)
-            if (rowData?.modifiedFields?.impressions !== undefined) {
-              increaseValue = rowData.modifiedFields.impressions || 0;
-              originalValueFromData = rowData.completeData?.impressions || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.costPerResult-fixIndex) {
-            // 每次结果成本 (costPerResult)
-            if (rowData?.modifiedFields?.costPerResult !== undefined) {
-              increaseValue = rowData.modifiedFields.costPerResult || 0;
-              originalValueFromData = rowData.completeData?.costPerResult || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.website_clicks-fixIndex) {
-            // 网站点击 (website_clicks)
-            if (rowData?.modifiedFields?.website_clicks !== undefined) {
-              increaseValue = rowData.modifiedFields.website_clicks || 0;
-              originalValueFromData = rowData.completeData?.website_clicks || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.registrations-fixIndex) {
-            // 注册 (registrations)
-            if (rowData?.modifiedFields?.registrations !== undefined) {
-              increaseValue = rowData.modifiedFields.registrations || 0;
-              originalValueFromData = rowData.completeData?.registrations || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          } else if (index === DomColumnMapping.registration_cost-fixIndex) {
-            // 注册成本 (registration_cost)
-            if (rowData?.modifiedFields?.registration_cost !== undefined) {
-              increaseValue = rowData.modifiedFields.registration_cost || 0;
-              originalValueFromData = rowData.completeData?.registration_cost || 0;
-              hasModification = true;
-              console.log(`Processing element at index ${index}: ${text}`);
-              console.log(`Original value from data: `, originalValueFromData);
-              console.log(`Increase value: `, increaseValue);
-            }
-          }
+      try {
+        isUpdatingDOM = true;
+        Array.from(scrollableElements).forEach((element, index) => {
+          console.log(`Processing element at index ${index}: `,DomColumnMapping, element);
+          const text = element.textContent?.trim();
+          if (text) {
+            // 检查是否有对应的列修改值
+            let increaseValue = 0;
+            let originalValueFromData = 0;
+            let hasModification = false;
             
-          // 只有当当前列有修改时才更新
-          if (hasModification) {
-            // 检查原始值是否为--且新增值为0
-            const currentText = element.textContent?.trim();
-            const isOriginalDash = currentText.includes('—');
-            const isIncreaseZero = increaseValue === 0;
-            
-            // 如果原始值是--且新增值为0，则不更新
-            if (isOriginalDash && isIncreaseZero) {
-              console.log(`Skipping update for ad ${name} column ${index}: original value is — and increase value is 0`);
-              return;
-            }
-            
-            // 当increaseValue为0时，也需要更新，恢复为原始值
-            // 计算新值：使用插件传来的原值 + 增加的值
-            const newValue = originalValueFromData + increaseValue;
-            
-            // 更新元素的文本内容
-            console.log(`Updating ad ${name} column ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
-            
-            // 递归查找并更新DOM元素
-            function findAndUpdateElement(el: Element) {
-              if (el.children.length > 0) {
-                // 
-                if(el.children?.[0] instanceof HTMLElement){
-                  findAndUpdateElement(el.children?.[0]);
-                } else {
-                  console.log(`Skipping non-HTMLElement child: ${el.children?.[0]}`);
-                }
-              } else {
-                // 找到最终的文本元素
-                console.log(`Updating element innerText: ${el.innerText}`);
-                
-                // 保存原始文本，用于提取货币符号
-                const originalText = el.innerText;
-                
-                // 根据字段类型决定显示格式
-                if (index === DomColumnMapping.spend-fixIndex) {
-                  // 花费字段：保留2位小数，保留货币符号
-                  console.log(`Updating spend field: ${newValue.toFixed(2)}`);
-                  
-                  // 提取货币符号（如果有）
-                  const currencyMatch = originalText.match(/^[^0-9]+/);
-                  const currencySymbol = currencyMatch ? currencyMatch[0] : '';
-                  
-                  // 保留货币符号并更新数值
-                  console.log(`Currency symbol: ${currencySymbol}`);
-                  el.innerText = currencySymbol + newValue.toFixed(2);
-                } else {
-                  // 其他字段：整数
-                  console.log(`Updating non-spend field: ${Math.round(newValue)}`);
-                  el.innerText = Math.round(newValue).toString();
-                }
+            // 根据DomColumnMapping确定字段类型
+            if (index === DomColumnMapping.results-fixIndex) {
+              // 成效 (results)
+              if (rowData?.modifiedFields?.results !== undefined) {
+                increaseValue = rowData.modifiedFields.results || 0;
+                originalValueFromData = rowData.completeData?.results || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.reach-fixIndex) {
+              // 覆盖人数 (reach)
+              if (rowData?.modifiedFields?.reach !== undefined) {
+                increaseValue = rowData.modifiedFields.reach || 0;
+                originalValueFromData = rowData.completeData?.reach || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.spend-fixIndex) {
+              // 花费 (spend)
+              if (rowData?.modifiedFields?.spend !== undefined) {
+                increaseValue = rowData.modifiedFields.spend || 0;
+                originalValueFromData = rowData.completeData?.spend || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.impressions-fixIndex) {
+              // 展示次数 (impressions)
+              if (rowData?.modifiedFields?.impressions !== undefined) {
+                increaseValue = rowData.modifiedFields.impressions || 0;
+                originalValueFromData = rowData.completeData?.impressions || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.costPerResult-fixIndex) {
+              // 每次结果成本 (costPerResult)
+              if (rowData?.modifiedFields?.costPerResult !== undefined) {
+                increaseValue = rowData.modifiedFields.costPerResult || 0;
+                originalValueFromData = rowData.completeData?.costPerResult || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.website_clicks-fixIndex) {
+              // 网站点击 (website_clicks)
+              if (rowData?.modifiedFields?.website_clicks !== undefined) {
+                increaseValue = rowData.modifiedFields.website_clicks || 0;
+                originalValueFromData = rowData.completeData?.website_clicks || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.registrations-fixIndex) {
+              // 注册 (registrations)
+              if (rowData?.modifiedFields?.registrations !== undefined) {
+                increaseValue = rowData.modifiedFields.registrations || 0;
+                originalValueFromData = rowData.completeData?.registrations || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
+              }
+            } else if (index === DomColumnMapping.registration_cost-fixIndex) {
+              // 注册成本 (registration_cost)
+              if (rowData?.modifiedFields?.registration_cost !== undefined) {
+                increaseValue = rowData.modifiedFields.registration_cost || 0;
+                originalValueFromData = rowData.completeData?.registration_cost || 0;
+                hasModification = true;
+                console.log(`Processing element at index ${index}: ${text}`);
+                console.log(`Original value from data: `, originalValueFromData);
+                console.log(`Increase value: `, increaseValue);
               }
             }
-            
-            // 开始递归查找
-            findAndUpdateElement(element);
-          } else {
-            console.log(`No modification for ad ${name} column ${index}, skipping update`);
+              
+            // 只有当当前列有修改时才更新
+            if (hasModification) {
+              // 检查原始值是否为--且新增值为0
+              const currentText = element.textContent?.trim();
+              const isOriginalDash = currentText.includes('—');
+              const isIncreaseZero = increaseValue === 0;
+              
+              // 如果原始值是--且新增值为0，则不更新
+              if (isOriginalDash && isIncreaseZero) {
+                console.log(`Skipping update for ad ${name} column ${index}: original value is — and increase value is 0`);
+                return;
+              }
+              
+              // 当increaseValue为0时，也需要更新，恢复为原始值
+              // 计算新值：使用插件传来的原值 + 增加的值
+              const newValue = originalValueFromData + increaseValue;
+              
+              // 更新元素的文本内容
+              console.log(`Updating ad ${name} column ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
+              
+              // 递归查找并更新DOM元素
+              function findAndUpdateElement(el: Element) {
+                if (el.children.length > 0) {
+                  // 
+                  if(el.children?.[0] instanceof HTMLElement){
+                    findAndUpdateElement(el.children?.[0]);
+                  } else {
+                    console.log(`Skipping non-HTMLElement child: ${el.children?.[0]}`);
+                  }
+                } else {
+                  // 找到最终的文本元素
+                  console.log(`Updating element innerText: ${el.innerText}`);
+                  
+                  // 保存原始文本，用于提取货币符号
+                  const originalText = el.innerText;
+                  
+                  // 根据字段类型决定显示格式
+                  if (index === DomColumnMapping.spend-fixIndex) {
+                    // 花费字段：保留2位小数，保留货币符号
+                    console.log(`Updating spend field: ${newValue.toFixed(2)}`);
+                    
+                    // 提取货币符号（如果有）
+                    const currencyMatch = originalText.match(/^[^0-9]+/);
+                    const currencySymbol = currencyMatch ? currencyMatch[0] : '';
+                    
+                    // 保留货币符号并更新数值
+                    console.log(`Currency symbol: ${currencySymbol}`);
+                    el.innerText = currencySymbol + newValue.toFixed(2);
+                  } else {
+                    // 其他字段：整数
+                    console.log(`Updating non-spend field: ${Math.round(newValue)}`);
+                    el.innerText = Math.round(newValue).toString();
+                  }
+                }
+              }
+              
+              // 开始递归查找
+              findAndUpdateElement(element);
+            } else {
+              console.log(`No modification for ad ${name} column ${index}, skipping update`);
+            }
           }
-        }
-      });
+        });
+      } finally {
+        isUpdatingDOM = false;
+      }
     });
   } catch (error: any) {
     // 处理扩展上下文无效的错误
