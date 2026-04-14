@@ -61,11 +61,23 @@ class IndexedDBStorage implements StorageWrapper {
 
     private withDB<T>(callback: (db: IDBDatabase) => Promise<T>): Promise<T> {
         return new Promise((resolve, reject) => {
+            if (!this.isIndexedDBAvailable) {
+                // IndexedDB不可用，直接拒绝并使用内存存储
+                reject(new Error('IndexedDB is not available'));
+                return;
+            }
+            
             if (this.db) {
                 callback(this.db)
                     .then(resolve)
                     .catch(reject);
             } else {
+                // 限制队列长度，避免内存溢出
+                if (this.queue.length > 100) {
+                    reject(new Error('Storage queue is full'));
+                    return;
+                }
+                
                 this.queue.push((db) => {
                     callback(db)
                         .then(resolve)
@@ -88,7 +100,8 @@ class IndexedDBStorage implements StorageWrapper {
                     const request = store.get(key);
 
                     request.onerror = () => {
-                        reject(new Error('Failed to get value from IndexedDB'));
+                        const error = (request.error || new Error('Unknown error'));
+                        reject(new Error(`Failed to get value from IndexedDB: ${error.message}`));
                     };
 
                     request.onsuccess = () => {

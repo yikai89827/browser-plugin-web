@@ -59,7 +59,7 @@ function getCurrentPageState() {
   if (tab.includes('campaigns')) {
     level = 'Campaigns';
   } else if (tab.includes('adsets')) {
-    level = 'Ad sets';
+    level = 'Adsets';
   } else if (tab.includes('ads')) {
     level = 'Ads';
   }
@@ -69,7 +69,6 @@ function getCurrentPageState() {
   
   return {
     level,
-    tab,
     sortField,
     sortDirection
   };
@@ -78,8 +77,8 @@ function getCurrentPageState() {
 // 生成缓存键
 function generateCacheKey(prefix: string) {
   const date = getCurrentDate();
-  const pageState = getCurrentPageState();
-  return `${prefix}_${date}_${pageState.level}_${pageState.tab}_${pageState.sortField || 'none'}_${pageState.sortDirection || 'none'}`;
+  const {level, sortField, sortDirection} = getCurrentPageState();
+  return `${prefix}_${date}_${level}${sortField?'_'+sortField: ''}${sortDirection ? '_'+sortDirection : ''}`;
 }
 
 // 检测排序信息
@@ -175,6 +174,25 @@ function createOverlay() {
   spinner.style.height = '40px';
   spinner.style.animation = 'spin 1s linear infinite';
   
+  // 添加关闭按钮
+  const closeButton = document.createElement('button');
+  closeButton.textContent = '关闭';
+  closeButton.style.position = 'absolute';
+  closeButton.style.top = '10px';
+  closeButton.style.right = '10px';
+  closeButton.style.padding = '8px 16px';
+  closeButton.style.backgroundColor = '#3498db';
+  closeButton.style.color = 'white';
+  closeButton.style.border = 'none';
+  closeButton.style.borderRadius = '4px';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.fontSize = '14px';
+  closeButton.style.fontWeight = 'bold';
+  closeButton.style.zIndex = '1000000';
+  closeButton.onclick = () => {
+    removeOverlay();
+  };
+  
   // 添加动画样式
   const style = document.createElement('style');
   style.textContent = `
@@ -186,6 +204,7 @@ function createOverlay() {
   document.head.appendChild(style);
   
   overlayElement.appendChild(spinner);
+  overlayElement.appendChild(closeButton);
   document.body.appendChild(overlayElement);
 }
 
@@ -223,12 +242,10 @@ export default {
         // 创建遮盖层
         createOverlay();
         syncAdDataToPage(sortInfo).then(() => {
-          // 数据同步完成后移除遮盖层
-          removeOverlay();
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('Error refreshing page data:', error);
-          // 即使出错也要移除遮盖层
+          // 出错时移除遮盖层
           removeOverlay();
           sendResponse({ success: false, error: error.message });
         });
@@ -332,12 +349,10 @@ export default {
         // 数据加载完成后立即尝试同步
         if (cachedModifications) {
           await syncAdDataToPage();
-          // 数据同步完成后移除遮盖层
-          removeOverlay();
         }
       } catch (error) {
         console.error('Error loading cached data:', error);
-        // 即使出错也要移除遮盖层
+        // 出错时移除遮盖层
         removeOverlay();
       }
     };
@@ -352,7 +367,6 @@ export default {
       // 检查是否在短时间内已经执行过同步，避免频繁调用
       const now = Date.now();
       if (now - lastSyncTime < 300) {
-        removeOverlay();
         console.log('Skipping sync, too soon after last sync');
         return;
       }
@@ -366,15 +380,12 @@ export default {
             // 调用getColumnIndices时使用默认参数0，确保递归终止条件生效
             await getColumnIndices();
             await syncAdDataToPage();
-            // 数据同步完成后移除遮盖层
-            removeOverlay();
           } catch (error) {
             console.error('Error in debounced sync:', error);
-            // 即使出错也要移除遮盖层
+            // 出错时移除遮盖层
             removeOverlay();
           } finally {
             isSyncing = false;
-            removeOverlay();
           }
         }
       }, 0);
@@ -797,15 +808,9 @@ async function extractAdsFromDom() {
       
       // 检查本地存储中是否有对应的广告数据
       try {
-        // 获取当前日期，格式为YYYY-MM-DD
-        const getCurrentDate = () => {
-          const now = new Date();
-          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        };
-        
         // 从新的缓存结构中获取数据
-        const currentDate = getCurrentDate();
-        const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
+        const modificationsKey = generateCacheKey('ad_modifications');
+        const modificationsArray = await browserStorage.get(modificationsKey);
         if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray[rowIndex]) {
           const rowData = modificationsArray[rowIndex];
           if (rowData && rowData.modifiedFields) {
@@ -1216,8 +1221,7 @@ async function syncAdDataToPage(sortInfo = null) {
     } else {
       console.error('Error syncing ad data:', error);
     }
-  } finally {
-    // 数据同步完成后移除遮盖层
+    // 出错时移除遮盖层
     removeOverlay();
   }
 }
