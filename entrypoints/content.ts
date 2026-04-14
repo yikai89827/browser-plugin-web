@@ -570,7 +570,7 @@ function findTableContainer() {
   for (const selector of selectors) {
     const container = document.querySelector(selector);
     if (container) {
-      console.log(`Found table container with selector: ${selector}`);
+      console.log(`使用选择器找到表格容器: ${selector}`);
       return container;
     }
   }
