@@ -31,16 +31,179 @@ const columnMapping = {
 // 存储列索引
 let columnIndices: Record<string, number> = {};
 
+// 遮盖层元素
+let overlayElement: HTMLElement | null = null;
+
+// 当前页面状态
+let currentPageState = {
+  tab: '', // 当前tab分类
+  sortField: null, // 当前排序字段
+  sortDirection: null, // 当前排序方向
+  level: '' // 当前层级（竞选活动、广告组、广告）
+};
+
 // 获取当前日期，格式为YYYY-MM-DD
 function getCurrentDate() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+// 获取当前页面状态
+function getCurrentPageState() {
+  // 从URL中获取当前tab名称
+  const pathParts = window.location.href.split('/');
+  const tab = pathParts[pathParts.length - 1];
+  
+  // 获取当前层级（竞选活动、广告组、广告）
+  let level = '';
+  if (tab.includes('campaigns')) {
+    level = 'Campaigns';
+  } else if (tab.includes('adsets')) {
+    level = 'Ad sets';
+  } else if (tab.includes('ads')) {
+    level = 'Ads';
+  }
+  
+  // 获取当前排序状态
+  const { sortField, sortDirection } = detectSortInfo();
+  
+  return {
+    level,
+    tab,
+    sortField,
+    sortDirection
+  };
+}
+
+// 生成缓存键
+function generateCacheKey(prefix: string) {
+  const date = getCurrentDate();
+  const pageState = getCurrentPageState();
+  return `${prefix}_${date}_${pageState.level}_${pageState.tab}_${pageState.sortField || 'none'}_${pageState.sortDirection || 'none'}`;
+}
+
+// 检测排序信息
+function detectSortInfo() {
+  let sortField = null;
+  let sortDirection = null;
+  
+  try {
+    // 查找具有sorting属性且role="columnheader"的元素
+    const columnHeaderElements = document.querySelectorAll('[role="columnheader"]');
+    columnHeaderElements.forEach(element => {
+      const sortingAttr = element.getAttribute('sorting');
+      if (sortingAttr) {
+        // 从元素文本或ID中提取字段名
+        const fieldName = element.textContent?.trim().toLowerCase() || '';
+        // 映射字段名到我们使用的字段名
+        if (fieldName.includes('results') || fieldName.includes('成效') || fieldName.includes('结果')) {
+          sortField = 'results';
+        } else if (fieldName.includes('spent') || fieldName.includes('花费') || fieldName.includes('支出')) {
+          sortField = 'spend';
+        } else if (fieldName.includes('impressions') || fieldName.includes('展示') || fieldName.includes('印象')) {
+          sortField = 'impressions';
+        } else if (fieldName.includes('reach') || fieldName.includes('覆盖') || fieldName.includes('抵达')) {
+          sortField = 'reach';
+        } else if (fieldName.includes('cost per result') || fieldName.includes('单次成效') || fieldName.includes('每次结果成本')) {
+          sortField = 'costPerResult';
+        } else if (fieldName.includes('website clicks') || fieldName.includes('网站点击')) {
+          sortField = 'website_clicks';
+        } else if (fieldName.includes('registrations') || fieldName.includes('注册')) {
+          sortField = 'registrations';
+        } else if (fieldName.includes('registration cost') || fieldName.includes('注册成本')) {
+          sortField = 'registration_cost';
+        }
+        
+        // 设置排序方向
+        sortDirection = sortingAttr.toLowerCase();
+      }
+    });
+  } catch (error) {
+    console.error('Error detecting sort info:', error);
+  }
+  
+  return { sortField, sortDirection };
+}
+
+// 创建遮盖层
+function createOverlay() {
+  // 如果遮盖层已经存在，先移除
+  if (overlayElement) {
+    overlayElement.remove();
+  }
+  
+  // 找到表格容器
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    console.log('Table container not found, using full page overlay');
+    // 如果找不到表格容器，使用全屏遮盖层
+    overlayElement = document.createElement('div');
+    overlayElement.style.position = 'fixed';
+    overlayElement.style.top = '0';
+    overlayElement.style.left = '0';
+    overlayElement.style.width = '100%';
+    overlayElement.style.height = '100%';
+    overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)'; // 完全不透明
+    overlayElement.style.zIndex = '999999';
+    overlayElement.style.display = 'flex';
+    overlayElement.style.justifyContent = 'center';
+    overlayElement.style.alignItems = 'center';
+  } else {
+    // 获取表格容器的位置和大小
+    const rect = tableContainer.getBoundingClientRect();
+    
+    // 创建遮盖层元素
+    overlayElement = document.createElement('div');
+    overlayElement.style.position = 'fixed';
+    overlayElement.style.top = `${rect.top}px`;
+    overlayElement.style.left = `${rect.left}px`;
+    overlayElement.style.width = `${rect.width}px`;
+    overlayElement.style.height = `${rect.height}px`;
+    overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)'; // 完全不透明
+    overlayElement.style.zIndex = '999999';
+    overlayElement.style.display = 'flex';
+    overlayElement.style.justifyContent = 'center';
+    overlayElement.style.alignItems = 'center';
+  }
+  
+  // 添加加载动画
+  const spinner = document.createElement('div');
+  spinner.style.border = '4px solid rgba(0, 0, 0, 0.1)';
+  spinner.style.borderLeftColor = '#3498db';
+  spinner.style.borderRadius = '50%';
+  spinner.style.width = '40px';
+  spinner.style.height = '40px';
+  spinner.style.animation = 'spin 1s linear infinite';
+  
+  // 添加动画样式
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  overlayElement.appendChild(spinner);
+  document.body.appendChild(overlayElement);
+}
+
+// 移除遮盖层
+function removeOverlay() {
+  if (overlayElement) {
+    overlayElement.remove();
+    overlayElement = null;
+  }
+}
+
 export default {
   matches: ['*://*.facebook.com/adsmanager/*'],
   main() {
     console.log('Content script loaded for Facebook Ads Manager');
+    
+    // 创建遮盖层，在数据同步完成前显示
+    createOverlay();
     
     // 监听来自popup的消息
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -57,10 +220,16 @@ export default {
       } else if (message.action === 'refreshPageWithData') {
         // 收到刷新页面的请求，重新同步数据
         const sortInfo = message.sortInfo;
+        // 创建遮盖层
+        createOverlay();
         syncAdDataToPage(sortInfo).then(() => {
+          // 数据同步完成后移除遮盖层
+          removeOverlay();
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('Error refreshing page data:', error);
+          // 即使出错也要移除遮盖层
+          removeOverlay();
           sendResponse({ success: false, error: error.message });
         });
         // 返回true表示异步响应
@@ -68,11 +237,17 @@ export default {
       } else if (message.action === 'getCachedData') {
         // 从缓存中获取数据
         const date = message.date;
+        // 使用新的缓存键生成函数
+        const adsKey = generateCacheKey('ads');
+        const columnMappingKey = generateCacheKey('columnMapping');
+        const sortInfoKey = generateCacheKey('sortInfo');
+        const modificationsKey = generateCacheKey('ad_modifications');
+        
         Promise.all([
-          browserStorage.get(`ads_${date}`),
-          browserStorage.get(`columnMapping_${date}`),
-          browserStorage.get(`sortInfo_${date}`),
-          browserStorage.get(`ad_modifications_${date}`)
+          browserStorage.get(adsKey),
+          browserStorage.get(columnMappingKey),
+          browserStorage.get(sortInfoKey),
+          browserStorage.get(modificationsKey)
         ]).then(([ads, columnMapping, sortInfo, modifications]) => {
           sendResponse({ ads, columnMapping, sortInfo, modifications });
         }).catch((error) => {
@@ -84,10 +259,15 @@ export default {
       } else if (message.action === 'saveCachedData') {
         // 保存缓存数据
         const { date, ads, columnMapping, sortInfo } = message;
+        // 使用新的缓存键生成函数
+        const adsKey = generateCacheKey('ads');
+        const columnMappingKey = generateCacheKey('columnMapping');
+        const sortInfoKey = generateCacheKey('sortInfo');
+        
         Promise.all([
-          browserStorage.set(`ads_${date}`, ads),
-          browserStorage.set(`columnMapping_${date}`, columnMapping),
-          browserStorage.set(`sortInfo_${date}`, sortInfo)
+          browserStorage.set(adsKey, ads),
+          browserStorage.set(columnMappingKey, columnMapping),
+          browserStorage.set(sortInfoKey, sortInfo)
         ]).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
@@ -99,7 +279,9 @@ export default {
       } else if (message.action === 'saveModifications') {
         // 保存修改数据
         const { date, modifications } = message;
-        browserStorage.set(`ad_modifications_${date}`, modifications).then(() => {
+        // 使用新的缓存键生成函数
+        const modificationsKey = generateCacheKey('ad_modifications');
+        browserStorage.set(modificationsKey, modifications).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('Error saving modifications:', error);
@@ -110,7 +292,9 @@ export default {
       } else if (message.action === 'getSortInfo') {
         // 获取排序信息
         const date = message.date;
-        browserStorage.get(`sortInfo_${date}`).then((sortInfo) => {
+        // 使用新的缓存键生成函数
+        const sortInfoKey = generateCacheKey('sortInfo');
+        browserStorage.get(sortInfoKey).then((sortInfo) => {
           sendResponse(sortInfo);
         }).catch((error) => {
           console.error('Error getting sort info:', error);
@@ -130,20 +314,31 @@ export default {
     // 预加载缓存数据
     const loadCachedData = async () => {
       try {
-        // 只获取按日期存储的修改数据
-        const modifications = await browserStorage.get(`ad_modifications_${currentDate}`);
-        const columnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+        // 获取当前页面状态
+        const pageState = getCurrentPageState();
+        currentPageState = pageState;
+        
+        // 使用新的缓存键生成函数获取缓存数据
+        const modificationsKey = generateCacheKey('ad_modifications');
+        const columnMappingKey = generateCacheKey('columnMapping');
+        
+        const modifications = await browserStorage.get(modificationsKey);
+        const columnMapping = await browserStorage.get(columnMappingKey);
         
         cachedModifications = modifications;
         cachedColumnMapping = columnMapping;
-        console.log('Preloaded cached data:', { modifications, columnMapping });
+        console.log('Preloaded cached data:', { modifications, columnMapping, pageState });
         
         // 数据加载完成后立即尝试同步
         if (cachedModifications) {
           await syncAdDataToPage();
+          // 数据同步完成后移除遮盖层
+          removeOverlay();
         }
       } catch (error) {
         console.error('Error loading cached data:', error);
+        // 即使出错也要移除遮盖层
+        removeOverlay();
       }
     };
     
@@ -157,6 +352,7 @@ export default {
       // 检查是否在短时间内已经执行过同步，避免频繁调用
       const now = Date.now();
       if (now - lastSyncTime < 300) {
+        removeOverlay();
         console.log('Skipping sync, too soon after last sync');
         return;
       }
@@ -170,10 +366,15 @@ export default {
             // 调用getColumnIndices时使用默认参数0，确保递归终止条件生效
             await getColumnIndices();
             await syncAdDataToPage();
+            // 数据同步完成后移除遮盖层
+            removeOverlay();
           } catch (error) {
             console.error('Error in debounced sync:', error);
+            // 即使出错也要移除遮盖层
+            removeOverlay();
           } finally {
             isSyncing = false;
+            removeOverlay();
           }
         }
       }, 0);
@@ -197,8 +398,7 @@ export default {
         });
         
         // 检查属性变化（例如样式变化）
-        const hasAttributeChanges = mutation.type === 'attributes' && 
-                                   mutation.target.nodeType === Node.ELEMENT_NODE &&
+        const hasAttributeChanges = mutation.target.nodeType === Node.ELEMENT_NODE &&
                                    (mutation.attributeName === 'style' || 
                                     mutation.attributeName === 'class');
         
@@ -207,23 +407,51 @@ export default {
       
       if (hasTableChanges) {
         console.log('Detected table changes, triggering sync');
+        // 表格变化时创建遮盖层
+        createOverlay();
         debouncedSync();
       }
     });
     
     // 开始观察页面变化
     observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true, // 增加对属性变化的监听
+      childList: true,// 监听子节点变化
+      subtree: true,// 监听子树变化
+      // attributes: true, // 增加对属性变化的监听
       characterData: true, // 增加对文本内容变化的监听
       characterDataOldValue: true // 记录文本内容的旧值
     });
     
+    // 监听URL变化，当切换tab时重新加载缓存数据
+    let lastUrl = window.location.href;
+    setInterval(() => {
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
+        console.log('URL changed, reloading cached data:', currentUrl);
+        // URL变化时创建遮盖层
+        createOverlay();
+        // 重新加载缓存数据
+        loadCachedData();
+      }
+    }, 500);
+    
     // 同时设置多个定时器，确保在页面加载的不同阶段都能同步数据
-    setTimeout(debouncedSync, 0);    // 立即执行
-    setTimeout(debouncedSync, 500);  // 半秒后执行
-    setTimeout(debouncedSync, 1000); // 1秒后执行
+    setTimeout(() => {
+      // 立即执行
+      createOverlay();
+      debouncedSync();
+    }, 0);
+    setTimeout(() => {
+      // 半秒后执行
+      createOverlay();
+      debouncedSync();
+    }, 500);
+    setTimeout(() => {
+      // 1秒后执行
+      createOverlay();
+      debouncedSync();
+    }, 1000);
   }
 };
 
@@ -239,8 +467,8 @@ async function getColumnIndices(attempt = 0) {
   
   try {
     // 首先尝试从缓存中获取列映射
-    const currentDate = getCurrentDate();
-    const DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+    const columnMappingKey = generateCacheKey('columnMapping');
+    const DomColumnMapping = await browserStorage.get(columnMappingKey);
     
     // 如果从缓存中获取到了列映射，直接使用
     if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
@@ -295,6 +523,9 @@ async function getColumnIndices(attempt = 0) {
       await getColumnIndices(attempt + 1);
     } else {
       console.log('Column indices:', columnIndices);
+      // 保存列映射到缓存
+      await browserStorage.set(columnMappingKey, columnIndices);
+      console.log('Saved column mapping to cache:', columnMappingKey);
     }
   } catch (error) {
     console.error('Error getting column indices:', error);
@@ -656,40 +887,15 @@ async function extractAdsFromDom() {
     
     console.log('Extracted ads from DOM:', ads);
     
-    // 根据数据判断排序字段和方向
-    if (ads.length > 1) {
-      // 可能的排序字段
-      const possibleFields = ['impressions', 'reach', 'spend', 'results'];
-      
-      for (const field of possibleFields) {
-        // 检查是否按该字段降序排序
-        let isDescending = true;
-        for (let i = 0; i < ads.length - 1; i++) {
-          if (ads[i][field] < ads[i + 1][field]) {
-            isDescending = false;
-            break;
-          }
-        }
-        
-        // 检查是否按该字段升序排序
-        let isAscending = true;
-        for (let i = 0; i < ads.length - 1; i++) {
-          if (ads[i][field] > ads[i + 1][field]) {
-            isAscending = false;
-            break;
-          }
-        }
-        
-        if (isDescending) {
-          sortInfo.field = field;
-          sortInfo.direction = 'desc';
-          break;
-        } else if (isAscending) {
-          sortInfo.field = field;
-          sortInfo.direction = 'asc';
-          break;
-        }
+    // 检测排序信息
+    try {
+      const { sortField, sortDirection } = detectSortInfo();
+      if (sortField && sortDirection) {
+        sortInfo.field = sortField;
+        sortInfo.direction = sortDirection;
       }
+    } catch (error) {
+      console.error('Error detecting sort info:', error);
     }
     
     console.log('Detected sort info:', sortInfo);
@@ -697,8 +903,10 @@ async function extractAdsFromDom() {
     // 保存DomColumnMapping到浏览器存储
     try {
       if (browser && browser.storage) {
-        await browser.storage.local.set({ DomColumnMapping });
-        console.log('Saved DomColumnMapping to storage:', DomColumnMapping);
+        // 使用新的缓存键生成函数
+        const columnMappingKey = generateCacheKey('columnMapping');
+        await browser.storage.local.set({ [columnMappingKey]: DomColumnMapping });
+        console.log('Saved DomColumnMapping to storage:', columnMappingKey, DomColumnMapping);
       }
     } catch (error) {
       console.error('Error saving DomColumnMapping:', error);
@@ -729,10 +937,14 @@ async function syncAdDataToPage(sortInfo = null) {
       console.log('Got column indices:', columnIndices);
     }
     
+    // 获取当前页面状态
+    const pageState = getCurrentPageState();
+    console.log('Current page state:', pageState);
+    
     // 获取存储的所有广告数据
     console.log('Getting storage items');
-    const currentDate = getCurrentDate();
-    const modificationsArray = await browserStorage.get(`ad_modifications_${currentDate}`);
+    const modificationsKey = generateCacheKey('ad_modifications');
+    const modificationsArray = await browserStorage.get(modificationsKey);
     
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
       console.log('No ad data found in storage');
@@ -829,8 +1041,8 @@ async function syncAdDataToPage(sortInfo = null) {
       // 3. 保存时两个值都需要保存
       // 4. 在原页面加载完成重新渲染新值时，是把这两个值相加显示在页面上
       // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
-      const currentDate = getCurrentDate();
-      const DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+      const columnMappingKey = generateCacheKey('columnMapping');
+      const DomColumnMapping = await browserStorage.get(columnMappingKey);
       console.log('Dom Column mapping:', DomColumnMapping);
       
       if (!DomColumnMapping || Object.keys(DomColumnMapping).length === 0) {
@@ -1004,5 +1216,8 @@ async function syncAdDataToPage(sortInfo = null) {
     } else {
       console.error('Error syncing ad data:', error);
     }
+  } finally {
+    // 数据同步完成后移除遮盖层
+    removeOverlay();
   }
 }
