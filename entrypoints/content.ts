@@ -111,6 +111,12 @@ function detectSortInfo() {
           sortField = 'registrations';
         } else if (fieldName.includes('registration cost') || fieldName.includes('注册成本')) {
           sortField = 'registration_cost';
+        } else {
+          // 对于其他字段，使用标准化的字段名
+          sortField = fieldName
+            .replace(/[^a-z0-9\s]/g, '') // 移除特殊字符
+            .trim()
+            .replace(/\s+/g, '_'); // 将空格替换为下划线
         }
         
         // 设置排序方向
@@ -245,8 +251,6 @@ export default {
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('Error refreshing page data:', error);
-          // 出错时移除遮盖层
-          removeOverlay();
           sendResponse({ success: false, error: error.message });
         });
         // 返回true表示异步响应
@@ -352,7 +356,8 @@ export default {
         }
       } catch (error) {
         console.error('Error loading cached data:', error);
-        // 出错时移除遮盖层
+      } finally {
+        // 无论成功失败都关闭遮盖层
         removeOverlay();
       }
     };
@@ -382,8 +387,6 @@ export default {
             await syncAdDataToPage();
           } catch (error) {
             console.error('Error in debounced sync:', error);
-            // 出错时移除遮盖层
-            removeOverlay();
           } finally {
             isSyncing = false;
           }
@@ -1221,7 +1224,8 @@ async function syncAdDataToPage(sortInfo = null) {
     } else {
       console.error('Error syncing ad data:', error);
     }
-    // 出错时移除遮盖层
+  } finally {
+    // 无论成功失败都关闭遮盖层
     removeOverlay();
   }
 }
