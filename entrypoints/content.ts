@@ -81,6 +81,13 @@ function generateCacheKey(prefix: string) {
   return `${prefix}_${date}_${level}${sortField?'_'+sortField: ''}${sortDirection ? '_'+sortDirection : ''}`;
 }
 
+// 生成不包含排序信息的缓存键（用于修改数据，因为修改数据应该与排序状态无关）
+function generateCacheKeyWithoutSort(prefix: string) {
+  const date = getCurrentDate();
+  const {level} = getCurrentPageState();
+  return `${prefix}_${date}_${level}`;
+}
+
 // 检测排序信息
 function detectSortInfo() {
   let sortField = null;
@@ -262,7 +269,8 @@ export default {
         const adsKey = generateCacheKey('ads');
         const columnMappingKey = generateCacheKey('columnMapping');
         const sortInfoKey = generateCacheKey('sortInfo');
-        const modificationsKey = generateCacheKey('ad_modifications');
+        // 使用不包含排序信息的缓存键获取修改数据
+        const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
         
         Promise.all([
           browserStorage.get(adsKey),
@@ -300,8 +308,8 @@ export default {
       } else if (message.action === 'saveModifications') {
         // 保存修改数据
         const { date, modifications } = message;
-        // 使用新的缓存键生成函数
-        const modificationsKey = generateCacheKey('ad_modifications');
+        // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
+        const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
         browserStorage.set(modificationsKey, modifications).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
@@ -617,22 +625,22 @@ function getTableDataRows(tableContainer: HTMLElement) {
     
     // 处理过滤后的节点
     filteredPresentationRows.forEach((presentationRow, index) => {
-      console.log(`Processing presentation row ${index}`, presentationRow);
+      console.log(`处理过滤后的行 ${index}`, presentationRow);
       
       // 获取孙元素（固定行、滚动行和分割线）
       const children = presentationRow.children;
       if (children.length === 1) { // 确保只有一个子元素
         const firstChild = children[0] as HTMLElement;
         const grandchildren = firstChild.children;
-        console.log(`Found grandchildren: ${grandchildren.length}`, grandchildren);
+        console.log(`找到子元素: ${grandchildren.length}`, grandchildren);
         
         if (grandchildren.length >= 2) { // 至少有固定行和滚动行
           const fixed = grandchildren[0] as HTMLElement; // 第一个是固定行数据
           const scrollable = grandchildren[1] as HTMLElement; // 第二个是滚动行数据
           // 第三个是分割线元素，忽略
           
-          console.log(`Found fixed row:`, fixed);
-          console.log(`Found scrollable row:`, scrollable);
+          console.log(`固定行数据:`, fixed);
+          console.log(`滚动行数据:`, scrollable);
           
           rowPairs.push({
             fixed: fixed,
@@ -643,7 +651,7 @@ function getTableDataRows(tableContainer: HTMLElement) {
     });
     
   } catch (error) {
-    console.error('Error getting table data rows:', error);
+    console.error('获取表格数据行错误:', error);
   }
   
   console.log('找到行对:', rowPairs.length);
@@ -720,7 +728,7 @@ async function extractAdsFromDom() {
       // 获取单元格的文本内容，排除子元素的文本
       const text = cell.textContent?.trim().toLowerCase();
       if (text) {
-        console.log(`Header column ${index}: ${text}`);
+        console.log(`表头列 ${index}: ${text}`);
         
         // 匹配常见的表头文本
         if (text==='Campaign' || text==='活动'||text==='ad set' || text==='广告组'|| text==='ad' || text==='广告') {
@@ -749,18 +757,18 @@ async function extractAdsFromDom() {
     
     // 获取表格数据行对
     const rowPairs = getTableDataRows(tableContainer);
-    console.log('找到行对:',rowPairs, rowPairs.length);
+    console.log('找到行数组:',rowPairs, rowPairs.length);
     
     // 使用for循环代替forEach，确保异步操作按顺序完成
     for (let rowIndex = 0; rowIndex < rowPairs.length; rowIndex++) {
       const rowPair = rowPairs[rowIndex];
-      console.log(`Processing row pair ${rowIndex}`, rowPair);
+      console.log(`处理行 ${rowIndex}`, rowPair);
       const { fixed, scrollable } = rowPair;
       
       // 提取广告名称 - 从固定行获取
       let name = '';
       const nameElements = fixed.querySelectorAll('div, span');
-      console.log(`Found fixed length:`, fixed.children[0]?.children?.length-1 || 0);
+      console.log(`固定行数据长度:`, fixed.children[0]?.children?.length-1 || 0);
       for (const element of nameElements) {
         const text = element.textContent?.trim();
         if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
@@ -826,11 +834,11 @@ async function extractAdsFromDom() {
             ad.increase_website_clicks = rowData.modifiedFields.website_clicks || 0;
             ad.increase_registrations = rowData.modifiedFields.registrations || 0;
             ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
-            console.log(`Found stored ad data for ${name}:`, rowData);
+            console.log(`找到存储的广告数据 ${name}:`, rowData);
           }
         }
       } catch (error) {
-        console.error('Error getting stored ad data:', error);
+        console.error('获取存储广告数据错误:', error);
       }
       
       // // 存储所有文本内容用于调试
@@ -841,14 +849,14 @@ async function extractAdsFromDom() {
           allTexts.push(`${index}: ${text}`);
         }
       });
-      console.log(`Found scrollable elements:`,DomColumnMapping, allTexts);
+      console.log(`滚动行数据长度:`, scrollableElements.length, allTexts.length);
       
       // 根据表头映射提取数据
       Object.entries(DomColumnMapping).forEach(([key, index]) => {
-        console.log(`${name}: Processing ${key} at index ${index}`);
+        console.log(`${name}: 处理 ${key} at index ${index}`);
         // 计算滚动列的索引（减去固定列的数量）
         const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
-        console.log(`${name}: Processing ${key} at fixIndex: ${fixIndex} index :${index}`);
+        console.log(`${name}: 处理 ${key} at fixIndex: ${fixIndex} index :${index}`);
         
         // 尝试使用计算的fixIndex
         let targetElement = scrollableElements[fixIndex];
@@ -857,7 +865,7 @@ async function extractAdsFromDom() {
         if (targetElement) {
           const text = targetElement.textContent?.trim();
           if (text) {
-            console.log(`${name}: Processing ${key} at index ${fixIndex}: ${text}`);
+            console.log(`${name}: 处理 ${key} at index ${fixIndex}: ${text}`);
             // 尝试解析数值
             const cleanedText = text.replace(/[^0-9.]/g, '');
             const num = parseFloat(cleanedText);
@@ -880,7 +888,7 @@ async function extractAdsFromDom() {
               }
               
               ad[key] = originalValue;
-              console.log(`Extracted ${key} for ${name}: ${ad[key]} (raw: ${text}, increase: ${ad[`increase_${key}`]})`);
+              console.log(`提取 ${key} for ${name}: ${ad[key]} (raw: ${text}, increase: ${ad[`increase_${key}`]})`);
             }
           }
         } else {
@@ -955,8 +963,9 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('使用排序信息:', currentSortInfo);
     
     // 获取存储的所有广告数据
+    // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
     console.log('获取存储项');
-    const modificationsKey = generateCacheKey('ad_modifications');
+    const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
     const modificationsArray = await browserStorage.get(modificationsKey);
     
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {

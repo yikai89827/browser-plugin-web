@@ -295,10 +295,10 @@ const saveChanges = async () => {
     // 检测哪些广告被修改并保存
     let modifiedCount = 0;
     
-    // 先获取现有的缓存数组
+    // 先从content script获取现有的修改数据
     const currentDate = getCurrentDate();
-    const cachedData = await browserStorage.get(`ad_modifications_${currentDate}`);
-    const modificationsArray = Array.isArray(cachedData) ? cachedData : [];
+    const existingModifications = await sendMessageToContent('getCachedData', { date: currentDate });
+    const modificationsArray = Array.isArray(existingModifications.modifications) ? existingModifications.modifications : [];
     
     // 确保modificationsArray的长度与ads.value的长度一致
     modificationsArray.length = ads.value.length;
