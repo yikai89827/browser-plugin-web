@@ -206,6 +206,7 @@ export default {
       });
       
       if (hasTableChanges) {
+        console.log('Detected table changes, triggering sync');
         debouncedSync();
       }
     });
