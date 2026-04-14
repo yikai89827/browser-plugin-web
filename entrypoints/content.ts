@@ -152,12 +152,22 @@ export default {
     
     // 防抖函数
     let syncTimeout = null;
+    let lastSyncTime = 0;
     const debouncedSync = async () => {
+      // 检查是否在短时间内已经执行过同步
+      const now = Date.now();
+      if (now - lastSyncTime < 500) {
+        console.log('Skipping sync, too soon after last sync');
+        return;
+      }
+      
       clearTimeout(syncTimeout);
       syncTimeout = setTimeout(async () => {
         if (!isSyncing) {
           isSyncing = true;
+          lastSyncTime = now;
           try {
+            // 调用getColumnIndices时使用默认参数0，确保递归终止条件生效
             await getColumnIndices();
             await syncAdDataToPage();
           } catch (error) {
@@ -215,23 +225,29 @@ export default {
 };
 
 // 获取列索引
-async function getColumnIndices() {
+async function getColumnIndices(attempt = 0) {
+  // 添加递归终止条件，避免无限递归
+  if (attempt > 5) {
+    console.warn('Max attempts reached for getting column indices, stopping');
+    return;
+  }
+  
   columnIndices = {};
   
   try {
     // 首先尝试从缓存中获取列映射
-    // const currentDate = getCurrentDate();
-    // const DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
+    const currentDate = getCurrentDate();
+    const DomColumnMapping = await browserStorage.get(`columnMapping_${currentDate}`);
     
-    // // 如果从缓存中获取到了列映射，直接使用
-    // if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
-    //   console.log('Using cached DomColumnMapping:', DomColumnMapping);
-    //   columnIndices = DomColumnMapping;
-    //   return;
-    // }
+    // 如果从缓存中获取到了列映射，直接使用
+    if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
+      console.log('Using cached DomColumnMapping:', DomColumnMapping);
+      columnIndices = DomColumnMapping;
+      return;
+    }
     
-    // // 如果缓存中没有列映射，尝试从DOM中获取
-    // console.log('No cached column mapping found, getting from DOM');
+    // 如果缓存中没有列映射，尝试从DOM中获取
+    console.log('No cached column mapping found, getting from DOM (attempt:', attempt + 1, ')');
     
     // 找到表格容器
     const tableContainer = findTableContainer();
@@ -273,7 +289,7 @@ async function getColumnIndices() {
       console.log('Missing column indices for fields:', missingFields);
       // 尝试再次获取，可能表头还没有完全加载
       await new Promise(resolve => setTimeout(resolve, 100));
-      await getColumnIndices();
+      await getColumnIndices(attempt + 1);
     } else {
       console.log('Column indices:', columnIndices);
     }

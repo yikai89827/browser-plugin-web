@@ -76,12 +76,9 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref('');
 const selectedDate = ref(new Date().toISOString().split('T')[0]);
-const dataProtectionEnabled = ref(true);
+// const dataProtectionEnabled = ref(true);
 const dropdownOpen = ref<Record<string, boolean>>({});
 const dropdownRefs = ref<Record<string, HTMLElement>>({});
-const dropdownPositions = ref<Record<string, {
-  right: any; top: number; left: number 
-}>>({});
 
 // 获取日期，优先使用选择的日期，无选择时使用当天日期
 const getCurrentDate = () => {
@@ -637,7 +634,7 @@ onUnmounted(() => {
           {{ ads.length }}
         </div>
       </div>
-      <div class="action-bar-right">
+      <!-- <div class="action-bar-right">
         <div class="data-protection">
           <span>数据保护</span>
           <label class="switch">
@@ -648,7 +645,7 @@ onUnmounted(() => {
             <span class="slider"></span>
           </label>
         </div>
-      </div>
+      </div> -->
     </div>
     
     <!-- 错误提示 -->
@@ -662,7 +659,7 @@ onUnmounted(() => {
         <thead>
           <tr>
             <!-- <th>广告id</th> -->
-            <th>名称</th>
+            <!-- <th>名称</th> -->
             <th>覆盖人数</th>
             <th>增加</th>
             <th>展示次数</th>
@@ -678,9 +675,9 @@ onUnmounted(() => {
         <tbody>
           <tr v-for="ad in ads" :key="ad.id">
             <!-- <td>{{ ad.id }}</td> -->
-            <td class="ellipsis-cell" :title="ad.name">
+            <!-- <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
-            </td>
+            </td> -->
             <td class="ellipsis-cell" :title="ad.reach || '-' ">
               {{ ad.reach || '-' }}
             </td>
