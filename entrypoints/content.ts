@@ -42,6 +42,11 @@ let currentPageState = {
   level: '' // 当前层级（竞选活动、广告组、广告）
 };
 
+// 全局同步状态
+if (typeof window !== 'undefined') {
+  (window as any).isSyncing = false;
+}
+
 // 获取当前日期，格式为YYYY-MM-DD
 function getCurrentDate() {
   const now = new Date();
@@ -342,31 +347,35 @@ export default {
     
     // 预加载缓存数据
     const loadCachedData = async () => {
-      try {
-        // 获取当前页面状态
-        const pageState = getCurrentPageState();
-        currentPageState = pageState;
-        
-        // 使用新的缓存键生成函数获取缓存数据
-        const modificationsKey = generateCacheKey('ad_modifications');
-        const columnMappingKey = generateCacheKey('columnMapping');
-        
-        const modifications = await browserStorage.get(modificationsKey);
-        const columnMapping = await browserStorage.get(columnMappingKey);
-        
-        cachedModifications = modifications;
-        cachedColumnMapping = columnMapping;
-        console.log('预加载缓存数据:', { modifications, columnMapping, pageState });
-        
-        // 数据加载完成后立即尝试同步
-        if (cachedModifications) {
-          await syncAdDataToPage();
+      if (!window.isSyncing) {
+        window.isSyncing = true;
+        try {
+          // 获取当前页面状态
+          const pageState = getCurrentPageState();
+          currentPageState = pageState;
+          
+          // 使用新的缓存键生成函数获取缓存数据
+          const modificationsKey = generateCacheKey('ad_modifications');
+          const columnMappingKey = generateCacheKey('columnMapping');
+          
+          const modifications = await browserStorage.get(modificationsKey);
+          const columnMapping = await browserStorage.get(columnMappingKey);
+          
+          cachedModifications = modifications;
+          cachedColumnMapping = columnMapping;
+          console.log('预加载缓存数据:', { modifications, columnMapping, pageState });
+          
+          // 数据加载完成后立即尝试同步
+          if (cachedModifications) {
+            await syncAdDataToPage();
+          }
+        } catch (error) {
+          console.error('加载缓存数据错误:', error);
+        } finally {
+          // 无论成功失败都关闭遮盖层
+          removeOverlay();
+          window.isSyncing = false;
         }
-      } catch (error) {
-        console.error('加载缓存数据错误:', error);
-      } finally {
-        // 无论成功失败都关闭遮盖层
-        removeOverlay();
       }
     };
     
@@ -387,8 +396,9 @@ export default {
       
       clearTimeout(syncTimeout);
       syncTimeout = setTimeout(async () => {
-        if (!isSyncing && !isUpdatingDOM) {
-          isSyncing = true;
+        // 检查全局的isSyncing变量
+        if (!window.isSyncing && !isUpdatingDOM) {
+          window.isSyncing = true;
           lastSyncTime = now;
           try {
             // 调用getColumnIndices时使用默认参数0，确保递归终止条件生效
@@ -397,7 +407,7 @@ export default {
           } catch (error) {
             console.error('刷新页面数据错误:', error);
           } finally {
-            isSyncing = false;
+            window.isSyncing = false;
           }
         }
       }, 0);
@@ -420,12 +430,28 @@ export default {
           return false;
         });
         
+        // 检查删除的节点
+        const hasRemovedTableNodes = Array.from(mutation.removedNodes).some(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as HTMLElement;
+            return element.querySelector('[role="table"]') || 
+                   element.querySelector('[role="row"]') ||
+                   element.querySelector('[role="columnheader"]') ||
+                   element.classList.contains('_3hi') || // 表格容器类
+                   element.classList.contains('_1mie'); // 表格容器类
+          }
+          return false;
+        });
+        
         // 检查属性变化（例如样式变化）
         const hasAttributeChanges = mutation.target.nodeType === Node.ELEMENT_NODE &&
                                    (mutation.attributeName === 'style' || 
                                     mutation.attributeName === 'class');
         
-        return hasAddedTableNodes || hasAttributeChanges;
+        // 检查文本内容变化
+        const hasCharacterDataChanges = mutation.type === 'characterData';
+        
+        return hasAddedTableNodes || hasRemovedTableNodes || hasAttributeChanges || hasCharacterDataChanges;
       });
       
       if (hasTableChanges) {
@@ -438,8 +464,8 @@ export default {
     
     // 开始观察页面变化
     observer.observe(document.body, {
-      childList: true,// 监听子节点变化
-      subtree: true,// 监听子树变化
+      childList: true, // 监听子节点变化
+      subtree: true, // 监听子树变化
       // attributes: true, // 增加对属性变化的监听
       characterData: true, // 增加对文本内容变化的监听
       characterDataOldValue: true // 记录文本内容的旧值
@@ -707,21 +733,36 @@ async function extractAdsFromDom() {
     browserStorage.get(sortInfoKey)
   ]);
   
-  // 如果有缓存数据，直接返回缓存数据
-  if (cachedAds && cachedAds.length > 0 && cachedColumnMapping && Object.keys(cachedColumnMapping).length > 0) {
-    console.log('使用缓存数据，跳过DOM提取');
-    return { ads: cachedAds, DomColumnMapping: cachedColumnMapping, sortInfo: cachedSortInfo || { field: null, direction: null } };
+  // 检测当前页面的排序信息
+  let currentSortInfo = { field: null, direction: null };
+  try {
+    const { sortField, sortDirection } = detectSortInfo();
+    if (sortField && sortDirection) {
+      currentSortInfo = { field: sortField, direction: sortDirection };
+    }
+  } catch (error) {
+    console.error('检测排序信息错误:', error);
   }
   
-  // 没有缓存数据，从DOM提取
+  // 如果有缓存数据，且排序信息没有变化，直接返回缓存数据
+  if (cachedAds && cachedAds.length > 0 && cachedColumnMapping && Object.keys(cachedColumnMapping).length > 0) {
+    const cacheSortField = cachedSortInfo?.field;
+    const cacheSortDirection = cachedSortInfo?.direction;
+    const currentSortField = currentSortInfo.field;
+    const currentSortDirection = currentSortInfo.direction;
+    
+    if (cacheSortField === currentSortField && cacheSortDirection === currentSortDirection) {
+      console.log('使用缓存数据，排序信息未变化');
+      return { ads: cachedAds, DomColumnMapping: cachedColumnMapping, sortInfo: cachedSortInfo || currentSortInfo };
+    }
+  }
+  
+  // 排序信息变化或没有缓存数据，从DOM提取
   const ads = [];
   const DomColumnMapping = {};
   
   // 存储排序信息
-  const sortInfo = {
-    field: null,
-    direction: null
-  };
+  const sortInfo = currentSortInfo;
   
   try {
     // 找到表格容器
@@ -865,9 +906,27 @@ async function extractAdsFromDom() {
           
           // 如果根据ID找不到，尝试根据广告名称查找
           if (!rowData) {
-            rowData = modificationsArray.find(item => 
+            const itemsWithSameName = modificationsArray.filter(item => 
               item && item.completeData && item.completeData.name === name
             );
+            
+            if (itemsWithSameName.length > 0) {
+              // 如果只有一个项目，直接使用
+              if (itemsWithSameName.length === 1) {
+                rowData = itemsWithSameName[0];
+              } else {
+                // 如果有多个项目，尝试根据索引匹配
+                console.warn(`广告名称 ${name} 重复，尝试根据索引匹配`);
+                if (modificationsArray[rowIndex]) {
+                  rowData = modificationsArray[rowIndex];
+                }
+              }
+            }
+          }
+          
+          // 如果还是找不到，使用索引作为后备方案
+          if (!rowData && modificationsArray[rowIndex]) {
+            rowData = modificationsArray[rowIndex];
           }
           
           if (rowData && rowData.modifiedFields) {
@@ -1007,29 +1066,29 @@ async function syncAdDataToPage(sortInfo = null) {
       return;
     }
     
-    // 过滤出有效的修改数据
-    const validModifications = modificationsArray.filter(item => item !== undefined);
-    console.log('有效的修改数据:', validModifications);
+    // 构建修改数据映射，用于快速查找
+    const modificationsMap = new Map();
+    const nameToItemsMap = new Map(); // 存储相同名称的所有项目
     
-    // 根据当前排序信息对修改数据进行排序
-    let sortedModifications = [...validModifications];
-    if (currentSortInfo && currentSortInfo.field && currentSortInfo.direction) {
-      console.log('按以下字段排序修改数据:', currentSortInfo.field, currentSortInfo.direction);
-      sortedModifications.sort((a, b) => {
-        const field = currentSortInfo.field;
-        const valueA = a.completeData[field] || 0;
-        const valueB = b.completeData[field] || 0;
-        
-        if (currentSortInfo.direction === 'asc') {
-          return valueA - valueB;
-        } else {
-          return valueB - valueA;
+    modificationsArray.forEach(item => {
+      if (item && item.completeData) {
+        // 优先使用广告ID作为键
+        if (item.completeData.id) {
+          modificationsMap.set(item.completeData.id, item);
         }
-      });
-      console.log('排序后的修改数据:', sortedModifications);
-    }
-    
-    console.log('找到修改数组:', modificationsArray);
+        
+        // 存储相同名称的所有项目
+        if (item.completeData.name) {
+          const name = item.completeData.name;
+          if (!nameToItemsMap.has(name)) {
+            nameToItemsMap.set(name, []);
+          }
+          nameToItemsMap.get(name)?.push(item);
+        }
+      }
+    });
+    console.log('修改数据映射:', modificationsMap);
+    console.log('名称到项目映射:', nameToItemsMap);
     
     // 找到表格容器
     console.log('找到表格容器');
@@ -1066,20 +1125,54 @@ async function syncAdDataToPage(sortInfo = null) {
       
       if (!name) return;
       
-      // 从排序后的修改数据数组中获取对应索引的数据
-      // 这样当表格排序时，修改数据也会按相同的方式排序，索引就能匹配
-      let rowData = sortedModifications[rowIndex];
+      // 尝试从DOM中获取唯一标识符
+      let adId = `ad_${rowIndex}`;
       
-      if (!rowData) {
-        // 尝试从原始数组中查找，作为后备
+      // 检查固定行是否有唯一标识符属性
+      const fixedRowElement = fixed;
+      if (fixedRowElement) {
+        // 检查是否有data-id或其他唯一属性
+        const dataId = fixedRowElement.getAttribute('data-id') || 
+                      fixedRowElement.getAttribute('id') || 
+                      fixedRowElement.querySelector('[data-id]')?.getAttribute('data-id') ||
+                      fixedRowElement.querySelector('[id]')?.getAttribute('id');
+        
+        if (dataId) {
+          adId = `ad_${dataId}`;
+        }
+      }
+      
+      // 尝试根据唯一标识符匹配修改数据
+      let rowData = modificationsMap.get(adId);
+      
+      // 如果根据ID找不到，使用名称到项目的映射
+      if (!rowData && name) {
+        const itemsWithSameName = nameToItemsMap.get(name);
+        if (itemsWithSameName && itemsWithSameName.length > 0) {
+          // 如果只有一个项目，直接使用
+          if (itemsWithSameName.length === 1) {
+            rowData = itemsWithSameName[0];
+          } else {
+            // 如果有多个项目，尝试根据索引匹配
+            // 这不是最优解，但在没有唯一标识符的情况下是一个后备方案
+            console.warn(`广告名称 ${name} 重复，尝试根据索引匹配`);
+            if (modificationsArray[rowIndex]) {
+              rowData = modificationsArray[rowIndex];
+            }
+          }
+        }
+      }
+      
+      // 如果还是找不到，使用索引作为后备方案
+      if (!rowData && modificationsArray[rowIndex]) {
         rowData = modificationsArray[rowIndex];
       }
       
       if (!rowData) return;
       
       // 生成广告ID（用于日志）
-      const adId = rowData.completeData?.id || `ad_${rowIndex}`;
-      console.log('同步广告数据:', name, 'ID:', adId, '行数据:', rowData);
+      const logAdId = rowData.completeData?.id || `ad_${rowIndex}`;
+      console.log('同步广告数据:', name, 'ID:', logAdId, '行数据:', rowData);
       
       // 检查整行是否有修改
       if (!rowData.modifiedFields || Object.keys(rowData.modifiedFields).length === 0) {
