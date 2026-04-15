@@ -239,9 +239,6 @@ export default {
   main() {
     console.log('Facebook Ads Manager 内容脚本已加载');
     
-    // 创建遮盖层，在数据同步完成前显示
-    createOverlay();
-    
     // 监听来自popup的消息
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'getAdsFromDom') {
@@ -365,8 +362,9 @@ export default {
           cachedColumnMapping = columnMapping;
           console.log('预加载缓存数据:', { modifications, columnMapping, pageState });
           
-          // 数据加载完成后立即尝试同步
+          // 只有在有缓存数据时才创建遮盖层
           if (cachedModifications) {
+            createOverlay();
             await syncAdDataToPage();
           }
         } catch (error) {
@@ -505,8 +503,7 @@ export default {
       // 只在排序变化或表格列位置变化时触发同步
       if (hasSortChange || hasColumnChange) {
         console.log('检测到排序变更或表格列位置变化，触发同步');
-        // 创建遮盖层
-        createOverlay();
+        // 不在这里创建遮盖层，而是在debouncedSync中根据缓存数据情况决定
         debouncedSync();
       }
     });
@@ -526,8 +523,7 @@ export default {
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         console.log('URL 已更改，重新加载缓存数据:', currentUrl);
-        // URL变化时创建遮盖层
-        createOverlay();
+        // 不在这里创建遮盖层，而是在loadCachedData中根据缓存数据情况决定
         // 重新加载缓存数据
         loadCachedData();
       }
@@ -826,20 +822,14 @@ async function extractAdsFromDom() {
     console.error('检测排序信息错误:', error);
   }
   
-  // 如果有缓存数据，且排序信息没有变化，直接返回缓存数据
+  // 如果有缓存数据，直接返回缓存数据（不检查排序信息变化）
+  // 原始值以缓存为准，排序变化时会在syncAdDataToPage中处理
   if (cachedAds && cachedAds.length > 0 && cachedColumnMapping && Object.keys(cachedColumnMapping).length > 0) {
-    const cacheSortField = cachedSortInfo?.field;
-    const cacheSortDirection = cachedSortInfo?.direction;
-    const currentSortField = currentSortInfo.field;
-    const currentSortDirection = currentSortInfo.direction;
-    
-    if (cacheSortField === currentSortField && cacheSortDirection === currentSortDirection) {
-      console.log('使用缓存数据，排序信息未变化');
-      return { ads: cachedAds, DomColumnMapping: cachedColumnMapping, sortInfo: cachedSortInfo || currentSortInfo };
-    }
+    console.log('使用缓存数据（原始值以缓存为准）');
+    return { ads: cachedAds, DomColumnMapping: cachedColumnMapping, sortInfo: cachedSortInfo || currentSortInfo };
   }
   
-  // 排序信息变化或没有缓存数据，从DOM提取
+  // 没有缓存数据，从DOM提取并缓存
   const ads = [];
   const DomColumnMapping = {};
   
@@ -1141,11 +1131,71 @@ async function syncAdDataToPage(sortInfo = null) {
     // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
     console.log('获取存储项');
     const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
-    const modificationsArray = await browserStorage.get(modificationsKey);
+    let modificationsArray = await browserStorage.get(modificationsKey);
     
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
       console.log('存储中未找到广告数据');
       return;
+    }
+    
+    // 检查是否需要根据页面排序调整缓存数据顺序
+    if (currentSortInfo.field && currentSortInfo.direction) {
+      console.log('检测到排序信息，调整缓存数据顺序:', currentSortInfo);
+      
+      // 获取当前页面中的广告名称顺序
+      const tableContainer = findTableContainer();
+      if (tableContainer) {
+        const rowPairs = getTableDataRows(tableContainer);
+        const pageAdNames = [];
+        
+        rowPairs.forEach((rowPair) => {
+          const { fixed } = rowPair;
+          let name = '';
+          const nameElements = fixed.querySelectorAll('div, span');
+          for (const element of nameElements) {
+            const text = element.textContent?.trim();
+            if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
+              name = text;
+              break;
+            }
+          }
+          name = cleanAdName(name);
+          if (name) {
+            pageAdNames.push(name);
+          }
+        });
+        
+        console.log('页面中的广告名称顺序:', pageAdNames);
+        
+        // 根据页面中的广告名称顺序重新排序缓存数据
+        const sortedModificationsArray = [];
+        const usedIndices = new Set();
+        
+        pageAdNames.forEach((pageName) => {
+          const index = modificationsArray.findIndex((item, idx) => {
+            if (usedIndices.has(idx)) return false;
+            return item && item.completeData && item.completeData.name === pageName;
+          });
+          
+          if (index !== -1) {
+            sortedModificationsArray.push(modificationsArray[index]);
+            usedIndices.add(index);
+          }
+        });
+        
+        // 添加页面中不存在的数据
+        modificationsArray.forEach((item, idx) => {
+          if (!usedIndices.has(idx)) {
+            sortedModificationsArray.push(item);
+          }
+        });
+        
+        modificationsArray = sortedModificationsArray;
+        console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item.completeData?.name));
+        
+        // 保存调整后的顺序
+        await browserStorage.set(modificationsKey, modificationsArray);
+      }
     }
     
     // 构建修改数据映射，用于快速查找
