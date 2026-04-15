@@ -385,10 +385,25 @@ const saveChanges = async () => {
               }
         
         // 构建行数据对象，确保只包含可序列化的属性
+        // 清理广告名称，确保与页面中的广告名称一致
+        const cleanName = ad.name
+          .replace('图表编辑复制打开下拉菜单', '')
+          .replace('图表编辑', '')
+          .replace('复制', '')
+          .replace('打开', '')
+          .replace('下拉菜单', '')
+          .replace('ChartsEditDuplicateOpen Drop-down', '')
+          .replace('Edit', '')
+          .replace('Duplicate', '')
+          .replace('Open', '')
+          .replace('Drop-down', '')
+          .replace(/\s*\-\s*\d+$/, '')
+          .trim();
+        
         const rowData = {
           completeData: {
             id: ad.id,
-            name: ad.name,
+            name: cleanName,
             status: ad.status,
             campaign_id: ad.campaign_id,
             adset_id: ad.adset_id,

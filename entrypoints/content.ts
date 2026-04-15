@@ -79,15 +79,8 @@ function getCurrentPageState() {
   };
 }
 
-// 生成缓存键
+// 生成缓存键（不包含排序信息，排序信息作为缓存数据的一部分存储）
 function generateCacheKey(prefix: string) {
-  const date = getCurrentDate();
-  const {level, sortField, sortDirection} = getCurrentPageState();
-  return `${prefix}_${date}_${level}${sortField?'_'+sortField: ''}${sortDirection ? '_'+sortDirection : ''}`;
-}
-
-// 生成不包含排序信息的缓存键（用于修改数据，因为修改数据应该与排序状态无关）
-function generateCacheKeyWithoutSort(prefix: string) {
   const date = getCurrentDate();
   const {level} = getCurrentPageState();
   return `${prefix}_${date}_${level}`;
@@ -101,11 +94,24 @@ function detectSortInfo() {
   try {
     // 查找具有sorting属性且role="columnheader"的元素
     const columnHeaderElements = document.querySelectorAll('[role="columnheader"]');
-    columnHeaderElements.forEach(element => {
-      const sortingAttr = element.getAttribute('sorting');
+    
+    // 使用for循环而不是forEach，以便能够提前返回
+    for (let i = 0; i < columnHeaderElements.length; i++) {
+      const element = columnHeaderElements[i];
+      
+      // 尝试多种方式获取排序属性
+      const sortingAttr = element.getAttribute('sorting') || 
+                         element.getAttribute('aria-sort') || 
+                         element.getAttribute('data-sort');
+      
+      console.log(`排序属性: ${sortingAttr}`);
+      
+      // 如果找到排序属性
       if (sortingAttr) {
-        // 从元素文本或ID中提取字段名
+        // 从元素文本中提取字段名
         const fieldName = element.textContent?.trim().toLowerCase() || '';
+        console.log(`字段名: ${fieldName}`);
+        
         // 映射字段名到我们使用的字段名
         if (fieldName.includes('results') || fieldName.includes('成效') || fieldName.includes('结果')) {
           sortField = 'results';
@@ -132,13 +138,35 @@ function detectSortInfo() {
         }
         
         // 设置排序方向
-        sortDirection = sortingAttr.toLowerCase();
+        if (sortingAttr.toLowerCase() === 'asc' || sortingAttr.includes('↑') || sortingAttr.includes('up') || sortingAttr.includes('ascending')) {
+          sortDirection = 'asc';
+        } else if (sortingAttr.toLowerCase() === 'desc' || sortingAttr.includes('↓') || sortingAttr.includes('down') || sortingAttr.includes('descending')) {
+          sortDirection = 'desc';
+        }
+        
+        // 找到第一个排序的列后就返回
+        console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
+        return { sortField, sortDirection };
       }
-    });
+    }
+    
+    // 如果没有找到排序属性，尝试从URL中获取排序信息
+    const urlParams = new URLSearchParams(window.location.search);
+    const sortParam = urlParams.get('sort');
+    if (sortParam) {
+      console.log(`从URL获取排序信息: ${sortParam}`);
+      // 解析URL中的排序参数
+      const sortParts = sortParam.split('.');
+      if (sortParts.length === 2) {
+        sortField = sortParts[0];
+        sortDirection = sortParts[1];
+      }
+    }
   } catch (error) {
     console.error('Error detecting sort info:', error);
   }
   
+  console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
   return { sortField, sortDirection };
 }
 
@@ -269,17 +297,18 @@ export default {
         const date = message.date;
         // 使用新的缓存键生成函数
         const adsKey = generateCacheKey('ads');
-        const columnMappingKey = generateCacheKey('columnMapping');
-        const sortInfoKey = generateCacheKey('sortInfo');
         // 使用缓存键获取修改数据
         const modificationsKey = generateCacheKey('ad_modifications');
         
         Promise.all([
           browserStorage.get(adsKey),
-          browserStorage.get(columnMappingKey),
-          browserStorage.get(sortInfoKey),
           browserStorage.get(modificationsKey)
-        ]).then(([ads, columnMapping, sortInfo, modifications]) => {
+        ]).then(([adsData, modifications]) => {
+          // 从新的缓存结构中提取数据
+          const ads = adsData?.cacheData?.ads || [];
+          const columnMapping = adsData?.cacheData?.columnMapping || {};
+          const sortInfo = adsData?.sortInfo || { field: null, direction: null };
+          
           sendResponse({ ads, columnMapping, sortInfo, modifications });
         }).catch((error) => {
           console.error('获取缓存数据错误:', error);
@@ -292,14 +321,18 @@ export default {
         const { date, ads, columnMapping, sortInfo } = message;
         // 使用新的缓存键生成函数
         const adsKey = generateCacheKey('ads');
-        const columnMappingKey = generateCacheKey('columnMapping');
-        const sortInfoKey = generateCacheKey('sortInfo');
         
-        Promise.all([
-          browserStorage.set(adsKey, ads),
-          browserStorage.set(columnMappingKey, columnMapping),
-          browserStorage.set(sortInfoKey, sortInfo)
-        ]).then(() => {
+        // 构建新的缓存结构
+        const cacheData = {
+          ads,
+          columnMapping
+        };
+        const dataToSave = {
+          sortInfo,
+          cacheData
+        };
+        
+        browserStorage.set(adsKey, dataToSave).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('保存缓存数据错误:', error);
@@ -313,6 +346,9 @@ export default {
         // 使用缓存键，因为修改数据应该与排序状态无关
         const modificationsKey = generateCacheKey('ad_modifications');
         browserStorage.set(modificationsKey, modifications).then(() => {
+          // 保存成功后触发页面刷新
+          console.log('保存修改成功，触发页面刷新');
+          debouncedSync();
           sendResponse({ success: true });
         }).catch((error) => {
           console.error('保存修改数据错误:', error);
@@ -406,7 +442,7 @@ export default {
           lastSyncTime = now;
           try {
             // 检查是否有缓存数据
-            const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
+            const modificationsKey = generateCacheKey('ad_modifications');
             const modificationsArray = await browserStorage.get(modificationsKey);
             
             // 只有在有缓存数据时才创建遮盖层
@@ -802,14 +838,9 @@ async function extractAdsFromDom() {
   // 首先检查是否有缓存数据
   const currentDate = getCurrentDate();
   const adsKey = generateCacheKey('ads');
-  const columnMappingKey = generateCacheKey('columnMapping');
-  const sortInfoKey = generateCacheKey('sortInfo');
   
-  const [cachedAds, cachedColumnMapping, cachedSortInfo] = await Promise.all([
-    browserStorage.get(adsKey),
-    browserStorage.get(columnMappingKey),
-    browserStorage.get(sortInfoKey)
-  ]);
+  // 获取缓存数据（包含排序信息）
+  const cachedData = await browserStorage.get(adsKey);
   
   // 检测当前页面的排序信息
   let currentSortInfo = { field: null, direction: null };
@@ -824,9 +855,14 @@ async function extractAdsFromDom() {
   
   // 如果有缓存数据，直接返回缓存数据（不检查排序信息变化）
   // 原始值以缓存为准，排序变化时会在syncAdDataToPage中处理
-  if (cachedAds && cachedAds.length > 0 && cachedColumnMapping && Object.keys(cachedColumnMapping).length > 0) {
+  if (cachedData && cachedData.cacheData && cachedData.cacheData.ads && cachedData.cacheData.ads.length > 0 && 
+      cachedData.cacheData.columnMapping && Object.keys(cachedData.cacheData.columnMapping).length > 0) {
     console.log('使用缓存数据（原始值以缓存为准）');
-    return { ads: cachedAds, DomColumnMapping: cachedColumnMapping, sortInfo: cachedSortInfo || currentSortInfo };
+    return { 
+      ads: cachedData.cacheData.ads, 
+      DomColumnMapping: cachedData.cacheData.columnMapping, 
+      sortInfo: cachedData.sortInfo || currentSortInfo 
+    };
   }
   
   // 没有缓存数据，从DOM提取并缓存
@@ -968,7 +1004,7 @@ async function extractAdsFromDom() {
       try {
         // 从新的缓存结构中获取数据
         // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
-        const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
+        const modificationsKey = generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
         if (modificationsArray && Array.isArray(modificationsArray)) {
           // 首先根据广告ID查找对应的数据
@@ -1082,16 +1118,24 @@ async function extractAdsFromDom() {
     
     console.log('检测到的排序信息:', sortInfo);
     
-    // 保存DomColumnMapping到浏览器存储
+    // 保存数据到浏览器存储（包含排序信息）
     try {
       if (browser && browser.storage) {
         // 使用新的缓存键生成函数
-        const columnMappingKey = generateCacheKey('columnMapping');
-        await browser.storage.local.set({ [columnMappingKey]: DomColumnMapping });
-        console.log('已保存DomColumnMapping到存储:', columnMappingKey, DomColumnMapping);
+        const adsKey = generateCacheKey('ads');
+        const cacheData = {
+          ads,
+          columnMapping: DomColumnMapping
+        };
+        const dataToSave = {
+          sortInfo,
+          cacheData
+        };
+        await browser.storage.local.set({ [adsKey]: dataToSave });
+        console.log('已保存数据到存储:', adsKey, dataToSave);
       }
     } catch (error) {
-      console.error('保存DomColumnMapping错误:', error);
+      console.error('保存数据错误:', error);
     }
   } catch (error) {
     console.error('提取广告数据错误:', error);
@@ -1112,12 +1156,10 @@ async function syncAdDataToPage(sortInfo = null) {
     
     console.log('扩展上下文有效');
     
-    // 确保列索引已获取
-    if (Object.keys(columnIndices).length === 0) {
-      console.log('列索引为空，获取列索引');
-      await getColumnIndices();
-      console.log('获取到列索引:', columnIndices);
-    }
+    // 重新获取列索引，以处理列隐藏/显示的情况
+    console.log('重新获取列索引，以处理列隐藏/显示的情况');
+    await getColumnIndices();
+    console.log('获取到列索引:', columnIndices);
     
     // 获取当前页面状态
     const pageState = getCurrentPageState();
@@ -1138,79 +1180,92 @@ async function syncAdDataToPage(sortInfo = null) {
       return;
     }
     
-    // 检查是否需要根据页面排序调整缓存数据顺序
-    if (currentSortInfo.field && currentSortInfo.direction) {
-      console.log('检测到排序信息，调整缓存数据顺序:', currentSortInfo);
+    // 获取缓存的排序信息
+    const adsKey = generateCacheKey('ads');
+    const cachedData = await browserStorage.get(adsKey);
+    const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
+    
+    console.log('缓存的排序信息:', cachedSortInfo);
+    console.log('当前页面的排序信息:', currentSortInfo);
+    
+    // 检查排序信息是否一致
+    const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
+                         cachedSortInfo.direction === currentSortInfo.direction;
+    
+    // 即使找不到排序信息，也要尝试根据页面顺序重新排序数据
+    // 这样可以确保数据与页面显示顺序一致
+    console.log('尝试根据页面顺序重新排序数据');
+    
+    // 获取当前页面中的广告名称顺序
+    const tableContainer = findTableContainer();
+    if (tableContainer) {
+      const rowPairs = getTableDataRows(tableContainer);
+      const pageAdNames = [];
       
-      // 获取当前页面中的广告名称顺序
-      const tableContainer = findTableContainer();
-      if (tableContainer) {
-        const rowPairs = getTableDataRows(tableContainer);
-        const pageAdNames = [];
-        
-        rowPairs.forEach((rowPair) => {
-          const { fixed } = rowPair;
-          let name = '';
-          const nameElements = fixed.querySelectorAll('div, span');
-          for (const element of nameElements) {
-            const text = element.textContent?.trim();
-            if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
-              name = text;
-              break;
-            }
+      rowPairs.forEach((rowPair) => {
+        const { fixed } = rowPair;
+        let name = '';
+        const nameElements = fixed.querySelectorAll('div, span');
+        for (const element of nameElements) {
+          const text = element.textContent?.trim();
+          if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
+            name = text;
+            break;
           }
-          name = cleanAdName(name);
-          if (name) {
-            pageAdNames.push(name);
+        }
+        name = cleanAdName(name);
+        if (name) {
+          pageAdNames.push(name);
+        }
+      });
+      
+      console.log('页面中的广告名称顺序:', pageAdNames);
+      
+      // 根据页面中的广告顺序重新排序缓存数据
+      const sortedModificationsArray = [];
+      const usedIndices = new Set();
+      
+      // 创建名称到索引列表的映射，用于处理重复名称
+      const nameToIndicesMap = new Map();
+      modificationsArray.forEach((item, idx) => {
+        if (item && item.completeData && item.completeData.name) {
+          const name = item.completeData.name;
+          if (!nameToIndicesMap.has(name)) {
+            nameToIndicesMap.set(name, []);
           }
-        });
+          nameToIndicesMap.get(name)?.push(idx);
+        }
+      });
+      
+      console.log('名称到索引映射:', nameToIndicesMap);
+      
+      // 按照页面顺序添加项目
+      pageAdNames.forEach((pageName, pageIndex) => {
+        const indices = nameToIndicesMap.get(pageName) || [];
         
-        console.log('页面中的广告名称顺序:', pageAdNames);
+        // 找到第一个未使用的索引
+        const unusedIndex = indices.find(idx => !usedIndices.has(idx));
         
-        // 根据页面中的广告顺序重新排序缓存数据
-        const sortedModificationsArray = [];
-        const usedIndices = new Set();
-        
-        // 创建名称到索引列表的映射，用于处理重复名称
-        const nameToIndicesMap = new Map();
-        modificationsArray.forEach((item, idx) => {
-          if (item && item.completeData && item.completeData.name) {
-            const name = item.completeData.name;
-            if (!nameToIndicesMap.has(name)) {
-              nameToIndicesMap.set(name, []);
-            }
-            nameToIndicesMap.get(name)?.push(idx);
-          }
-        });
-        
-        console.log('名称到索引映射:', nameToIndicesMap);
-        
-        // 按照页面顺序添加项目
-        pageAdNames.forEach((pageName, pageIndex) => {
-          const indices = nameToIndicesMap.get(pageName) || [];
-          
-          // 找到第一个未使用的索引
-          const unusedIndex = indices.find(idx => !usedIndices.has(idx));
-          
-          if (unusedIndex !== undefined) {
-            sortedModificationsArray.push(modificationsArray[unusedIndex]);
-            usedIndices.add(unusedIndex);
-          }
-        });
-        
-        // 添加页面中不存在的数据
-        modificationsArray.forEach((item, idx) => {
-          if (!usedIndices.has(idx)) {
-            sortedModificationsArray.push(item);
-          }
-        });
-        
-        modificationsArray = sortedModificationsArray;
-        console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item.completeData?.name));
-        
-        // 不保存调整后的顺序到缓存，只在当前会话中使用
-        // 这样排序变更不会影响缓存数据
-      }
+        if (unusedIndex !== undefined) {
+          sortedModificationsArray.push(modificationsArray[unusedIndex]);
+          usedIndices.add(unusedIndex);
+        }
+      });
+      
+      // 添加页面中不存在的数据
+      modificationsArray.forEach((item, idx) => {
+        if (!usedIndices.has(idx)) {
+          sortedModificationsArray.push(item);
+        }
+      });
+      
+      modificationsArray = sortedModificationsArray;
+      console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item.completeData?.name));
+      
+      // 不保存调整后的顺序到缓存，只在当前会话中使用
+      // 这样排序变更不会影响缓存数据
+    } else {
+      console.log('未找到表格容器，无法根据页面顺序排序数据');
     }
     
     // 构建修改数据映射，用于快速查找
@@ -1237,9 +1292,8 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('修改数据映射:', modificationsMap);
     console.log('名称到项目映射:', nameToItemsMap);
     
-    // 找到表格容器
-    console.log('找到表格容器');
-    const tableContainer = findTableContainer();
+    // 使用之前已经声明的tableContainer变量
+    console.log('使用之前已经声明的表格容器');
     
     if (!tableContainer) {
       console.log('未找到表格容器');
@@ -1336,110 +1390,63 @@ async function syncAdDataToPage(sortInfo = null) {
       // 3. 保存时两个值都需要保存
       // 4. 在原页面加载完成重新渲染新值时，是把这两个值相加显示在页面上
       // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
-      const columnMappingKey = generateCacheKey('columnMapping');
-      const DomColumnMapping = await browserStorage.get(columnMappingKey);
-      console.log('Dom 列映射:', DomColumnMapping);
+      console.log('当前列索引:', columnIndices);
       
-      if (!DomColumnMapping || Object.keys(DomColumnMapping).length === 0) {
-        console.error('未找到列映射');
-        return;
-      }
-      
-      const fixIndex = fixed.children[0]?.children?.length-1;
+      // 计算固定列的数量，确保安全计算
+      const fixIndex = fixed.children[0]?.children?.length ? (fixed.children[0].children.length - 1) : 0;
       
       // 然后更新页面上的显示值（原始值 + 增加的值）
       try {
         isUpdatingDOM = true;
-        Array.from(scrollableElements).forEach((element, index) => {
-          console.log(`处理元素 ${index}: `,DomColumnMapping, element);
+        console.log(`开始更新DOM，可滚动元素数量: ${scrollableElements.length}`);
+        console.log(`列索引:`, columnIndices);
+        console.log(`固定列数量: ${fixIndex}`);
+        
+        // 遍历所有可滚动元素
+        for (let index = 0; index < scrollableElements.length; index++) {
+          const element = scrollableElements[index];
+          console.log(`处理元素 ${index}:`, element);
+          
           const text = element.textContent?.trim();
           if (text) {
             // 检查是否有对应的列修改值
             let increaseValue = 0;
             let originalValueFromData = 0;
             let hasModification = false;
+            let fieldType = null;
             
-            // 根据DomColumnMapping确定字段类型
-            if (index === DomColumnMapping.results-fixIndex) {
-              // 成效 (results)
-              if (rowData?.modifiedFields?.results !== undefined) {
-                increaseValue = rowData.modifiedFields.results || 0;
-                originalValueFromData = rowData.completeData?.results || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
+            // 遍历所有可能的字段类型，找到匹配的列索引
+            const fieldTypes = [
+              { key: 'results', label: '成效' },
+              { key: 'reach', label: '覆盖人数' },
+              { key: 'spend', label: '花费' },
+              { key: 'impressions', label: '展示次数' },
+              { key: 'costPerResult', label: '每次结果成本' },
+              { key: 'website_clicks', label: '网站点击' },
+              { key: 'registrations', label: '注册' },
+              { key: 'registration_cost', label: '注册成本' }
+            ];
+            
+            for (const field of fieldTypes) {
+              if (columnIndices[field.key] !== undefined) {
+                const expectedIndex = columnIndices[field.key] - fixIndex;
+                console.log(`检查字段 ${field.key}: 预期索引 ${expectedIndex}, 当前索引 ${index}`);
+                if (index === expectedIndex) {
+                  fieldType = field.key;
+                  console.log(`找到匹配字段: ${field.key}`);
+                  break;
+                }
               }
-            } else if (index === DomColumnMapping.reach-fixIndex) {
-              // 覆盖人数 (reach)
-              if (rowData?.modifiedFields?.reach !== undefined) {
-                increaseValue = rowData.modifiedFields.reach || 0;
-                originalValueFromData = rowData.completeData?.reach || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
-            } else if (index === DomColumnMapping.spend-fixIndex) {
-              // 花费 (spend)
-              if (rowData?.modifiedFields?.spend !== undefined) {
-                increaseValue = rowData.modifiedFields.spend || 0;
-                originalValueFromData = rowData.completeData?.spend || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
-            } else if (index === DomColumnMapping.impressions-fixIndex) {
-              // 展示次数 (impressions)
-              if (rowData?.modifiedFields?.impressions !== undefined) {
-                increaseValue = rowData.modifiedFields.impressions || 0;
-                originalValueFromData = rowData.completeData?.impressions || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
-            } else if (index === DomColumnMapping.costPerResult-fixIndex) {
-              // 每次结果成本 (costPerResult)
-              if (rowData?.modifiedFields?.costPerResult !== undefined) {
-                increaseValue = rowData.modifiedFields.costPerResult || 0;
-                originalValueFromData = rowData.completeData?.costPerResult || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
-            } else if (index === DomColumnMapping.website_clicks-fixIndex) {
-              // 网站点击 (website_clicks)
-              if (rowData?.modifiedFields?.website_clicks !== undefined) {
-                increaseValue = rowData.modifiedFields.website_clicks || 0;
-                originalValueFromData = rowData.completeData?.website_clicks || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
-            } else if (index === DomColumnMapping.registrations-fixIndex) {
-              // 注册 (registrations)
-              if (rowData?.modifiedFields?.registrations !== undefined) {
-                increaseValue = rowData.modifiedFields.registrations || 0;
-                originalValueFromData = rowData.completeData?.registrations || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
-            } else if (index === DomColumnMapping.registration_cost-fixIndex) {
-              // 注册成本 (registration_cost)
-              if (rowData?.modifiedFields?.registration_cost !== undefined) {
-                increaseValue = rowData.modifiedFields.registration_cost || 0;
-                originalValueFromData = rowData.completeData?.registration_cost || 0;
-                hasModification = true;
-                console.log(`处理元素 ${index}: ${text}`);
-                console.log(`原始值从数据中获取: `, originalValueFromData);
-                console.log(`增加值: `, increaseValue);
-              }
+            }
+            
+            // 如果找到了对应的字段类型，检查是否有修改
+            if (fieldType && rowData && rowData.modifiedFields && rowData.modifiedFields[fieldType] !== undefined) {
+              increaseValue = rowData.modifiedFields[fieldType] || 0;
+              originalValueFromData = rowData.completeData?.[fieldType] || 0;
+              hasModification = true;
+              console.log(`处理元素 ${index}: ${text}`);
+              console.log(`原始值: `, originalValueFromData);
+              console.log(`增加值: `, increaseValue);
             }
               
             // 只有当当前列有修改时才更新
@@ -1452,7 +1459,7 @@ async function syncAdDataToPage(sortInfo = null) {
               // 如果原始值是--且新增值为0，则不更新
               if (isOriginalDash && isIncreaseZero) {
                 console.log(`跳过更新元素 ${index}: original值为 — and 增加值为 0`);
-                return;
+                continue;
               }
               
               // 使用修改数据中保存的原始值，而不是从DOM中提取
@@ -1465,23 +1472,22 @@ async function syncAdDataToPage(sortInfo = null) {
               // 递归查找并更新DOM元素
               function findAndUpdateElement(el: Element) {
                 if (el.children.length > 0) {
-                  // 
                   if(el.children?.[0] instanceof HTMLElement){
-                    findAndUpdateElement(el.children?.[0]);
+                    findAndUpdateElement(el.children[0]);
                   } else {
                     console.log(`跳过非HTMLElement子元素: ${el.children?.[0]}`);
                   }
                 } else {
                   // 找到最终的文本元素
-                  console.log(`更新元素文本: ${el.innerText}`);
+                  console.log(`更新元素文本: ${el.innerText} -> ${newValue}`);
                   
                   // 保存原始文本，用于提取货币符号
                   const originalText = el.innerText;
                   
                   // 根据字段类型决定显示格式
-                  if (index === DomColumnMapping.spend-fixIndex) {
+                  if (fieldType === 'spend') {
                     // 花费字段：保留2位小数，保留货币符号
-                    console.log(`更新元素文本: ${newValue.toFixed(2)}`);
+                    console.log(`更新花费字段: ${newValue.toFixed(2)}`);
                     
                     // 提取货币符号（如果有）
                     const currencyMatch = originalText.match(/^[^0-9]+/);
@@ -1492,7 +1498,7 @@ async function syncAdDataToPage(sortInfo = null) {
                     el.innerText = currencySymbol + newValue.toFixed(2);
                   } else {
                     // 其他字段：整数
-                    console.log(`更新元素文本: ${Math.round(newValue)}`);
+                    console.log(`更新其他字段: ${Math.round(newValue)}`);
                     el.innerText = Math.round(newValue).toString();
                   }
                 }
@@ -1504,7 +1510,9 @@ async function syncAdDataToPage(sortInfo = null) {
               console.log(`元素 ${index} 未修改，跳过更新`);
             }
           }
-        });
+        }
+      } catch (error) {
+        console.error('更新DOM时出错:', error);
       } finally {
         isUpdatingDOM = false;
       }

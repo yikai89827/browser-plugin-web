@@ -12,8 +12,8 @@ export const getWebRequestHeaders = () => {
     browser.webRequest.onBeforeSendHeaders.addListener(
         (details) => {
             try {
-                const { url, requestHeaders } = details;
-                // console.log('%c 请求地址:', 'color:red;', url);
+                const { url, method , } = details;
+                console.log('%c 请求地址:', 'color:red;', url, method );
                 const apis = [
                     `/lightads?access_token`,
                     `/light_adsets?access_token`,
@@ -27,7 +27,7 @@ export const getWebRequestHeaders = () => {
                         return;
                     }
                     const path = url.split('?access_token=')[0];
-                    console.log('%c 广告相关接口:', 'color:yellowgreen;', path);
+                    console.log('%c 广告相关接口:', 'color:yellowgreen;', path,);
                     try {
                         const urlParams = new URL(url).searchParams;
                         const paramsObj: any = {};
@@ -77,10 +77,10 @@ export const getWebResponseHeaders = () => {
     browser.webRequest.onHeadersReceived.addListener(
         (details) => {
             try {
-                const { url, responseHeaders } = details;
+                const { url, method  } = details;
                 if (url && (url.includes('facebook.com') || url.includes('baidu.com'))) {
-                    // console.log('%c 响应地址:', 'color:green;', url);
-                    // console.log('%c 响应头：', 'color:green;', responseHeaders);
+                    console.log('%c 响应地址:', 'color:green;', url, method );
+                    console.log('%c details:', 'color:green;', details);
                     
                     // 检查响应头中的token
                     // if (responseHeaders) {
