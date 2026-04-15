@@ -112,25 +112,11 @@ function detectSortInfo() {
         const fieldName = element.textContent?.trim().toLowerCase() || '';
         console.log(`字段名: ${fieldName}`);
         
-        // 映射字段名到我们使用的字段名
-        if (fieldName.includes('results') || fieldName.includes('成效') || fieldName.includes('结果')) {
-          sortField = 'results';
-        } else if (fieldName.includes('spent') || fieldName.includes('花费') || fieldName.includes('支出')) {
-          sortField = 'spend';
-        } else if (fieldName.includes('impressions') || fieldName.includes('展示') || fieldName.includes('印象')) {
-          sortField = 'impressions';
-        } else if (fieldName.includes('reach') || fieldName.includes('覆盖') || fieldName.includes('抵达')) {
-          sortField = 'reach';
-        } else if (fieldName.includes('cost per result') || fieldName.includes('单次成效') || fieldName.includes('每次结果成本')) {
-          sortField = 'costPerResult';
-        } else if (fieldName.includes('website clicks') || fieldName.includes('网站点击')) {
-          sortField = 'website_clicks';
-        } else if (fieldName.includes('registrations') || fieldName.includes('注册')) {
-          sortField = 'registrations';
-        } else if (fieldName.includes('registration cost') || fieldName.includes('注册成本')) {
-          sortField = 'registration_cost';
-        } else {
-          // 对于其他字段，使用标准化的字段名
+        // 使用公共函数映射字段名到标准字段名
+        sortField = mapFieldNameToStandard(fieldName);
+        
+        // 如果没有匹配到标准字段，使用标准化的字段名
+        if (!sortField) {
           sortField = fieldName
             .replace(/[^a-z0-9\s]/g, '') // 移除特殊字符
             .trim()
@@ -825,6 +811,279 @@ function cleanAdName(name: string): string {
   return cleanedName;
 }
 
+// 从固定列元素中提取广告名称
+function extractAdNameFromFixedElement(fixedElement: HTMLElement): string {
+  let name = '';
+  const nameElements = fixedElement.querySelectorAll('div, span');
+  for (const element of nameElements) {
+    const text = element.textContent?.trim();
+    if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
+      name = text;
+      break;
+    }
+  }
+  return cleanAdName(name);
+}
+
+// 从表格行对中提取所有广告名称
+function extractAdNamesFromRowPairs(rowPairs: any[]): string[] {
+  const adNames: string[] = [];
+  rowPairs.forEach((rowPair) => {
+    const { fixed } = rowPair;
+    const name = extractAdNameFromFixedElement(fixed);
+    if (name) {
+      adNames.push(name);
+    }
+  });
+  return adNames;
+}
+
+// 根据字段名映射到标准字段名
+function mapFieldNameToStandard(fieldName: string): string | null {
+  const lowerFieldName = fieldName.toLowerCase();
+  
+  if (lowerFieldName.includes('results') || lowerFieldName.includes('成效') || lowerFieldName.includes('结果')) {
+    return 'results';
+  } else if (lowerFieldName.includes('spent') || lowerFieldName.includes('花费') || lowerFieldName.includes('支出')) {
+    return 'spend';
+  } else if (lowerFieldName.includes('impressions') || lowerFieldName.includes('展示') || lowerFieldName.includes('印象')) {
+    return 'impressions';
+  } else if (lowerFieldName.includes('reach') || lowerFieldName.includes('覆盖') || lowerFieldName.includes('抵达')) {
+    return 'reach';
+  } else if (lowerFieldName.includes('cost per result') || lowerFieldName.includes('单次成效') || lowerFieldName.includes('每次结果成本')) {
+    return 'costPerResult';
+  } else if (lowerFieldName.includes('website clicks') || lowerFieldName.includes('网站点击')) {
+    return 'website_clicks';
+  } else if (lowerFieldName.includes('registrations') || lowerFieldName.includes('注册')) {
+    return 'registrations';
+  } else if (lowerFieldName.includes('registration cost') || lowerFieldName.includes('注册成本')) {
+    return 'registration_cost';
+  }
+  
+  return null;
+}
+
+// 根据列索引确定字段类型
+function determineFieldTypeByIndex(index: number, columnIndices: Record<string, number>, fixIndex: number): string | null {
+  const fieldTypes = [
+    { key: 'results', label: '成效' },
+    { key: 'reach', label: '覆盖人数' },
+    { key: 'spend', label: '花费' },
+    { key: 'impressions', label: '展示次数' },
+    { key: 'costPerResult', label: '每次结果成本' },
+    { key: 'website_clicks', label: '网站点击' },
+    { key: 'registrations', label: '注册' },
+    { key: 'registration_cost', label: '注册成本' }
+  ];
+  
+  for (const field of fieldTypes) {
+    if (columnIndices[field.key] !== undefined) {
+      const expectedIndex = columnIndices[field.key] - fixIndex;
+      if (index === expectedIndex) {
+        return field.key;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// 根据页面广告名称顺序重新排序修改数据
+function reorderModificationsByPageNames(modificationsArray: any[], pageAdNames: string[]): any[] {
+  const sortedModificationsArray: any[] = [];
+  const usedIndices = new Set<number>();
+  
+  // 创建名称到索引列表的映射，用于处理重复名称
+  const nameToIndicesMap = new Map<string, number[]>();
+  modificationsArray.forEach((item, idx) => {
+    if (item && item.completeData && item.completeData.name) {
+      const name = item.completeData.name;
+      if (!nameToIndicesMap.has(name)) {
+        nameToIndicesMap.set(name, []);
+      }
+      nameToIndicesMap.get(name)?.push(idx);
+    }
+  });
+  
+  console.log('名称到索引映射:', nameToIndicesMap);
+  
+  // 按照页面顺序添加项目
+  pageAdNames.forEach((pageName) => {
+    const indices = nameToIndicesMap.get(pageName) || [];
+    
+    // 找到第一个未使用的索引
+    const unusedIndex = indices.find(idx => !usedIndices.has(idx));
+    
+    if (unusedIndex !== undefined) {
+      sortedModificationsArray.push(modificationsArray[unusedIndex]);
+      usedIndices.add(unusedIndex);
+    }
+  });
+  
+  // 添加页面中不存在的数据
+  modificationsArray.forEach((item, idx) => {
+    if (!usedIndices.has(idx)) {
+      sortedModificationsArray.push(item);
+    }
+  });
+  
+  return sortedModificationsArray;
+}
+
+// 构建修改数据映射
+function buildModificationsMap(modificationsArray: any[]): { modificationsMap: Map<string, any>, nameToItemsMap: Map<string, any[]> } {
+  const modificationsMap = new Map<string, any>();
+  const nameToItemsMap = new Map<string, any[]>();
+  
+  modificationsArray.forEach(item => {
+    if (item && item.completeData) {
+      // 优先使用广告ID作为键
+      if (item.completeData.id) {
+        modificationsMap.set(item.completeData.id, item);
+      }
+      
+      // 存储相同名称的所有项目
+      if (item.completeData.name) {
+        const name = item.completeData.name;
+        if (!nameToItemsMap.has(name)) {
+          nameToItemsMap.set(name, []);
+        }
+        nameToItemsMap.get(name)?.push(item);
+      }
+    }
+  });
+  
+  return { modificationsMap, nameToItemsMap };
+}
+
+// 根据名称和索引查找对应的修改数据
+function findModificationByNameAndIndex(name: string, rowIndex: number, modificationsMap: Map<string, any>, nameToItemsMap: Map<string, any[]>, modificationsArray: any[]): any | null {
+  // 尝试根据名称查找
+  if (name) {
+    const itemsWithSameName = nameToItemsMap.get(name);
+    if (itemsWithSameName && itemsWithSameName.length > 0) {
+      // 如果只有一个项目，直接使用
+      if (itemsWithSameName.length === 1) {
+        return itemsWithSameName[0];
+      } else {
+        // 如果有多个项目，尝试根据索引匹配
+        console.warn(`广告名称 ${name} 重复，尝试根据索引匹配`);
+        if (modificationsArray[rowIndex]) {
+          return modificationsArray[rowIndex];
+        }
+      }
+    }
+  }
+  
+  // 如果还是找不到，使用索引作为后备方案
+  if (modificationsArray[rowIndex]) {
+    return modificationsArray[rowIndex];
+  }
+  
+  return null;
+}
+
+// 递归查找并更新DOM元素
+function updateElementText(element: Element, newValue: number, fieldType: string): void {
+  if (element.children.length > 0) {
+    if (element.children[0] instanceof HTMLElement) {
+      updateElementText(element.children[0], newValue, fieldType);
+    } else {
+      console.log(`跳过非HTMLElement子元素: ${element.children[0]}`);
+    }
+  } else {
+    // 找到最终的文本元素
+    console.log(`更新元素文本: ${element.innerText} -> ${newValue}`);
+    
+    // 保存原始文本，用于提取货币符号
+    const originalText = element.innerText;
+    
+    // 根据字段类型决定显示格式
+    if (fieldType === 'spend') {
+      // 花费字段：保留2位小数，保留货币符号
+      console.log(`更新花费字段: ${newValue.toFixed(2)}`);
+      
+      // 提取货币符号（如果有）
+      const currencyMatch = originalText.match(/^[^0-9]+/);
+      const currencySymbol = currencyMatch ? currencyMatch[0] : '';
+      
+      // 保留货币符号并更新数值
+      console.log(`货币符号更新: ${currencySymbol}`);
+      element.innerText = currencySymbol + newValue.toFixed(2);
+    } else {
+      // 其他字段：整数
+      console.log(`更新其他字段: ${Math.round(newValue)}`);
+      element.innerText = Math.round(newValue).toString();
+    }
+  }
+}
+
+// 更新可滚动行的显示值
+function updateScrollableRow(scrollableElement: Element, rowData: any, columnIndices: Record<string, number>, fixIndex: number): void {
+  const scrollableElements = scrollableElement.children[0]?.children || [];
+  console.log(`开始更新DOM，可滚动元素数量: ${scrollableElements.length}`);
+  console.log(`列索引:`, columnIndices);
+  console.log(`固定列数量: ${fixIndex}`);
+  
+  // 遍历所有可滚动元素
+  for (let index = 0; index < scrollableElements.length; index++) {
+    const element = scrollableElements[index];
+    console.log(`处理元素 ${index}:`, element);
+    
+    const text = element.textContent?.trim();
+    if (text) {
+      // 检查是否有对应的列修改值
+      let increaseValue = 0;
+      let originalValueFromData = 0;
+      let hasModification = false;
+      let fieldType = null;
+      
+      // 根据当前列索引确定字段类型
+      fieldType = determineFieldTypeByIndex(index, columnIndices, fixIndex);
+      
+      if (fieldType) {
+        console.log(`找到匹配字段: ${fieldType}`);
+      }
+      
+      // 如果找到了对应的字段类型，检查是否有修改
+      if (fieldType && rowData && rowData.modifiedFields && rowData.modifiedFields[fieldType] !== undefined) {
+        increaseValue = rowData.modifiedFields[fieldType] || 0;
+        originalValueFromData = rowData.completeData?.[fieldType] || 0;
+        hasModification = true;
+        console.log(`处理元素 ${index}: ${text}`);
+        console.log(`原始值: `, originalValueFromData);
+        console.log(`增加值: `, increaseValue);
+      }
+        
+      // 只有当当前列有修改时才更新
+      if (hasModification) {
+        // 检查原始值是否为--且新增值为0
+        const currentText = element.textContent?.trim();
+        const isOriginalDash = currentText.includes('—');
+        const isIncreaseZero = increaseValue === 0;
+        
+        // 如果原始值是--且新增值为0，则不更新
+        if (isOriginalDash && isIncreaseZero) {
+          console.log(`跳过更新元素 ${index}: original值为 — and 增加值为 0`);
+          continue;
+        }
+        
+        // 使用修改数据中保存的原始值，而不是从DOM中提取
+        // 这样可以确保即使DOM值被修改，也能使用缓存中的原始值
+        const newValue = originalValueFromData + increaseValue;
+        
+        // 更新元素的文本内容
+        console.log(`更新元素 ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
+        
+        // 递归查找并更新DOM元素
+        updateElementText(element, newValue, fieldType);
+      } else {
+        console.log(`元素 ${index} 未修改，跳过更新`);
+      }
+    }
+  }
+}
+
 // 解析数值
 function parseNumber(text: string): number | string {
   if (!text) return 0;
@@ -1200,66 +1459,13 @@ async function syncAdDataToPage(sortInfo = null) {
     const tableContainer = findTableContainer();
     if (tableContainer) {
       const rowPairs = getTableDataRows(tableContainer);
-      const pageAdNames = [];
       
-      rowPairs.forEach((rowPair) => {
-        const { fixed } = rowPair;
-        let name = '';
-        const nameElements = fixed.querySelectorAll('div, span');
-        for (const element of nameElements) {
-          const text = element.textContent?.trim();
-          if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
-            name = text;
-            break;
-          }
-        }
-        name = cleanAdName(name);
-        if (name) {
-          pageAdNames.push(name);
-        }
-      });
-      
+      // 使用公共函数提取广告名称
+      const pageAdNames = extractAdNamesFromRowPairs(rowPairs);
       console.log('页面中的广告名称顺序:', pageAdNames);
       
-      // 根据页面中的广告顺序重新排序缓存数据
-      const sortedModificationsArray = [];
-      const usedIndices = new Set();
-      
-      // 创建名称到索引列表的映射，用于处理重复名称
-      const nameToIndicesMap = new Map();
-      modificationsArray.forEach((item, idx) => {
-        if (item && item.completeData && item.completeData.name) {
-          const name = item.completeData.name;
-          if (!nameToIndicesMap.has(name)) {
-            nameToIndicesMap.set(name, []);
-          }
-          nameToIndicesMap.get(name)?.push(idx);
-        }
-      });
-      
-      console.log('名称到索引映射:', nameToIndicesMap);
-      
-      // 按照页面顺序添加项目
-      pageAdNames.forEach((pageName, pageIndex) => {
-        const indices = nameToIndicesMap.get(pageName) || [];
-        
-        // 找到第一个未使用的索引
-        const unusedIndex = indices.find(idx => !usedIndices.has(idx));
-        
-        if (unusedIndex !== undefined) {
-          sortedModificationsArray.push(modificationsArray[unusedIndex]);
-          usedIndices.add(unusedIndex);
-        }
-      });
-      
-      // 添加页面中不存在的数据
-      modificationsArray.forEach((item, idx) => {
-        if (!usedIndices.has(idx)) {
-          sortedModificationsArray.push(item);
-        }
-      });
-      
-      modificationsArray = sortedModificationsArray;
+      // 使用公共函数重新排序修改数据
+      modificationsArray = reorderModificationsByPageNames(modificationsArray, pageAdNames);
       console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item.completeData?.name));
       
       // 不保存调整后的顺序到缓存，只在当前会话中使用
@@ -1268,27 +1474,8 @@ async function syncAdDataToPage(sortInfo = null) {
       console.log('未找到表格容器，无法根据页面顺序排序数据');
     }
     
-    // 构建修改数据映射，用于快速查找
-    const modificationsMap = new Map();
-    const nameToItemsMap = new Map(); // 存储相同名称的所有项目
-    
-    modificationsArray.forEach(item => {
-      if (item && item.completeData) {
-        // 优先使用广告ID作为键
-        if (item.completeData.id) {
-          modificationsMap.set(item.completeData.id, item);
-        }
-        
-        // 存储相同名称的所有项目
-        if (item.completeData.name) {
-          const name = item.completeData.name;
-          if (!nameToItemsMap.has(name)) {
-            nameToItemsMap.set(name, []);
-          }
-          nameToItemsMap.get(name)?.push(item);
-        }
-      }
-    });
+    // 使用公共函数构建修改数据映射
+    const { modificationsMap, nameToItemsMap } = buildModificationsMap(modificationsArray);
     console.log('修改数据映射:', modificationsMap);
     console.log('名称到项目映射:', nameToItemsMap);
     
@@ -1310,19 +1497,8 @@ async function syncAdDataToPage(sortInfo = null) {
     rowPairs.forEach(async(rowPair, rowIndex) => {
       const { fixed, scrollable } = rowPair;
       
-      // 提取广告名称用于匹配
-      let name = '';
-      const nameElements = fixed.querySelectorAll('div, span');
-      for (const element of nameElements) {
-        const text = element.textContent?.trim();
-        if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
-          name = text;
-          break;
-        }
-      }
-      
-      // 清理广告名称
-      name = cleanAdName(name);
+      // 使用公共函数提取广告名称
+      const name = extractAdNameFromFixedElement(fixed);
       
       if (!name) return;
       
@@ -1346,27 +1522,9 @@ async function syncAdDataToPage(sortInfo = null) {
       // 尝试根据唯一标识符匹配修改数据
       let rowData = modificationsMap.get(adId);
       
-      // 如果根据ID找不到，使用名称到项目的映射
-      if (!rowData && name) {
-        const itemsWithSameName = nameToItemsMap.get(name);
-        if (itemsWithSameName && itemsWithSameName.length > 0) {
-          // 如果只有一个项目，直接使用
-          if (itemsWithSameName.length === 1) {
-            rowData = itemsWithSameName[0];
-          } else {
-            // 如果有多个项目，尝试根据索引匹配
-            // 这不是最优解，但在没有唯一标识符的情况下是一个后备方案
-            console.warn(`广告名称 ${name} 重复，尝试根据索引匹配`);
-            if (modificationsArray[rowIndex]) {
-              rowData = modificationsArray[rowIndex];
-            }
-          }
-        }
-      }
-      
-      // 如果还是找不到，使用索引作为后备方案
-      if (!rowData && modificationsArray[rowIndex]) {
-        rowData = modificationsArray[rowIndex];
+      // 如果根据ID找不到，使用公共函数根据名称和索引查找
+      if (!rowData) {
+        rowData = findModificationByNameAndIndex(name, rowIndex, modificationsMap, nameToItemsMap, modificationsArray);
       }
       
       if (!rowData) return;
@@ -1381,140 +1539,14 @@ async function syncAdDataToPage(sortInfo = null) {
         return;
       }
       
-      // 从可滚动行获取元素并更新
-      const scrollableElements = scrollable.children[0]?.children || [];
-      console.log(`可滚动元素数量: ${scrollableElements.length}`);
-      
-      // 1. 插件表格左侧显示原始值（从DOM中获取的原值）
-      // 2. 右侧显示可输入的增加的值（从本地存储中获取）
-      // 3. 保存时两个值都需要保存
-      // 4. 在原页面加载完成重新渲染新值时，是把这两个值相加显示在页面上
-      // 5. 当修改完成后，插件再次点击查询，需要查询到正确的原始值和前面输入的增加的值
-      console.log('当前列索引:', columnIndices);
-      
       // 计算固定列的数量，确保安全计算
       const fixIndex = fixed.children[0]?.children?.length ? (fixed.children[0].children.length - 1) : 0;
       
-      // 然后更新页面上的显示值（原始值 + 增加的值）
+      // 使用公共函数更新可滚动行的显示值
       try {
-        isUpdatingDOM = true;
-        console.log(`开始更新DOM，可滚动元素数量: ${scrollableElements.length}`);
-        console.log(`列索引:`, columnIndices);
-        console.log(`固定列数量: ${fixIndex}`);
-        
-        // 遍历所有可滚动元素
-        for (let index = 0; index < scrollableElements.length; index++) {
-          const element = scrollableElements[index];
-          console.log(`处理元素 ${index}:`, element);
-          
-          const text = element.textContent?.trim();
-          if (text) {
-            // 检查是否有对应的列修改值
-            let increaseValue = 0;
-            let originalValueFromData = 0;
-            let hasModification = false;
-            let fieldType = null;
-            
-            // 遍历所有可能的字段类型，找到匹配的列索引
-            const fieldTypes = [
-              { key: 'results', label: '成效' },
-              { key: 'reach', label: '覆盖人数' },
-              { key: 'spend', label: '花费' },
-              { key: 'impressions', label: '展示次数' },
-              { key: 'costPerResult', label: '每次结果成本' },
-              { key: 'website_clicks', label: '网站点击' },
-              { key: 'registrations', label: '注册' },
-              { key: 'registration_cost', label: '注册成本' }
-            ];
-            
-            for (const field of fieldTypes) {
-              if (columnIndices[field.key] !== undefined) {
-                const expectedIndex = columnIndices[field.key] - fixIndex;
-                console.log(`检查字段 ${field.key}: 预期索引 ${expectedIndex}, 当前索引 ${index}`);
-                if (index === expectedIndex) {
-                  fieldType = field.key;
-                  console.log(`找到匹配字段: ${field.key}`);
-                  break;
-                }
-              }
-            }
-            
-            // 如果找到了对应的字段类型，检查是否有修改
-            if (fieldType && rowData && rowData.modifiedFields && rowData.modifiedFields[fieldType] !== undefined) {
-              increaseValue = rowData.modifiedFields[fieldType] || 0;
-              originalValueFromData = rowData.completeData?.[fieldType] || 0;
-              hasModification = true;
-              console.log(`处理元素 ${index}: ${text}`);
-              console.log(`原始值: `, originalValueFromData);
-              console.log(`增加值: `, increaseValue);
-            }
-              
-            // 只有当当前列有修改时才更新
-            if (hasModification) {
-              // 检查原始值是否为--且新增值为0
-              const currentText = element.textContent?.trim();
-              const isOriginalDash = currentText.includes('—');
-              const isIncreaseZero = increaseValue === 0;
-              
-              // 如果原始值是--且新增值为0，则不更新
-              if (isOriginalDash && isIncreaseZero) {
-                console.log(`跳过更新元素 ${index}: original值为 — and 增加值为 0`);
-                continue;
-              }
-              
-              // 使用修改数据中保存的原始值，而不是从DOM中提取
-              // 这样可以确保即使DOM值被修改，也能使用缓存中的原始值
-              const newValue = originalValueFromData + increaseValue;
-              
-              // 更新元素的文本内容
-              console.log(`更新元素 ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
-              
-              // 递归查找并更新DOM元素
-              function findAndUpdateElement(el: Element) {
-                if (el.children.length > 0) {
-                  if(el.children?.[0] instanceof HTMLElement){
-                    findAndUpdateElement(el.children[0]);
-                  } else {
-                    console.log(`跳过非HTMLElement子元素: ${el.children?.[0]}`);
-                  }
-                } else {
-                  // 找到最终的文本元素
-                  console.log(`更新元素文本: ${el.innerText} -> ${newValue}`);
-                  
-                  // 保存原始文本，用于提取货币符号
-                  const originalText = el.innerText;
-                  
-                  // 根据字段类型决定显示格式
-                  if (fieldType === 'spend') {
-                    // 花费字段：保留2位小数，保留货币符号
-                    console.log(`更新花费字段: ${newValue.toFixed(2)}`);
-                    
-                    // 提取货币符号（如果有）
-                    const currencyMatch = originalText.match(/^[^0-9]+/);
-                    const currencySymbol = currencyMatch ? currencyMatch[0] : '';
-                    
-                    // 保留货币符号并更新数值
-                    console.log(`货币符号更新: ${currencySymbol}`);
-                    el.innerText = currencySymbol + newValue.toFixed(2);
-                  } else {
-                    // 其他字段：整数
-                    console.log(`更新其他字段: ${Math.round(newValue)}`);
-                    el.innerText = Math.round(newValue).toString();
-                  }
-                }
-              }
-              
-              // 开始递归查找
-              findAndUpdateElement(element);
-            } else {
-              console.log(`元素 ${index} 未修改，跳过更新`);
-            }
-          }
-        }
+        updateScrollableRow(scrollable, rowData, columnIndices, fixIndex);
       } catch (error) {
         console.error('更新DOM时出错:', error);
-      } finally {
-        isUpdatingDOM = false;
       }
     });
   } catch (error: any) {
