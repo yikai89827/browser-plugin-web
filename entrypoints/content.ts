@@ -271,8 +271,8 @@ export default {
         const adsKey = generateCacheKey('ads');
         const columnMappingKey = generateCacheKey('columnMapping');
         const sortInfoKey = generateCacheKey('sortInfo');
-        // 使用不包含排序信息的缓存键获取修改数据
-        const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
+        // 使用缓存键获取修改数据
+        const modificationsKey = generateCacheKey('ad_modifications');
         
         Promise.all([
           browserStorage.get(adsKey),
@@ -310,8 +310,8 @@ export default {
       } else if (message.action === 'saveModifications') {
         // 保存修改数据
         const { date, modifications } = message;
-        // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
-        const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
+        // 使用缓存键，因为修改数据应该与排序状态无关
+        const modificationsKey = generateCacheKey('ad_modifications');
         browserStorage.set(modificationsKey, modifications).then(() => {
           sendResponse({ success: true });
         }).catch((error) => {
@@ -1128,9 +1128,9 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('使用排序信息:', currentSortInfo);
     
     // 获取存储的所有广告数据
-    // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
+    // 使用缓存键，因为修改数据应该与排序状态无关
     console.log('获取存储项');
-    const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
+    const modificationsKey = generateCacheKey('ad_modifications');
     let modificationsArray = await browserStorage.get(modificationsKey);
     
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
