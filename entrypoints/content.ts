@@ -382,6 +382,12 @@ export default {
     // 立即加载缓存数据
     loadCachedData();
     
+    // 存储上一次的排序信息
+    let lastSortInfo = { field: null, direction: null };
+    
+    // 存储上一次的列映射
+    let lastColumnMapping = {};
+    
     // 防抖函数
     let syncTimeout = null;
     let lastSyncTime = 0;
@@ -401,9 +407,21 @@ export default {
           window.isSyncing = true;
           lastSyncTime = now;
           try {
-            // 调用getColumnIndices时使用默认参数0，确保递归终止条件生效
+            // 重新获取列索引
             await getColumnIndices();
-            await syncAdDataToPage();
+            
+            // 重新提取广告数据（包括原始值）
+            const { ads, DomColumnMapping, sortInfo } = await extractAdsFromDom();
+            
+            // 保存更新后的列映射
+            if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
+              const columnMappingKey = generateCacheKey('columnMapping');
+              await browserStorage.set(columnMappingKey, DomColumnMapping);
+              lastColumnMapping = DomColumnMapping;
+            }
+            
+            // 同步广告数据到页面
+            await syncAdDataToPage(sortInfo);
           } catch (error) {
             console.error('刷新页面数据错误:', error);
           } finally {
@@ -415,48 +433,68 @@ export default {
     
     // 使用MutationObserver来拦截页面渲染
     const observer = new MutationObserver((mutations) => {
-      // 检查是否有表格相关的DOM变化
-      const hasTableChanges = mutations.some(mutation => {
-        // 检查添加的节点
-        const hasAddedTableNodes = Array.from(mutation.addedNodes).some(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const element = node as HTMLElement;
-            return element.querySelector('[role="table"]') || 
-                   element.querySelector('[role="row"]') ||
-                   element.querySelector('[role="columnheader"]') ||
-                   element.classList.contains('_3hi') || // 表格容器类
-                   element.classList.contains('_1mie'); // 表格容器类
+      // 检查是否有排序变化
+      let hasSortChange = false;
+      try {
+        const { sortField, sortDirection } = detectSortInfo();
+        if (sortField && sortDirection) {
+          if (sortField !== lastSortInfo.field || sortDirection !== lastSortInfo.direction) {
+            lastSortInfo = { field: sortField, direction: sortDirection };
+            hasSortChange = true;
+            console.log('检测到排序变更:', lastSortInfo);
           }
-          return false;
-        });
-        
-        // 检查删除的节点
-        const hasRemovedTableNodes = Array.from(mutation.removedNodes).some(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const element = node as HTMLElement;
-            return element.querySelector('[role="table"]') || 
-                   element.querySelector('[role="row"]') ||
-                   element.querySelector('[role="columnheader"]') ||
-                   element.classList.contains('_3hi') || // 表格容器类
-                   element.classList.contains('_1mie'); // 表格容器类
-          }
-          return false;
-        });
-        
-        // 检查属性变化（例如样式变化）
-        const hasAttributeChanges = mutation.target.nodeType === Node.ELEMENT_NODE &&
-                                   (mutation.attributeName === 'style' || 
-                                    mutation.attributeName === 'class');
-        
-        // 检查文本内容变化
-        const hasCharacterDataChanges = mutation.type === 'characterData';
-        
-        return hasAddedTableNodes || hasRemovedTableNodes || hasAttributeChanges || hasCharacterDataChanges;
-      });
+        }
+      } catch (error) {
+        console.error('检测排序信息错误:', error);
+      }
       
-      if (hasTableChanges) {
-        console.log('检测到表格变化，触发同步');
-        // 表格变化时创建遮盖层
+      // 检查是否有表格列位置变化
+      let hasColumnChange = false;
+      try {
+        // 检查是否有列头相关的变化
+        const hasColumnHeaderChanges = mutations.some(mutation => {
+          if (mutation.target.nodeType === Node.ELEMENT_NODE) {
+            const element = mutation.target as HTMLElement;
+            return element.getAttribute('role') === 'columnheader' ||
+                   element.querySelector('[role="columnheader"]') ||
+                   element.classList.contains('_3hi'); // 表格容器类
+          }
+          return false;
+        });
+        
+        if (hasColumnHeaderChanges) {
+          // 重新获取列索引
+          const newColumnIndices = getColumnIndicesSync();
+          if (Object.keys(newColumnIndices).length > 0) {
+            // 比较新的列索引与当前的列索引
+            const currentColumnKeys = Object.keys(columnIndices).sort();
+            const newColumnKeys = Object.keys(newColumnIndices).sort();
+            
+            if (currentColumnKeys.length !== newColumnKeys.length) {
+              hasColumnChange = true;
+            } else {
+              for (let i = 0; i < currentColumnKeys.length; i++) {
+                if (currentColumnKeys[i] !== newColumnKeys[i] || 
+                    columnIndices[currentColumnKeys[i]] !== newColumnIndices[newColumnKeys[i]]) {
+                  hasColumnChange = true;
+                  break;
+                }
+              }
+            }
+            
+            if (hasColumnChange) {
+              console.log('检测到表格列位置变化');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('检测列位置变化错误:', error);
+      }
+      
+      // 只在排序变化或表格列位置变化时触发同步
+      if (hasSortChange || hasColumnChange) {
+        console.log('检测到排序变更或表格列位置变化，触发同步');
+        // 创建遮盖层
         createOverlay();
         debouncedSync();
       }
@@ -466,9 +504,8 @@ export default {
     observer.observe(document.body, {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
-      // attributes: true, // 增加对属性变化的监听
-      characterData: true, // 增加对文本内容变化的监听
-      characterDataOldValue: true // 记录文本内容的旧值
+      attributes: true, // 监听属性变化
+      attributeFilter: ['class', 'style'] // 只监听这些属性的变化
     });
     
     // 监听URL变化，当切换tab时重新加载缓存数据
@@ -503,6 +540,43 @@ export default {
     }, 1000);
   }
 };
+
+// 获取列索引（同步版本）
+function getColumnIndicesSync() {
+  const result = {};
+  try {
+    // 找到表格容器
+    const tableContainer = findTableContainer();
+    if (!tableContainer) {
+      return result;
+    }
+    
+    // 找到表头行
+    const headerRow = tableContainer.querySelector('[role="row"]');
+    if (!headerRow) {
+      return result;
+    }
+    
+    // 获取所有表头单元格
+    const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
+    
+    headerCells.forEach((cell, index) => {
+      // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
+      const cellId = cell?.children[0]?.children[0]?.id || '';
+
+      for (const [field, idPattern] of Object.entries(columnMapping)) {
+        if (cellId.includes(idPattern)) {
+          result[field] = index;
+          break;
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error getting column indices sync:', error);
+  }
+  return result;
+}
 
 // 获取列索引
 async function getColumnIndices(attempt = 0) {
