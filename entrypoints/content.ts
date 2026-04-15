@@ -370,7 +370,7 @@ export default {
         window.isSyncing = true;
         try {
           // 获取当前页面状态
-          const pageState = getCurrentPageState();
+          const pageState = await getCurrentPageState();
           currentPageState = pageState;
           
           // 使用新的缓存键生成函数获取缓存数据
@@ -531,7 +531,7 @@ export default {
     });
     
     // 开始观察页面变化
-    observer.observe(document.body, {
+    observer.observe(document.querySelector('[role="table"]'), {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
       attributes: true, // 监听属性变化
@@ -1421,7 +1421,7 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('获取到列索引:', columnIndices);
     
     // 获取当前页面状态
-    const pageState = getCurrentPageState();
+    const pageState = await getCurrentPageState();
     console.log('当前页面状态:', pageState);
     
     // 使用传入的排序信息或当前页面的排序状态
@@ -1494,7 +1494,9 @@ async function syncAdDataToPage(sortInfo = null) {
     const rowPairs = getTableDataRows(tableContainer);
     console.log('找到行对:', rowPairs.length);
     
-    rowPairs.forEach(async(rowPair, rowIndex) => {
+    // 遍历行对，同步广告数据
+    console.log('遍历行对，同步广告数据');
+    rowPairs.forEach((rowPair, rowIndex) => {
       const { fixed, scrollable } = rowPair;
       
       // 使用公共函数提取广告名称
@@ -1522,9 +1524,17 @@ async function syncAdDataToPage(sortInfo = null) {
       // 尝试根据唯一标识符匹配修改数据
       let rowData = modificationsMap.get(adId);
       
-      // 如果根据ID找不到，使用公共函数根据名称和索引查找
+      // 如果根据ID找不到，尝试根据名称匹配
       if (!rowData) {
-        rowData = findModificationByNameAndIndex(name, rowIndex, modificationsMap, nameToItemsMap, modificationsArray);
+        // 直接从排序后的modificationsArray中查找
+        rowData = modificationsArray.find(item => 
+          item && item.completeData && item.completeData.name === name
+        );
+        
+        // 如果还是找不到，使用索引作为后备方案
+        if (!rowData && modificationsArray[rowIndex]) {
+          rowData = modificationsArray[rowIndex];
+        }
       }
       
       if (!rowData) return;
