@@ -407,6 +407,15 @@ export default {
           window.isSyncing = true;
           lastSyncTime = now;
           try {
+            // 检查是否有缓存数据
+            const modificationsKey = generateCacheKeyWithoutSort('ad_modifications');
+            const modificationsArray = await browserStorage.get(modificationsKey);
+            
+            // 只有在有缓存数据时才创建遮盖层
+            if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+              createOverlay();
+            }
+            
             // 重新获取列索引
             await getColumnIndices();
             
@@ -425,6 +434,8 @@ export default {
           } catch (error) {
             console.error('刷新页面数据错误:', error);
           } finally {
+            // 无论成功失败都关闭遮盖层
+            removeOverlay();
             window.isSyncing = false;
           }
         }
@@ -505,7 +516,7 @@ export default {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
       attributes: true, // 监听属性变化
-      attributeFilter: ['class', 'style'] // 只监听这些属性的变化
+      attributeFilter: ['sorting'] // 只监听这些属性的变化
     });
     
     // 监听URL变化，当切换tab时重新加载缓存数据
@@ -525,17 +536,14 @@ export default {
     // 同时设置多个定时器，确保在页面加载的不同阶段都能同步数据
     setTimeout(() => {
       // 立即执行
-      createOverlay();
       debouncedSync();
     }, 0);
     setTimeout(() => {
       // 半秒后执行
-      createOverlay();
       debouncedSync();
     }, 500);
     setTimeout(() => {
       // 1秒后执行
-      createOverlay();
       debouncedSync();
     }, 1000);
   }
