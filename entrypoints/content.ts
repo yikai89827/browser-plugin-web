@@ -1167,19 +1167,34 @@ async function syncAdDataToPage(sortInfo = null) {
         
         console.log('页面中的广告名称顺序:', pageAdNames);
         
-        // 根据页面中的广告名称顺序重新排序缓存数据
+        // 根据页面中的广告顺序重新排序缓存数据
         const sortedModificationsArray = [];
         const usedIndices = new Set();
         
-        pageAdNames.forEach((pageName) => {
-          const index = modificationsArray.findIndex((item, idx) => {
-            if (usedIndices.has(idx)) return false;
-            return item && item.completeData && item.completeData.name === pageName;
-          });
+        // 创建名称到索引列表的映射，用于处理重复名称
+        const nameToIndicesMap = new Map();
+        modificationsArray.forEach((item, idx) => {
+          if (item && item.completeData && item.completeData.name) {
+            const name = item.completeData.name;
+            if (!nameToIndicesMap.has(name)) {
+              nameToIndicesMap.set(name, []);
+            }
+            nameToIndicesMap.get(name)?.push(idx);
+          }
+        });
+        
+        console.log('名称到索引映射:', nameToIndicesMap);
+        
+        // 按照页面顺序添加项目
+        pageAdNames.forEach((pageName, pageIndex) => {
+          const indices = nameToIndicesMap.get(pageName) || [];
           
-          if (index !== -1) {
-            sortedModificationsArray.push(modificationsArray[index]);
-            usedIndices.add(index);
+          // 找到第一个未使用的索引
+          const unusedIndex = indices.find(idx => !usedIndices.has(idx));
+          
+          if (unusedIndex !== undefined) {
+            sortedModificationsArray.push(modificationsArray[unusedIndex]);
+            usedIndices.add(unusedIndex);
           }
         });
         
@@ -1193,8 +1208,8 @@ async function syncAdDataToPage(sortInfo = null) {
         modificationsArray = sortedModificationsArray;
         console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item.completeData?.name));
         
-        // 保存调整后的顺序
-        await browserStorage.set(modificationsKey, modificationsArray);
+        // 不保存调整后的顺序到缓存，只在当前会话中使用
+        // 这样排序变更不会影响缓存数据
       }
     }
     

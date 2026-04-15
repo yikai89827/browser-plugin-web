@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { browser } from "wxt/browser";
 import axios from "axios";
-import { browserStorage } from "../../../utils/storage";
+// import { browserStorage } from "../../../utils/storage";
 
 // 广告数据类型定义
 interface AdData {
