@@ -93,6 +93,67 @@ function generateSortInfoKey() {
   return `sortInfo_${date}_${level}`;
 }
 
+// 生成唯一标识（按照popup页面上显示的数值类数据相加，然后加上名字）
+function generateUniqueId(name: string, originalValues: any): string {
+  // 提取数值类字段并相加
+  let sum = 0;
+  
+  // 定义需要计算的数值字段（排除DOM中暂时没有的字段）
+  const numericFields = [
+    'impressions', 'reach', 'spend', 'results', 'costPerResult'
+    // 排除以下字段，因为DOM中暂时没有
+    // 'website_clicks', 'registrations', 'registration_cost'
+  ];
+  
+  // 检查originalValues中的字段
+  if (typeof originalValues === 'object' && originalValues !== null) {
+    // 检查直接字段（从completeData提取的）
+    numericFields.forEach(field => {
+      if (originalValues[field] !== undefined) {
+        const value = parseFloat(originalValues[field]);
+        if (!isNaN(value)) {
+          sum += value;
+        }
+      }
+    });
+    
+    // 检查DOM提取的字段（fixed_*和scrollable_*）
+    Object.keys(originalValues).forEach(key => {
+      if (key.startsWith('fixed_') || key.startsWith('scrollable_')) {
+        const value = parseFloat(originalValues[key]);
+        if (!isNaN(value)) {
+          sum += value;
+        }
+      }
+    });
+  }
+  
+  console.log('计算唯一标识时的名称:', name);
+  console.log('计算唯一标识时的数值总和:', sum);
+  
+  // 组合名字和数值总和
+  const cleanedName = cleanAdName(name);
+  const combined = {
+    name: cleanedName || `unnamed_${Date.now()}`, // 如果名称为空，使用时间戳
+    sum: sum
+  };
+  
+  // 转换为字符串并计算哈希值
+  const str = JSON.stringify(combined);
+  console.log('计算哈希的字符串:', str);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // 转换为32位整数
+  }
+  
+  // 转换为十六进制字符串
+  const uniqueId = `unique_${Math.abs(hash).toString(16)}`;
+  console.log('生成的唯一标识:', uniqueId);
+  return uniqueId;
+}
+
 // 检测排序信息
 function detectSortInfo() {
   let sortField = null;
@@ -111,13 +172,12 @@ function detectSortInfo() {
                          element.getAttribute('aria-sort') || 
                          element.getAttribute('data-sort');
       
-      console.log(`排序属性: ${sortingAttr}`);
       
       // 如果找到排序属性
       if (sortingAttr) {
         // 从元素文本中提取字段名
         const fieldName = element.textContent?.trim().toLowerCase() || '';
-        console.log(`字段名: ${fieldName}`);
+        console.log(`列字段名: ${fieldName}`);
         
         // 使用公共函数映射字段名到标准字段名
         sortField = mapFieldNameToStandard(fieldName);
@@ -336,22 +396,68 @@ export default {
       } else if (message.action === 'saveModifications') {
         // 保存修改数据
         const { date, modifications } = message;
+        
+        // 为每个修改项生成唯一标识
+        const modificationsWithUniqueId = modifications.map(item => {
+          if (item && item.completeData) {
+            // 提取所有原始值（排除增加字段）
+            const originalValues = {};
+            
+            console.log('completeData:', item.completeData);
+            console.log('modifiedFields:', item.modifiedFields);
+            
+            // 从completeData中提取原始值
+            Object.keys(item.completeData).forEach(key => {
+              if (!key.startsWith('increase_')) {
+                originalValues[key] = item.completeData[key];
+              }
+            });
+            
+            // 从modifiedFields中提取原始值（如果有的话）
+            if (item.modifiedFields) {
+              Object.keys(item.modifiedFields).forEach(key => {
+                // 尝试从completeData中获取原始值，如果没有则使用0
+                const originalValue = item.completeData[key] !== undefined ? item.completeData[key] : 0;
+                originalValues[key] = originalValue;
+              });
+            }
+            
+            console.log('生成唯一标识时的原始值:', originalValues);
+            
+            // 生成唯一标识（只使用原始值）
+            const uniqueId = generateUniqueId(item.completeData.name, originalValues);
+            console.log('生成的唯一标识:', uniqueId);
+            
+            return {
+              ...item,
+              uniqueId
+            };
+          }
+          return item;
+        });
+        
         // 使用缓存键，因为修改数据应该与排序状态无关
         const modificationsKey = generateCacheKey('ad_modifications');
+        
+        // 检查是否是第一次保存
+        const existingModifications = await browserStorage.get(modificationsKey);
+        const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
+        
+        console.log(`是否第一次保存: ${isFirstSave}`);
         
         // 同时保存当前排序信息
         const sortInfo = detectSortInfo();
         const sortInfoKey = generateSortInfoKey();
         
         Promise.all([
-          browserStorage.set(modificationsKey, modifications),
+          browserStorage.set(modificationsKey, modificationsWithUniqueId),
           browserStorage.set(sortInfoKey, sortInfo)
         ]).then(() => {
           // 保存成功后触发页面刷新
           console.log('保存修改成功，触发页面刷新');
           console.log('保存的排序信息:', sortInfo);
           debouncedSync();
-          sendResponse({ success: true });
+          sendResponse({ success: true, isFirstSave });
         }).catch((error) => {
           console.error('保存修改数据错误:', error);
           sendResponse({ success: false, error: error.message });
@@ -631,17 +737,22 @@ async function getColumnIndices(attempt = 0) {
     return;
   }
   
+  console.log('开始获取列索引，当前值:', columnIndices);
   columnIndices = {};
+  console.log('重置列索引为:', columnIndices);
   
   try {
     // 首先尝试从缓存中获取列映射
     const columnMappingKey = generateCacheKey('columnMapping');
+    console.log('列映射缓存键:', columnMappingKey);
     const DomColumnMapping = await browserStorage.get(columnMappingKey);
+    console.log('从缓存获取的列映射:', DomColumnMapping);
     
     // 如果从缓存中获取到了列映射，直接使用
     if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
       console.log('使用缓存的 DomColumnMapping:', DomColumnMapping);
       columnIndices = DomColumnMapping;
+      console.log('设置列索引为缓存值:', columnIndices);
       return;
     }
     
@@ -697,6 +808,8 @@ async function getColumnIndices(attempt = 0) {
     }
   } catch (error) {
     console.error('Error getting column indices:', error);
+  } finally {
+    console.log('获取列索引完成，最终值:', columnIndices);
   }
 }
 
@@ -827,21 +940,100 @@ function cleanAdName(name: string): string {
   // 移除数字后缀（如 -102）
   cleanedName = cleanedName.replace(/\s*-\s*\d+$/, '').trim();
   
+  // 确保清理后的名称不为空
+  if (!cleanedName) {
+    return name; // 如果清理后为空，返回原始名称
+  }
+  
   return cleanedName;
 }
 
 // 从固定列元素中提取广告名称
 function extractAdNameFromFixedElement(fixedElement: HTMLElement): string {
   let name = '';
-  const nameElements = fixedElement.querySelectorAll('div, span');
-  for (const element of nameElements) {
-    const text = element.textContent?.trim();
-    if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
-      name = text;
-      break;
+  
+  console.log('开始提取广告名称');
+  
+  // 尝试从固定列的特定结构中提取广告名称
+  // 根据DOM结构，广告名称在div元素中，操作按钮在span元素中，它们是兄弟关系
+  try {
+    // 找到包含广告名称的div元素（在操作按钮span之前的div）
+   // data-surface="/am/table/maiba:ad_object_overflow_menu_entrypoint"
+    const buttonSpan = fixedElement.querySelector('div[role="presentation"] span[data-surface-wrapper="1"]');
+    
+    if (buttonSpan) {
+      console.log('找到操作按钮span:', buttonSpan);
+      
+      // 查找按钮span之前的所有兄弟元素
+      let sibling = buttonSpan.previousElementSibling;
+      while (sibling) {
+        if (sibling.tagName === 'DIV') {
+          console.log('找到按钮前的div兄弟元素:', sibling);
+          const text = sibling.textContent?.trim() || '';
+          console.log('检查div文本:', text);
+          
+          if (text && text.length > 0) {
+            name = text;
+            console.log('找到广告名称:', name);
+            break;
+          }
+        }
+        sibling = sibling.previousElementSibling;
+      }
+    }
+    
+    // 如果没有找到按钮span，尝试查找特定class的div
+    if (!name) {
+      const nameDiv = fixedElement.querySelector('div.x87ru5.x606jd');
+      if (nameDiv) {
+        console.log('找到特定class的div:', nameDiv);
+        const text = nameDiv.textContent?.trim() || '';
+        console.log('检查div文本:', text);
+        
+        if (text && text.length > 0) {
+            name = text;
+            console.log('找到广告名称:', name);
+          }
+      }
+    }
+  } catch (error) {
+    console.error('提取广告名称时出错:', error);
+  }
+  
+  // 如果没有找到名称，尝试获取所有文本内容
+  if (!name) {
+    const allText = fixedElement.textContent?.trim() || '';
+    console.log('未找到广告名称，使用所有文本:', allText);
+    if (allText) {
+      // 移除可能的操作按钮文本
+      const cleanedText = allText.replace(/(图表编辑|复制|打开|下拉菜单|Charts|Edit|Duplicate|Open|Drop-down)/g, '').trim();
+      if (cleanedText) {
+        name = cleanedText;
+      }
     }
   }
-  return cleanAdName(name);
+  
+  // 如果仍然没有找到名称，使用元素的outerHTML作为唯一标识
+  if (!name) {
+    const outerHTML = fixedElement.outerHTML;
+    console.log('未找到广告名称，使用outerHTML:', outerHTML.substring(0, 100) + '...');
+    name = `element_${hashString(outerHTML)}`;
+  }
+  
+  const cleanedName = cleanAdName(name);
+  console.log('提取的广告名称:', cleanedName);
+  return cleanedName;
+}
+
+// 生成字符串的哈希值
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16);
 }
 
 // 从表格行对中提取所有广告名称
@@ -932,17 +1124,40 @@ function reorderModificationsByPageNames(modificationsArray: any[], pageAdNames:
   console.log('名称到索引映射:', nameToIndicesMap);
   
   // 按照页面顺序添加项目
-  pageAdNames.forEach((pageName) => {
+  pageAdNames.forEach((pageName, pageIndex) => {
     const cleanPageName = cleanAdName(pageName);
     const indices = nameToIndicesMap.get(cleanPageName) || [];
     
     // 找到第一个未使用的索引
-    const unusedIndex = indices.find(idx => !usedIndices.has(idx));
+    let matchedIndex: number | undefined;
     
-    if (unusedIndex !== undefined) {
-      result.push(modificationsArray[unusedIndex]);
-      usedIndices.add(unusedIndex);
-      console.log(`页面行 ${pageName} -> 缓存索引 ${unusedIndex}`);
+    if (indices.length === 1) {
+      // 只有一个匹配项，直接使用
+      matchedIndex = indices[0];
+    } else if (indices.length > 1) {
+      // 多个匹配项，尝试根据唯一标识或其他信息匹配
+      console.warn(`广告名称 ${cleanPageName} 重复，找到 ${indices.length} 个匹配项`);
+      
+      // 尝试使用索引作为后备方案
+      if (pageIndex < modificationsArray.length) {
+        matchedIndex = pageIndex;
+        console.log(`使用页面索引 ${pageIndex} 作为后备方案`);
+      } else {
+        // 找到第一个未使用的索引
+        matchedIndex = indices.find(idx => !usedIndices.has(idx));
+      }
+    } else {
+      // 没有匹配项，尝试使用索引作为后备方案
+      if (pageIndex < modificationsArray.length) {
+        matchedIndex = pageIndex;
+        console.log(`名称未找到，使用页面索引 ${pageIndex} 作为后备方案`);
+      }
+    }
+    
+    if (matchedIndex !== undefined && !usedIndices.has(matchedIndex)) {
+      result.push(modificationsArray[matchedIndex]);
+      usedIndices.add(matchedIndex);
+      console.log(`页面行 ${pageName} -> 缓存索引 ${matchedIndex}`);
     } else {
       console.warn(`页面行 ${pageName} 在缓存中找不到对应的数据`);
       result.push(null); // 占位，保持顺序一致
@@ -1012,14 +1227,17 @@ function buildModificationsMap(modificationsArray: any[]): { modificationsMap: M
   
   modificationsArray.forEach(item => {
     if (item && item.completeData) {
-      // 优先使用广告ID作为键
-      if (item.completeData.id) {
+      // 优先使用唯一标识作为键
+      if (item.uniqueId) {
+        modificationsMap.set(item.uniqueId, item);
+      } else if (item.completeData.id) {
+        // 其次使用广告ID作为键
         modificationsMap.set(item.completeData.id, item);
       }
       
       // 存储相同名称的所有项目
       if (item.completeData.name) {
-        const name = item.completeData.name;
+        const name = cleanAdName(item.completeData.name);
         if (!nameToItemsMap.has(name)) {
           nameToItemsMap.set(name, []);
         }
@@ -1488,6 +1706,80 @@ async function extractAdsFromDom() {
   return { ads, DomColumnMapping, sortInfo };
 }
 
+// 从DOM行提取原始值并生成唯一标识
+function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableElement: Element): { name: string, originalValues: any, uniqueId: string } | null {
+  // 提取广告名称
+  const name = extractAdNameFromFixedElement(fixedElement);
+  if (!name) {
+    console.log('无法从DOM提取广告名称');
+    return null;
+  }
+  
+  // 提取原始值
+  const originalValues = {};
+  
+  // 尝试多种方法提取固定列中的值
+  console.log('开始提取固定列值');
+  
+  // 方法1: 使用[role="gridcell"]选择器
+  let fixedCells = fixedElement.querySelectorAll('[role="gridcell"]');
+  console.log('固定列单元格数量 (role="gridcell"):', fixedCells.length);
+  
+  // 如果没有找到，尝试使用div选择器
+  if (fixedCells.length === 0) {
+    fixedCells = fixedElement.querySelectorAll('div');
+    console.log('固定列单元格数量 (div):', fixedCells.length);
+  }
+  
+  fixedCells.forEach((cell, index) => {
+    const text = cell.textContent?.trim() || '';
+    originalValues[`fixed_${index}`] = text;
+    console.log(`固定列 ${index}:`, text);
+  });
+  
+  // 尝试多种方法提取可滚动列中的值
+  console.log('开始提取可滚动列值');
+  
+  // 方法1: 使用[role="gridcell"]选择器
+  let scrollableCells = scrollableElement.querySelectorAll('[role="gridcell"]');
+  console.log('可滚动列单元格数量 (role="gridcell"):', scrollableCells.length);
+  
+  // 如果没有找到，尝试使用div选择器
+  if (scrollableCells.length === 0) {
+    scrollableCells = scrollableElement.querySelectorAll('div');
+    console.log('可滚动列单元格数量 (div):', scrollableCells.length);
+  }
+  
+  // 如果仍然没有找到，尝试获取直接子元素
+  if (scrollableCells.length === 0) {
+    const children = scrollableElement.children[0]?.children || [];
+    scrollableCells = Array.from(children);
+    console.log('可滚动列单元格数量 (children):', scrollableCells.length);
+  }
+  
+  scrollableCells.forEach((cell, index) => {
+    const text = cell.textContent?.trim() || '';
+    originalValues[`scrollable_${index}`] = text;
+    console.log(`可滚动列 ${index}:`, text);
+  });
+  
+  // 如果仍然没有提取到值，尝试获取整个元素的文本内容
+  if (Object.keys(originalValues).length === 0) {
+    const fixedText = fixedElement.textContent?.trim() || '';
+    const scrollableText = scrollableElement.textContent?.trim() || '';
+    originalValues['fixed_text'] = fixedText;
+    originalValues['scrollable_text'] = scrollableText;
+    console.log('使用整个元素的文本内容:', { fixedText, scrollableText });
+  }
+  
+  console.log('从DOM提取的原始值:', originalValues);
+  
+  // 生成唯一标识
+  const uniqueId = generateUniqueId(name, originalValues);
+  
+  return { name, originalValues, uniqueId };
+}
+
 // 同步广告数据到页面
 async function syncAdDataToPage(sortInfo = null) {
   console.log('开始syncAdDataToPage函数，排序信息:', sortInfo);
@@ -1505,71 +1797,31 @@ async function syncAdDataToPage(sortInfo = null) {
     await getColumnIndices();
     console.log('获取到列索引:', columnIndices);
     
-    // 获取当前页面状态
-    const pageState = getCurrentPageState();
-    console.log('当前页面状态:', pageState);
-    
-    // 使用传入的排序信息或当前页面的排序状态
-    const currentSortInfo = sortInfo || { field: pageState.sortField, direction: pageState.sortDirection };
-    console.log('使用排序信息:', currentSortInfo);
-    
     // 获取存储的所有广告数据
     // 使用缓存键，因为修改数据应该与排序状态无关
-    console.log('获取存储项');
+    console.log('获取存储项开始');
     const modificationsKey = generateCacheKey('ad_modifications');
-    let modificationsArray = await browserStorage.get(modificationsKey);
+    const modificationsArray = await browserStorage.get(modificationsKey);
     
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
       console.log('存储中未找到广告数据');
       return;
     }
     
-    // 获取缓存的排序信息
-    const sortInfoKey = generateSortInfoKey();
-    const cachedSortInfo = await browserStorage.get(sortInfoKey) || { field: null, direction: null };
-    
-    console.log('缓存的排序信息:', cachedSortInfo);
-    console.log('当前页面的排序信息:', currentSortInfo);
-    
-    // 检查排序信息是否一致
-    const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
-                         cachedSortInfo.direction === currentSortInfo.direction;
-    
-    // 首先根据当前排序信息对缓存数据进行排序
-    console.log('根据当前排序信息对缓存数据进行排序');
-    modificationsArray = sortModificationsBySortInfo(modificationsArray, currentSortInfo);
-    console.log('排序后的缓存数据:', modificationsArray.map(item => item?.completeData?.name));
-    
-    // 然后根据页面顺序重新排序数据，确保与页面显示顺序一致
-    console.log('根据页面顺序重新排序数据');
-    
-    // 获取当前页面中的广告名称顺序
-    let tableContainer = findTableContainer();
-    if (tableContainer) {
-      const rowPairs = getTableDataRows(tableContainer);
-      
-      // 使用公共函数提取广告名称
-      const pageAdNames = extractAdNamesFromRowPairs(rowPairs);
-      console.log('页面中的广告名称顺序:', pageAdNames);
-      
-      // 使用公共函数重新排序修改数据
-      modificationsArray = reorderModificationsByPageNames(modificationsArray, pageAdNames);
-      console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item?.completeData?.name));
-      
-      // 不保存调整后的顺序到缓存，只在当前会话中使用
-      // 这样排序变更不会影响缓存数据
-    } else {
-      console.log('未找到表格容器，无法根据页面顺序排序数据');
-    }
-    
-    // 使用公共函数构建修改数据映射
-    const { modificationsMap, nameToItemsMap } = buildModificationsMap(modificationsArray);
-    console.log('修改数据映射:', modificationsMap);
-    console.log('名称到项目映射:', nameToItemsMap);
+    // 构建缓存数据的唯一标识映射
+    const uniqueIdMap = new Map<string, any>();
+    modificationsArray.forEach((item, index) => {
+      if (item && item.uniqueId) {
+        uniqueIdMap.set(item.uniqueId, item);
+        console.log(`缓存项唯一标识: ${item.uniqueId}, 名称: ${item.completeData?.name}, 行: ${index}`,item);
+      }
+    });
+    console.log('获取存储项完成');
+    console.log('缓存项数量:', uniqueIdMap.size);
     
     // 重新获取表格容器，确保使用最新的
-    console.log('重新获取表格容器');
-    tableContainer = findTableContainer();
+    console.log('获取表格容器开始');
+    const tableContainer = findTableContainer();
     
     if (!tableContainer) {
       console.log('未找到表格容器');
@@ -1579,84 +1831,71 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('表格容器信息:', tableContainer);
     
     // 获取表格数据行对
-    console.log('获取表格数据行对');
+    console.log('获取表格数据行对开始');
     const rowPairs = getTableDataRows(tableContainer);
     console.log('找到行对:', rowPairs.length);
     
     // 遍历行对，同步广告数据
-    console.log('遍历行对，同步广告数据');
-    rowPairs.forEach((rowPair, rowIndex) => {
+    console.log('遍历行对，同步广告数据开始');
+    for (let rowIndex = 0; rowIndex < rowPairs.length; rowIndex++) {
+      const rowPair = rowPairs[rowIndex];
       const { fixed, scrollable } = rowPair;
       
-      // 使用公共函数提取广告名称
-      const name = extractAdNameFromFixedElement(fixed);
+      if (!fixed || !scrollable) continue;
       
-      if (!name) return;
+      // 从DOM提取原始值并生成唯一标识
+      console.log(`从dom中行 ${rowIndex} 提取信息`);
+      const domInfo = extractOriginalValuesAndGenerateId(fixed, scrollable);
       
-      // 尝试从DOM中获取唯一标识符
-      let adId = `ad_${rowIndex}`;
-      
-      // 检查固定行是否有唯一标识符属性
-      const fixedRowElement = fixed;
-      if (fixedRowElement) {
-        // 检查是否有data-id或其他唯一属性
-        const dataId = fixedRowElement.getAttribute('data-id') || 
-                      fixedRowElement.getAttribute('id') || 
-                      fixedRowElement.querySelector('[data-id]')?.getAttribute('data-id') ||
-                      fixedRowElement.querySelector('[id]')?.getAttribute('id');
-        
-        if (dataId) {
-          adId = `ad_${dataId}`;
-        }
+      if (!domInfo) {
+        console.log(`无法从行 ${rowIndex} 提取信息`);
+        continue;
       }
       
-      // 尝试根据唯一标识符匹配修改数据
-      let rowData = modificationsMap.get(adId);
+      console.log(`dom行 ${rowIndex} 广告名称: ${domInfo.name}, 唯一标识: ${domInfo.uniqueId}`,domInfo);
       
-      // 如果根据ID找不到，尝试根据名称匹配
+      // 根据唯一标识查找对应的修改数据
+      let rowData = uniqueIdMap.get(domInfo.uniqueId);
+      
       if (!rowData) {
-        // 直接从排序后的modificationsArray中查找
-        rowData = modificationsArray.find(item => 
-          item && item.completeData && item.completeData.name === name
+        console.log(`未找到行 ${rowIndex} 的修改数据`);
+        // 尝试使用名称进行匹配
+        const nameMatch = modificationsArray.find(item => 
+          item && item.completeData && cleanAdName(item.completeData.name) === cleanAdName(domInfo.name)
         );
-        
-        // 如果还是找不到，使用索引作为后备方案
-        if (!rowData && modificationsArray[rowIndex]) {
-          rowData = modificationsArray[rowIndex];
+        if (nameMatch) {
+          console.log(`通过名称匹配找到修改数据:`, nameMatch);
+          rowData = nameMatch;
+        } else {
+          continue;
         }
       }
       
-      if (!rowData) return;
-      
-      // 生成广告ID（用于日志）
-      const logAdId = rowData.completeData?.id || `ad_${rowIndex}`;
-      console.log('同步广告数据:', name, 'ID:', logAdId, '行数据:', rowData);
-      
-      // 检查整行是否有修改
-      if (!rowData.modifiedFields || Object.keys(rowData.modifiedFields).length === 0) {
-        console.log(`广告数据未修改: ${name}, 跳过更新`);
-        return;
-      }
+      console.log(`找到修改数据:`, rowData);
       
       // 计算固定列的数量，确保安全计算
       const fixIndex = fixed.children[0]?.children?.length ? (fixed.children[0].children.length - 1) : 0;
       
-      // 使用公共函数更新可滚动行的显示值
-      try {
-        updateScrollableRow(scrollable, rowData, columnIndices, fixIndex);
-      } catch (error) {
-        console.error('更新DOM时出错:', error);
+      // 检查columnIndices的值
+      console.log(`更新行 ${rowIndex} 的可滚动数据`);
+      console.log(`当前columnIndices:`, columnIndices);
+      console.log(`当前fixIndex:`, fixIndex);
+      
+      // 如果columnIndices为空，尝试重新获取
+      if (!columnIndices || Object.keys(columnIndices).length === 0) {
+        console.log('columnIndices为空，尝试重新获取');
+        await getColumnIndices();
+        console.log(`重新获取后的columnIndices:`, columnIndices);
       }
-    });
-  } catch (error: any) {
-    // 处理扩展上下文无效的错误
-    if (error.message && error.message.includes('Extension context invalidated')) {
-      console.warn('扩展上下文无效, 停止同步广告数据');
-    } else {
-      console.error('Error:', error);
+      
+      updateScrollableRow(scrollable, rowData, columnIndices, fixIndex);
     }
+    console.log('遍历行对，同步广告数据完成');
+    console.log('同步广告数据到页面完成');
+  } catch (error) {
+    console.error('同步广告数据到页面错误:', error);
   } finally {
-    // 无论成功失败都关闭遮盖层
+    // 移除遮盖层
     removeOverlay();
   }
 }
