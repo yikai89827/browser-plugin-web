@@ -79,11 +79,18 @@ function getCurrentPageState() {
   };
 }
 
-// 生成缓存键（不包含排序信息，排序信息作为缓存数据的一部分存储）
+// 生成缓存键（不包含排序信息，排序信息使用独立的key存储）
 function generateCacheKey(prefix: string) {
   const date = getCurrentDate();
   const {level} = getCurrentPageState();
   return `${prefix}_${date}_${level}`;
+}
+
+// 生成排序信息的缓存键
+function generateSortInfoKey() {
+  const date = getCurrentDate();
+  const {level} = getCurrentPageState();
+  return `sortInfo_${date}_${level}`;
 }
 
 // 检测排序信息
@@ -331,9 +338,18 @@ export default {
         const { date, modifications } = message;
         // 使用缓存键，因为修改数据应该与排序状态无关
         const modificationsKey = generateCacheKey('ad_modifications');
-        browserStorage.set(modificationsKey, modifications).then(() => {
+        
+        // 同时保存当前排序信息
+        const sortInfo = detectSortInfo();
+        const sortInfoKey = generateSortInfoKey();
+        
+        Promise.all([
+          browserStorage.set(modificationsKey, modifications),
+          browserStorage.set(sortInfoKey, sortInfo)
+        ]).then(() => {
           // 保存成功后触发页面刷新
           console.log('保存修改成功，触发页面刷新');
+          console.log('保存的排序信息:', sortInfo);
           debouncedSync();
           sendResponse({ success: true });
         }).catch((error) => {
@@ -345,8 +361,8 @@ export default {
       } else if (message.action === 'getSortInfo') {
         // 获取排序信息
         const date = message.date;
-        // 使用新的缓存键生成函数
-        const sortInfoKey = generateCacheKey('sortInfo');
+        // 使用新的排序信息缓存键生成函数
+        const sortInfoKey = generateSortInfoKey();
         browserStorage.get(sortInfoKey).then((sortInfo) => {
           sendResponse(sortInfo);
         }).catch((error) => {
@@ -525,8 +541,20 @@ export default {
       // 只在排序变化或表格列位置变化时触发同步
       if (hasSortChange || hasColumnChange) {
         console.log('检测到排序变更或表格列位置变化，触发同步');
-        // 不在这里创建遮盖层，而是在debouncedSync中根据缓存数据情况决定
-        debouncedSync();
+        
+        // 立即显示遮盖层
+        const modificationsKey = generateCacheKey('ad_modifications');
+        browserStorage.get(modificationsKey).then((modificationsArray) => {
+          if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+            console.log('有缓存数据，显示遮盖层');
+            createOverlay();
+          }
+        });
+        
+        // 延迟执行同步，等待排序操作完成
+        setTimeout(() => {
+          debouncedSync();
+        }, 500); // 等待500ms让排序操作完成
       }
     });
     
@@ -551,15 +579,6 @@ export default {
       }
     }, 500);
     
-    // 同时设置多个定时器，确保在页面加载的不同阶段都能同步数据
-    setTimeout(() => {
-      // 立即执行
-      debouncedSync();
-    }, 0);
-    setTimeout(() => {
-      // 半秒后执行
-      debouncedSync();
-    }, 500);
     setTimeout(() => {
       // 1秒后执行
       debouncedSync();
@@ -890,14 +909,18 @@ function determineFieldTypeByIndex(index: number, columnIndices: Record<string, 
 
 // 根据页面广告名称顺序重新排序修改数据
 function reorderModificationsByPageNames(modificationsArray: any[], pageAdNames: string[]): any[] {
-  const sortedModificationsArray: any[] = [];
+  if (!pageAdNames || pageAdNames.length === 0) {
+    return modificationsArray;
+  }
+  
+  const result: any[] = [];
   const usedIndices = new Set<number>();
   
   // 创建名称到索引列表的映射，用于处理重复名称
   const nameToIndicesMap = new Map<string, number[]>();
   modificationsArray.forEach((item, idx) => {
     if (item && item.completeData && item.completeData.name) {
-      const name = item.completeData.name;
+      const name = cleanAdName(item.completeData.name);
       if (!nameToIndicesMap.has(name)) {
         nameToIndicesMap.set(name, []);
       }
@@ -905,29 +928,81 @@ function reorderModificationsByPageNames(modificationsArray: any[], pageAdNames:
     }
   });
   
+  console.log('页面广告名称顺序:', pageAdNames);
   console.log('名称到索引映射:', nameToIndicesMap);
   
   // 按照页面顺序添加项目
   pageAdNames.forEach((pageName) => {
-    const indices = nameToIndicesMap.get(pageName) || [];
+    const cleanPageName = cleanAdName(pageName);
+    const indices = nameToIndicesMap.get(cleanPageName) || [];
     
     // 找到第一个未使用的索引
     const unusedIndex = indices.find(idx => !usedIndices.has(idx));
     
     if (unusedIndex !== undefined) {
-      sortedModificationsArray.push(modificationsArray[unusedIndex]);
+      result.push(modificationsArray[unusedIndex]);
       usedIndices.add(unusedIndex);
+      console.log(`页面行 ${pageName} -> 缓存索引 ${unusedIndex}`);
+    } else {
+      console.warn(`页面行 ${pageName} 在缓存中找不到对应的数据`);
+      result.push(null); // 占位，保持顺序一致
     }
   });
   
   // 添加页面中不存在的数据
   modificationsArray.forEach((item, idx) => {
     if (!usedIndices.has(idx)) {
-      sortedModificationsArray.push(item);
+      result.push(item);
+      console.log(`缓存索引 ${idx} 不在页面中，添加到结果末尾`);
     }
   });
   
-  return sortedModificationsArray;
+  console.log('排序后的缓存数据顺序:', result.map(item => item?.completeData?.name));
+  return result;
+}
+
+// 根据排序信息对修改数据进行排序
+function sortModificationsBySortInfo(modificationsArray: any[], sortInfo: { field: string | null, direction: string | null }): any[] {
+  if (!sortInfo || !sortInfo.field || !sortInfo.direction) {
+    return modificationsArray;
+  }
+  
+  const { field, direction } = sortInfo;
+  
+  // 分离有数据的行和无数据的行
+  const rowsWithData: any[] = [];
+  const rowsWithoutData: any[] = [];
+  
+  modificationsArray.forEach(item => {
+    if (item && item.completeData) {
+      const value = item.completeData[field];
+      if (value !== undefined && value !== null && value !== '-' && value !== 0) {
+        rowsWithData.push(item);
+      } else {
+        rowsWithoutData.push(item);
+      }
+    } else {
+      rowsWithoutData.push(item);
+    }
+  });
+  
+  // 对有数据的行进行排序
+  rowsWithData.sort((a, b) => {
+    const valueA = a.completeData[field] || 0;
+    const valueB = b.completeData[field] || 0;
+    
+    if (direction === 'asc') {
+      return valueA - valueB;
+    } else {
+      return valueB - valueA;
+    }
+  });
+  
+  // 合并排序后的有数据行和无数据行
+  const sortedArray = [...rowsWithData, ...rowsWithoutData];
+  console.log(`根据 ${field} ${direction} 排序后的结果:`, sortedArray.map(item => item?.completeData?.name));
+  
+  return sortedArray;
 }
 
 // 构建修改数据映射
@@ -1450,9 +1525,8 @@ async function syncAdDataToPage(sortInfo = null) {
     }
     
     // 获取缓存的排序信息
-    const adsKey = generateCacheKey('ads');
-    const cachedData = await browserStorage.get(adsKey);
-    const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
+    const sortInfoKey = generateSortInfoKey();
+    const cachedSortInfo = await browserStorage.get(sortInfoKey) || { field: null, direction: null };
     
     console.log('缓存的排序信息:', cachedSortInfo);
     console.log('当前页面的排序信息:', currentSortInfo);
@@ -1461,9 +1535,13 @@ async function syncAdDataToPage(sortInfo = null) {
     const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
                          cachedSortInfo.direction === currentSortInfo.direction;
     
-    // 即使找不到排序信息，也要尝试根据页面顺序重新排序数据
-    // 这样可以确保数据与页面显示顺序一致
-    console.log('尝试根据页面顺序重新排序数据');
+    // 首先根据当前排序信息对缓存数据进行排序
+    console.log('根据当前排序信息对缓存数据进行排序');
+    modificationsArray = sortModificationsBySortInfo(modificationsArray, currentSortInfo);
+    console.log('排序后的缓存数据:', modificationsArray.map(item => item?.completeData?.name));
+    
+    // 然后根据页面顺序重新排序数据，确保与页面显示顺序一致
+    console.log('根据页面顺序重新排序数据');
     
     // 获取当前页面中的广告名称顺序
     let tableContainer = findTableContainer();
@@ -1476,7 +1554,7 @@ async function syncAdDataToPage(sortInfo = null) {
       
       // 使用公共函数重新排序修改数据
       modificationsArray = reorderModificationsByPageNames(modificationsArray, pageAdNames);
-      console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item.completeData?.name));
+      console.log('调整后的缓存数据顺序:', modificationsArray.map(item => item?.completeData?.name));
       
       // 不保存调整后的顺序到缓存，只在当前会话中使用
       // 这样排序变更不会影响缓存数据
