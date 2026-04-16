@@ -439,18 +439,10 @@ const saveChanges = async () => {
     
     // 保存更新后的数组到content script
     
-    const saveResponse = await sendMessageToContent('saveModifications', {
+     await sendMessageToContent('saveModifications', {
       date: currentDate,
       modifications: modificationsArray
     });
-    console.log('保存修改响应:', saveResponse);
-
-    if (!saveResponse.success) {
-      // 保存不成功，提示用户
-      error.value = `保存修改失败: ${saveResponse.error || '未知错误'}`;
-      console.error('保存修改失败:', saveResponse);
-      return;
-    }
     
     // 获取当前排序信息
     const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
