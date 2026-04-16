@@ -370,7 +370,7 @@ export default {
         window.isSyncing = true;
         try {
           // 获取当前页面状态
-          const pageState = await getCurrentPageState();
+          const pageState = getCurrentPageState();
           currentPageState = pageState;
           
           // 使用新的缓存键生成函数获取缓存数据
@@ -535,7 +535,7 @@ export default {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
       attributes: true, // 监听属性变化
-      attributeFilter: ['sorting'] // 只监听这些属性的变化
+      attributeFilter: ['sorting', 'aria-sort', 'data-sort'] // 监听所有排序相关属性的变化
     });
     
     // 监听URL变化，当切换tab时重新加载缓存数据
@@ -1012,7 +1012,7 @@ function updateElementText(element: Element, newValue: number, fieldType: string
       element.innerText = currencySymbol + newValue.toFixed(2);
     } else {
       // 其他字段：整数
-      console.log(`更新其他字段: ${Math.round(newValue)}`);
+      console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
       element.innerText = Math.round(newValue).toString();
     }
   }
@@ -1112,16 +1112,26 @@ async function extractAdsFromDom() {
     console.error('检测排序信息错误:', error);
   }
   
-  // 如果有缓存数据，直接返回缓存数据（不检查排序信息变化）
-  // 原始值以缓存为准，排序变化时会在syncAdDataToPage中处理
+  // 检查缓存数据的排序信息是否与当前页面一致
+  const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
+  const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
+                         cachedSortInfo.direction === currentSortInfo.direction;
+  
+  // 如果有缓存数据且排序信息一致，使用缓存数据
+  // 否则从DOM重新提取数据
   if (cachedData && cachedData.cacheData && cachedData.cacheData.ads && cachedData.cacheData.ads.length > 0 && 
-      cachedData.cacheData.columnMapping && Object.keys(cachedData.cacheData.columnMapping).length > 0) {
-    console.log('使用缓存数据（原始值以缓存为准）');
+      cachedData.cacheData.columnMapping && Object.keys(cachedData.cacheData.columnMapping).length > 0 &&
+      isSortInfoSame) {
+    console.log('使用缓存数据（排序信息一致）');
     return { 
       ads: cachedData.cacheData.ads, 
       DomColumnMapping: cachedData.cacheData.columnMapping, 
-      sortInfo: cachedData.sortInfo || currentSortInfo 
+      sortInfo: currentSortInfo 
     };
+  } else if (isSortInfoSame) {
+    console.log('排序信息一致但缓存数据不完整，从DOM提取');
+  } else {
+    console.log('排序信息已变更，从DOM重新提取数据');
   }
   
   // 没有缓存数据，从DOM提取并缓存
@@ -1421,7 +1431,7 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('获取到列索引:', columnIndices);
     
     // 获取当前页面状态
-    const pageState = await getCurrentPageState();
+    const pageState = getCurrentPageState();
     console.log('当前页面状态:', pageState);
     
     // 使用传入的排序信息或当前页面的排序状态
@@ -1456,7 +1466,7 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('尝试根据页面顺序重新排序数据');
     
     // 获取当前页面中的广告名称顺序
-    const tableContainer = findTableContainer();
+    let tableContainer = findTableContainer();
     if (tableContainer) {
       const rowPairs = getTableDataRows(tableContainer);
       
@@ -1479,8 +1489,9 @@ async function syncAdDataToPage(sortInfo = null) {
     console.log('修改数据映射:', modificationsMap);
     console.log('名称到项目映射:', nameToItemsMap);
     
-    // 使用之前已经声明的tableContainer变量
-    console.log('使用之前已经声明的表格容器');
+    // 重新获取表格容器，确保使用最新的
+    console.log('重新获取表格容器');
+    tableContainer = findTableContainer();
     
     if (!tableContainer) {
       console.log('未找到表格容器');

@@ -714,7 +714,7 @@ onUnmounted(() => {
         <thead>
           <tr>
             <!-- <th>广告id</th> -->
-            <!-- <th>名称</th> -->
+            <th>名称</th>
             <th>覆盖人数</th>
             <th>增加</th>
             <th>展示次数</th>
@@ -730,9 +730,9 @@ onUnmounted(() => {
         <tbody>
           <tr v-for="ad in ads" :key="ad.id">
             <!-- <td>{{ ad.id }}</td> -->
-            <!-- <td class="ellipsis-cell" :title="ad.name">
+            <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
-            </td> -->
+            </td>
             <td class="ellipsis-cell" :title="ad.reach || '-' ">
               {{ ad.reach || '-' }}
             </td>
