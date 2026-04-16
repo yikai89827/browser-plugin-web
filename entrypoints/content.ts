@@ -128,11 +128,6 @@ function generateUniqueId(name: string, originalValues: any): string {
       }
     });
     
-    // 检查DOM提取的字段（scrollable_*）
-    // 只计算用户配置的5个字段的值
-    const numericFields = [
-      'impressions', 'reach', 'spend', 'results', 'costPerResult'
-    ];
     
     // 检查scrollable_*字段
     Object.keys(originalValues).forEach(key => {
@@ -484,6 +479,8 @@ export default {
         // 同时保存当前排序信息
         const sortInfo = detectSortInfo();
         const sortInfoKey = generateSortInfoKey();
+
+        console.log('当前排序信息:', sortInfo,sortInfoKey);
         
         // 检查是否是第一次保存
         browserStorage.get(modificationsKey).then(existingModifications => {
@@ -1806,8 +1803,9 @@ async function syncAdDataToPage(sortInfo = null) {
     const modificationsKey = generateCacheKey('ad_modifications');
     const modificationsArray = await browserStorage.get(modificationsKey);
     
+    // 第一次保存时，存储中可能没有数据，这是正常的
     if (!modificationsArray || !Array.isArray(modificationsArray) || modificationsArray.length === 0) {
-      console.log('存储中未找到广告数据');
+      console.log('存储中未找到广告数据（可能是第一次保存）');
       return;
     }
     
