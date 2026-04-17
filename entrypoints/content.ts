@@ -1741,6 +1741,23 @@ async function extractAdsFromDom() {
   return { ads, DomColumnMapping, sortInfo };
 }
 
+// 递归查找元素的data-add-value属性
+function findAddValue(element: Element): number {
+  if (element.dataset.addValue) {
+    return parseFloat(element.dataset.addValue) || 0;
+  }
+  
+  for (let i = 0; i < element.children.length; i++) {
+    const child = element.children[i];
+    const addValue = findAddValue(child);
+    if (addValue !== 0) {
+      return addValue;
+    }
+  }
+  
+  return 0;
+}
+
 // 从DOM行提取原始值并生成唯一标识
 async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableElement: Element): Promise<{ name: string, originalValues: any, uniqueId: string } | null> {
   // 提取广告名称
@@ -1764,10 +1781,12 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
     const text = cell.textContent?.trim() || '';
     let originalValue = 0;
     
+    // 递归查找data-add-value属性
+    const addValue = findAddValue(cell);
+    
     // 检查是否有data-add-value属性
-    if (cell.dataset.addValue) {
+    if (addValue !== 0) {
       // 有属性，说明是修改过的，计算原始值
-      const addValue = parseFloat(cell.dataset.addValue) || 0;
       // 提取当前数值（去除货币符号）
       const currentValue = parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
       // 计算原始值
