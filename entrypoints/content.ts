@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { browserStorage } from '../utils/storage';
+// import md5 from 'blueimp-md5';
 
 // 广告数据类型
 interface AdData {
@@ -143,19 +144,17 @@ function generateUniqueId(name: string, originalValues: any): string {
   
   // 组合名字和数值总和，确保属性顺序一致
   const cleanedName = cleanAdName(name);
+  // 确保字符串的一致性，移除所有不可见字符
+  const sanitizedName = cleanedName.replace(/[\s\u00A0\u2000-\u200F\u2028-\u202F\u205F\u3000]/g, '').trim();
   
   // 转换为字符串并计算哈希值
-  const str = JSON.stringify(`name_${cleanedName}_sum_${roundedSum}`);
+  const str = `name${sanitizedName}sum${roundedSum}`;
   console.log('计算哈希的字符串:', str);
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // 转换为32位整数
-  }
+  // console.log('字符串长度:', str.length);
+  // console.log('字符串字符码:', Array.from(str).map(c => c.charCodeAt(0)).join(''));
   
-  // 转换为十六进制字符串
-  const uniqueId = `unique_${Math.abs(hash).toString(16)}`;
+  // 使用 charCodeAt 算法计算唯一id
+  const uniqueId = Array.from(str).map(c => c.charCodeAt(0)).join('');
   console.log('生成的唯一标识:', uniqueId);
   return uniqueId;
 }
@@ -445,7 +444,7 @@ export default {
               if (item.modifiedFields) {
                 Object.keys(item.modifiedFields).forEach(key => {
                   // 尝试从completeData中获取原始值，如果没有则使用0
-                  const originalValue = item.completeData[key] !== undefined ? item.completeData[key] : 0;
+                  const originalValue = item.completeData[key] !== undefined&&item.completeData[key] !== '' ? item.completeData[key] : 0;
                   originalValues[key] = originalValue;
                 });
               }
@@ -454,7 +453,6 @@ export default {
               
               // 生成唯一标识（只使用原始值）
               const uniqueId = generateUniqueId(item.completeData.name, originalValues);
-              console.log('生成的唯一标识:', uniqueId);
               
               return {
                 ...item,
@@ -484,7 +482,7 @@ export default {
           // 保存成功后触发页面刷新
           console.log('保存修改成功，触发页面刷新');
           console.log('保存的排序信息:', sortInfo);
-          debouncedSync();
+          debouncedSy刷新也nc();
           sendResponse({ success: true, isFirstSave });
         }).catch((error) => {
           console.error('保存修改数据错误:', error);
@@ -979,19 +977,15 @@ function extractAdNameFromFixedElement(fixedElement: HTMLElement): string {
     const buttonSpan = fixedElement.querySelector('div[role="presentation"] span[data-surface-wrapper="1"]');
     
     if (buttonSpan) {
-      console.log('找到操作按钮span:', buttonSpan);
       
       // 查找按钮span之前的所有兄弟元素
       let sibling = buttonSpan.previousElementSibling;
       while (sibling) {
         if (sibling.tagName === 'DIV') {
-          console.log('找到按钮前的div兄弟元素:', sibling);
           const text = sibling.textContent?.trim() || '';
-          console.log('检查div文本:', text);
           
           if (text && text.length > 0) {
             name = text;
-            console.log('找到广告名称:', name);
             break;
           }
         }
@@ -1003,13 +997,10 @@ function extractAdNameFromFixedElement(fixedElement: HTMLElement): string {
     if (!name) {
       const nameDiv = fixedElement.querySelector('div.x87ru5.x606jd');
       if (nameDiv) {
-        console.log('找到特定class的div:', nameDiv);
         const text = nameDiv.textContent?.trim() || '';
-        console.log('检查div文本:', text);
         
         if (text && text.length > 0) {
             name = text;
-            console.log('找到广告名称:', name);
           }
       }
     }
@@ -1291,51 +1282,57 @@ function findModificationByNameAndIndex(name: string, rowIndex: number, modifica
 }
 
 // 递归查找并更新DOM元素
-function updateElementText(element: Element, newValue: number, fieldType: string): void {
-  if (element.children.length > 0) {
-    if (element.children[0] instanceof HTMLElement) {
-      updateElementText(element.children[0], newValue, fieldType);
+function updateElementText(element: Element, newValue: number, fieldType: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (element.children.length > 0) {
+      if (element.children[0] instanceof HTMLElement) {
+        updateElementText(element.children[0], newValue, fieldType).then(resolve);
+      } else {
+        console.log(`跳过非HTMLElement子元素: ${element.children[0]}`);
+        resolve();
+      }
     } else {
-      console.log(`跳过非HTMLElement子元素: ${element.children[0]}`);
-    }
-  } else {
-    // 找到最终的文本元素
-    console.log(`更新元素文本: ${element.innerText} -> ${newValue}`);
-    
-    // 保存原始文本，用于提取货币符号
-    const originalText = element.innerText;
-    
-    // 根据字段类型决定显示格式
-    if (fieldType === 'spend') {
-      // 花费字段：保留2位小数，保留货币符号
-      console.log(`更新花费字段: ${newValue.toFixed(2)}`);
+      // 找到最终的文本元素
+      console.log(`更新元素文本: ${element.innerText} -> ${newValue}`);
       
-      // 提取货币符号（如果有）
-      const currencyMatch = originalText.match(/^[^0-9]+/);
-      const currencySymbol = currencyMatch ? currencyMatch[0] : '';
+      // 保存原始文本，用于提取货币符号
+      const originalText = element.innerText;
       
-      // 保留货币符号并更新数值
-      console.log(`货币符号更新: ${currencySymbol}`);
-      element.innerText = currencySymbol + newValue.toFixed(2);
-    } else {
-      // 其他字段：整数
-      console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
-      element.innerText = Math.round(newValue).toString();
+      // 根据字段类型决定显示格式
+      if (fieldType === 'spend') {
+        // 花费字段：保留2位小数，保留货币符号
+        console.log(`更新花费字段: ${newValue.toFixed(2)}`);
+        
+        // 提取货币符号（如果有）
+        const currencyMatch = originalText.match(/^[^0-9]+/);
+        const currencySymbol = currencyMatch ? currencyMatch[0] : '';
+        
+        // 保留货币符号并更新数值
+        console.log(`货币符号更新: ${currencySymbol}`);
+        element.innerText = currencySymbol + newValue.toFixed(2);
+      } else {
+        // 其他字段：整数
+        console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
+        element.innerText = Math.round(newValue).toString();
+      }
+      resolve();
     }
-  }
+  });
 }
 
 // 更新可滚动行的显示值
-function updateScrollableRow(scrollableElement: Element, rowData: any, fixIndex: number): void {
+async function updateScrollableRow(scrollableElement: Element, rowData: any, fixIndex: number): Promise<void> {
   const scrollableElements = scrollableElement.children[0]?.children || [];
   console.log(`开始更新DOM，可滚动元素数量: ${scrollableElements.length}`);
   console.log(`列索引:`, columnIndices);
   console.log(`固定列数量: ${fixIndex}`);
   
+  // 收集所有需要更新的元素的Promise
+  const updatePromises = [];
+  
   // 遍历所有可滚动元素
   for (let index = 0; index < scrollableElements.length; index++) {
     const element = scrollableElements[index];
-    console.log(`处理元素 ${index}:`, element);
     
     const text = element.textContent?.trim();
     if (text) {
@@ -1357,9 +1354,6 @@ function updateScrollableRow(scrollableElement: Element, rowData: any, fixIndex:
         increaseValue = rowData.modifiedFields[fieldType] || 0;
         originalValueFromData = rowData.completeData?.[fieldType] || 0;
         hasModification = true;
-        console.log(`处理元素 ${index}: ${text}`);
-        console.log(`原始值: `, originalValueFromData);
-        console.log(`增加值: `, increaseValue);
       }
         
       // 只有当当前列有修改时才更新
@@ -1371,7 +1365,6 @@ function updateScrollableRow(scrollableElement: Element, rowData: any, fixIndex:
         
         // 如果原始值是--且新增值为0，则不更新
         if (isOriginalDash && isIncreaseZero) {
-          console.log(`跳过更新元素 ${index}: original值为 — and 增加值为 0`);
           continue;
         }
         
@@ -1382,13 +1375,15 @@ function updateScrollableRow(scrollableElement: Element, rowData: any, fixIndex:
         // 更新元素的文本内容
         console.log(`更新元素 ${index}: ${originalValueFromData} + ${increaseValue} = ${newValue}`);
         
-        // 递归查找并更新DOM元素
-        updateElementText(element, newValue, fieldType);
-      } else {
-        console.log(`元素 ${index} 未修改，跳过更新`);
+        // 递归查找并更新DOM元素，将Promise添加到数组中
+        updatePromises.push(updateElementText(element, newValue, fieldType));
       }
     }
   }
+  
+  // 并行处理所有更新操作
+  await Promise.all(updatePromises);
+  console.log(`完成DOM更新，共更新 ${updatePromises.length} 个元素`);
 }
 
 // 解析数值
@@ -1506,7 +1501,6 @@ async function extractAdsFromDom() {
     // 使用for循环代替forEach，确保异步操作按顺序完成
     for (let rowIndex = 0; rowIndex < rowPairs.length; rowIndex++) {
       const rowPair = rowPairs[rowIndex];
-      console.log(`处理行 ${rowIndex}`, rowPair);
       const { fixed, scrollable } = rowPair;
       
       fixedColumnLength = fixed.children[0]?.children?.length-1 || 0;
@@ -1647,10 +1641,8 @@ async function extractAdsFromDom() {
       
       // 根据表头映射提取数据
       Object.entries(DomColumnMapping).forEach(([key, index]) => {
-        console.log(`${name}: 处理 ${key} at index ${index}`);
         // 计算滚动列的索引（减去固定列的数量）
         const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
-        console.log(`${name}: 处理 ${key} at fixIndex: ${fixIndex} index :${index}`);
         
         // 尝试使用计算的fixIndex
         let targetElement = scrollableElements[fixIndex];
@@ -1659,7 +1651,6 @@ async function extractAdsFromDom() {
         if (targetElement) {
           const text = targetElement.textContent?.trim();
           if (text) {
-            console.log(`${name}: 处理 ${key} at index ${fixIndex}: ${text}`);
             // 尝试解析数值
             const cleanedText = text.replace(/[^0-9.]/g, '');
             const num = parseFloat(cleanedText);
@@ -1835,7 +1826,7 @@ async function syncAdDataToPage(sortInfo = null) {
       // 从DOM提取原始值并生成唯一标识
       console.log(`从dom中行 ${rowIndex} 提取信息`);
       const domInfo = extractOriginalValuesAndGenerateId(fixed, scrollable);
-      console.log(`从dom中行 ${rowIndex} 提取uniqueId`, domInfo.uniqueId);
+      console.log(`从dom中行 ${rowIndex} 提取uniqueId`,domInfo, domInfo.uniqueId);
       if (!domInfo) {
         console.log(`无法从行 ${rowIndex} 提取信息`);
         continue;
