@@ -446,72 +446,75 @@ export default {
         
         // 获取列索引，用于生成唯一标识
         const columnMappingKey = generateCacheKey('columnMapping');
-        const columnIndices = await browserStorage.get(columnMappingKey) || {};
-        console.log('保存时获取的列索引:', columnIndices);
         
-        // 为每个修改项生成唯一标识
-        const modificationsWithUniqueId = modifications.map(item => {
-          if (item && item.completeData) {
-            // 提取所有原始值（排除增加字段）
-            const originalValues = {};
-            
-            console.log('completeData:', item.completeData);
-            console.log('modifiedFields:', item.modifiedFields);
-            
-            // 从completeData中提取原始值
-            Object.keys(item.completeData).forEach(key => {
-              if (!key.startsWith('increase_')) {
-                originalValues[key] = item.completeData[key];
-              }
-            });
-            
-            // 从modifiedFields中提取原始值（如果有的话）
-            if (item.modifiedFields) {
-              Object.keys(item.modifiedFields).forEach(key => {
-                // 尝试从completeData中获取原始值，如果没有则使用0
-                const originalValue = item.completeData[key] !== undefined ? item.completeData[key] : 0;
-                originalValues[key] = originalValue;
+        // 使用 Promise 链获取列索引
+        browserStorage.get(columnMappingKey).then(columnIndices => {
+          console.log('保存时获取的列索引:', columnIndices);
+          
+          // 为每个修改项生成唯一标识
+          const modificationsWithUniqueId = modifications.map(item => {
+            if (item && item.completeData) {
+              // 提取所有原始值（排除增加字段）
+              const originalValues = {};
+              
+              console.log('completeData:', item.completeData);
+              console.log('modifiedFields:', item.modifiedFields);
+              
+              // 从completeData中提取原始值
+              Object.keys(item.completeData).forEach(key => {
+                if (!key.startsWith('increase_')) {
+                  originalValues[key] = item.completeData[key];
+                }
               });
+              
+              // 从modifiedFields中提取原始值（如果有的话）
+              if (item.modifiedFields) {
+                Object.keys(item.modifiedFields).forEach(key => {
+                  // 尝试从completeData中获取原始值，如果没有则使用0
+                  const originalValue = item.completeData[key] !== undefined ? item.completeData[key] : 0;
+                  originalValues[key] = originalValue;
+                });
+              }
+              
+              console.log('生成唯一标识时的原始值:', originalValues);
+              
+              // 生成唯一标识（只使用原始值，传入columnIndices）
+              const uniqueId = generateUniqueId(item.completeData.name, originalValues, columnIndices);
+              console.log('生成的唯一标识:', uniqueId);
+              
+              return {
+                ...item,
+                uniqueId
+              };
             }
-            
-            console.log('生成唯一标识时的原始值:', originalValues);
-            
-            // 生成唯一标识（只使用原始值，传入columnIndices）
-            const uniqueId = generateUniqueId(item.completeData.name, originalValues, columnIndices);
-            console.log('生成的唯一标识:', uniqueId);
-            
-            return {
-              ...item,
-              uniqueId
-            };
-          }
-          return item;
-        });
-        
-        // 使用缓存键，因为修改数据应该与排序状态无关
-        const modificationsKey = generateCacheKey('ad_modifications');
-        
-        // 同时保存当前排序信息
-        const sortInfo = detectSortInfo();
-        const sortInfoKey = generateSortInfoKey();
+            return item;
+          });
+          
+          // 使用缓存键，因为修改数据应该与排序状态无关
+          const modificationsKey = generateCacheKey('ad_modifications');
+          
+          // 同时保存当前排序信息
+          const sortInfo = detectSortInfo();
+          const sortInfoKey = generateSortInfoKey();
 
-        console.log('当前排序信息:', sortInfo,sortInfoKey);
-        
-        // 检查是否是第一次保存
-        browserStorage.get(modificationsKey).then(existingModifications => {
-          const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
+          console.log('当前排序信息:', sortInfo,sortInfoKey);
           
-          console.log(`是否第一次保存: ${isFirstSave}`);
-          
-          return Promise.all([
-            browserStorage.set(modificationsKey, modificationsWithUniqueId),
-            browserStorage.set(sortInfoKey, sortInfo)
-          ]).then(() => {
-            // 保存成功后触发页面刷新
-            console.log('保存修改成功，触发页面刷新');
-            console.log('保存的排序信息:', sortInfo);
-            debouncedSync();
-            sendResponse({ success: true, isFirstSave });
+          // 检查是否是第一次保存
+          return browserStorage.get(modificationsKey).then(existingModifications => {
+            const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
+            
+            console.log(`是否第一次保存: ${isFirstSave}`);
+            
+            return Promise.all([
+              browserStorage.set(modificationsKey, modificationsWithUniqueId),
+              browserStorage.set(sortInfoKey, sortInfo)
+            ]).then(() => {
+              // 保存成功后触发页面刷新
+              console.log('保存修改成功，触发页面刷新');
+              console.log('保存的排序信息:', sortInfo);
+              debouncedSync();
+              sendResponse({ success: true, isFirstSave });
+            });
           });
         }).catch((error) => {
           console.error('保存修改数据错误:', error);
