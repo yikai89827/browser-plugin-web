@@ -166,7 +166,7 @@ function convertDomValuesToOriginalValues(domValues: any, currentColumnIndices: 
   // 遍历配置的字段
   numericFields.forEach(field => {
     const columnIndex = currentColumnIndices[field]-fixedColumnLength;
-    console.log(`convertDomValuesToOriginalValues转换后的列索引: ${columnIndex}`);
+    // console.log(`convertDomValuesToOriginalValues转换后的列索引: ${columnIndex}`);
        
     if (columnIndex !== undefined && domValues[`scrollable_${columnIndex}`] !== undefined) {
       originalValues[field] = domValues[`scrollable_${columnIndex}`];
@@ -1319,10 +1319,12 @@ function updateElementText(element: Element, newValue: number, fieldType: string
         
         // 保留货币符号并更新数值
         console.log(`货币符号更新: ${currencySymbol}`);
+        element.dataset.addValue = (Math.round(newValue)-Number(element.innerText)).toString();
         element.innerText = currencySymbol + newValue.toFixed(2);
       } else {
         // 其他字段：整数
         console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
+        element.dataset.addValue = (Math.round(newValue)-Number(element.innerText)).toString();
         element.innerText = Math.round(newValue).toString();
       }
       resolve();
