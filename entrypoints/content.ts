@@ -171,6 +171,8 @@ function convertDomValuesToOriginalValues(domValues: any, currentColumnIndices: 
   // 遍历配置的字段
   numericFields.forEach(field => {
     const columnIndex = currentColumnIndices[field]-fixedColumnLength;
+    console.log(`convertDomValuesToOriginalValues转换后的列索引: ${columnIndex}`);
+       
     if (columnIndex !== undefined && domValues[`scrollable_${columnIndex}`] !== undefined) {
       originalValues[field] = domValues[`scrollable_${columnIndex}`];
     }
