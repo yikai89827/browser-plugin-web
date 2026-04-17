@@ -1310,23 +1310,36 @@ function updateElementText(element: Element, newValue: number, fieldType: string
       
       // 根据字段类型决定显示格式
       if (fieldType === 'spend') {
-        // 花费字段：保留2位小数，保留货币符号
-        console.log(`更新花费字段: ${newValue.toFixed(2)}`);
-        
-        // 提取货币符号（如果有）
-        const currencyMatch = originalText.match(/^[^0-9]+/);
-        const currencySymbol = currencyMatch ? currencyMatch[0] : '';
-        
-        // 保留货币符号并更新数值
-        console.log(`货币符号更新: ${currencySymbol}`);
-        element.dataset.addValue = (Math.round(newValue)-Number(element.innerText)).toString();
-        element.innerText = currencySymbol + newValue.toFixed(2);
-      } else {
-        // 其他字段：整数
-        console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
-        element.dataset.addValue = (Math.round(newValue)-Number(element.innerText)).toString();
-        element.innerText = Math.round(newValue).toString();
-      }
+    // 花费字段：保留2位小数，保留货币符号
+    console.log(`更新花费字段: ${newValue.toFixed(2)}`);
+    
+    // 提取货币符号（如果有）
+    const currencyMatch = originalText.match(/^[^0-9]+/);
+    const currencySymbol = currencyMatch ? currencyMatch[0] : '';
+    
+    // 提取原始数值（去除货币符号）
+    const originalValue = parseFloat(originalText.replace(/[^0-9.]/g, '')) || 0;
+    
+    // 计算增加值
+    const addValue = Math.round(newValue) - originalValue;
+    
+    // 保留货币符号并更新数值
+    console.log(`货币符号更新: ${currencySymbol}`);
+    element.dataset.addValue = addValue.toString();
+    element.innerText = currencySymbol + newValue.toFixed(2);
+  } else {
+    // 其他字段：整数
+    console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
+    
+    // 提取原始数值
+    const originalValue = parseFloat(originalText.replace(/[^0-9.]/g, '')) || 0;
+    
+    // 计算增加值
+    const addValue = Math.round(newValue) - originalValue;
+    
+    element.dataset.addValue = addValue.toString();
+    element.innerText = Math.round(newValue).toString();
+  }
       resolve();
     }
   });
@@ -1749,7 +1762,24 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
   // 提取所有可滚动列的值
   scrollableCells.forEach((cell, index) => {
     const text = cell.textContent?.trim() || '';
-    domValues[`scrollable_${index}`] = text;
+    let originalValue = 0;
+    
+    // 检查是否有data-add-value属性
+    if (cell.dataset.addValue) {
+      // 有属性，说明是修改过的，计算原始值
+      const addValue = parseFloat(cell.dataset.addValue) || 0;
+      // 提取当前数值（去除货币符号）
+      const currentValue = parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
+      // 计算原始值
+      originalValue = currentValue - addValue;
+      console.log(`提取列 ${index} 的值: 文本=${text}, 当前值=${currentValue}, 增加值=${addValue}, 原始值=${originalValue}`);
+    } else {
+      // 没有属性，说明是原始值
+      originalValue = parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
+      console.log(`提取列 ${index} 的值: 文本=${text}, 原始值=${originalValue}`);
+    }
+    
+    domValues[`scrollable_${index}`] = originalValue;
   });
   
   // 如果仍然没有提取到值，尝试获取整个元素的文本内容
@@ -1765,45 +1795,9 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
   // 将DOM提取的数据转换为缓存提取出来的原始值格式
   const originalValues = convertDomValuesToOriginalValues(domValues, columnIndices);
   
-  // 检查是否有缓存的修改数据
-  try {
-    const modificationsKey = generateCacheKey('ad_modifications');
-    const modificationsArray = await browserStorage.get(modificationsKey);
-    
-    if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
-      // 尝试找到匹配的修改数据
-      const matchedModification = modificationsArray.find(item => {
-        if (item && item.completeData) {
-          return cleanAdName(item.completeData.name) === cleanAdName(name);
-        }
-        return false;
-      });
-      
-      if (matchedModification) {
-        console.log('找到匹配的修改数据:', matchedModification);
-        // 从修改数据中获取原始值，减去增加值
-        const adjustedOriginalValues = {};
-        Object.keys(originalValues).forEach(key => {
-          if (matchedModification.completeData && matchedModification.completeData[key] !== undefined) {
-            // 使用缓存中的原始值
-            adjustedOriginalValues[key] = matchedModification.completeData[key];
-          } else {
-            // 使用DOM提取的值
-            adjustedOriginalValues[key] = originalValues[key];
-          }
-        });
-        console.log('调整后的原始值:', adjustedOriginalValues);
-        // 生成唯一标识
-        const uniqueId = generateUniqueId(name, adjustedOriginalValues);
-        return { name, originalValues: adjustedOriginalValues, uniqueId };
-      }
-    }
-  } catch (error) {
-    console.error('获取缓存数据错误:', error);
-  }
-  
-  // 没有找到匹配的修改数据或出错时，使用DOM提取的值
+  // 生成唯一标识
   const uniqueId = generateUniqueId(name, originalValues);
+  
   return { name, originalValues, uniqueId };
 }
 
