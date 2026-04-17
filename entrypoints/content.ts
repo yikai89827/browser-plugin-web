@@ -1833,9 +1833,9 @@ async function syncAdDataToPage(sortInfo = null) {
       if (!fixed || !scrollable) continue;
       
       // 从DOM提取原始值并生成唯一标识
-      console.log(`从dom中行 ${rowIndex} 提取信息`, domInfo.uniqueId);
+      console.log(`从dom中行 ${rowIndex} 提取信息`);
       const domInfo = extractOriginalValuesAndGenerateId(fixed, scrollable);
-      
+      console.log(`从dom中行 ${rowIndex} 提取uniqueId`, domInfo.uniqueId);
       if (!domInfo) {
         console.log(`无法从行 ${rowIndex} 提取信息`);
         continue;
