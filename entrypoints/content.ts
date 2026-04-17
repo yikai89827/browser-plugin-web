@@ -21,8 +21,8 @@ const columnMapping = {
   impressions: 'reporting_table_column_impressions',//展示次数
   reach: 'reporting_table_column_reach',//覆盖次数
   spend: 'reporting_table_column_spend',//花费
-  results: 'reporting_table_column_results',//成效
-  costPerResult: 'reporting_table_column_costPerResult',//单次成效
+  results: 'ads_manager_table_results_column_label_id',//成效
+  costPerResult: 'reporting_table_column_cost_per_result',//单次成效
   website_clicks: 'reporting_table_column_website_clicks',//网站点击
   registrations: 'reporting_table_column_registrations',//注册
   registration_cost: 'reporting_table_column_registration_cost',//注册成本
@@ -808,20 +808,18 @@ async function getColumnIndices(attempt = 0) {
     headerCells.forEach((cell, index) => {
       // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
       const cellId = cell?.children[0]?.children[0]?.id || '';
-      console.log(`Header cell ${index} ID:`, cellId);
-
+//ads_manager_table_results_column_label_id // results
+//reporting_table_column_cost_per_result // costPerResult
       for (const [field, idPattern] of Object.entries(columnMapping)) {
         if (cellId.includes(idPattern)) {
           columnIndices[field] = index;
-          console.log(`Found field ${field} at index ${index}`);
           break;
         }
       }
     });
     
     // 确保所有必要的列都被找到
-    const requiredFields = ['impressions', 'reach', 'spend', 'results', 'costPerResult'];
-    const missingFields = requiredFields.filter(field => !columnIndices[field]);
+    const missingFields = numericFields.filter(field => !columnIndices[field]);
     
     if (missingFields.length > 0) {
       console.log('缺少字段的列索引:', missingFields);
@@ -1592,7 +1590,7 @@ async function extractAdsFromDom() {
         // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
         const modificationsKey = generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
-        console.log('从缓存获取的修改数据:', modificationsArray);
+        console.log('从缓存获取的修改数据:',modificationsKey, modificationsArray);
         if (modificationsArray && Array.isArray(modificationsArray)) {
           // 首先根据广告ID查找对应的数据
           let rowData = modificationsArray.find(item => 
