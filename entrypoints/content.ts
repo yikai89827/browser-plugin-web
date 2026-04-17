@@ -205,7 +205,6 @@ function detectSortInfo() {
       if (sortingAttr) {
         // 从元素文本中提取字段名
         const fieldName = element.textContent?.trim().toLowerCase() || '';
-        console.log(`列字段名: ${fieldName}`);
         
         // 使用公共函数映射字段名到标准字段名
         sortField = mapFieldNameToStandard(fieldName);
@@ -225,8 +224,6 @@ function detectSortInfo() {
           sortDirection = 'desc';
         }
         
-        // 找到第一个排序的列后就返回
-        console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
         return { sortField, sortDirection };
       }
     }
