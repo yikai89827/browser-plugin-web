@@ -1752,7 +1752,7 @@ function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableEle
   
   const scrollableCells = Array.from(scrollableElement.children[0]?.children || []);
   console.log('可滚动列单元格数量 (children):', scrollableCells.length);
-  console.log('当前DomColumnMapping:', DomColumnMapping);
+  console.log('当前columnIndices:', columnIndices);
   
   // 提取所有可滚动列的值
   scrollableCells.forEach((cell, index) => {
@@ -1771,7 +1771,7 @@ function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableEle
   console.log('从DOM提取的原始值:', domValues);
   
   // 将DOM提取的数据转换为缓存提取出来的原始值格式
-  const originalValues = convertDomValuesToOriginalValues(domValues, DomColumnMapping);
+  const originalValues = convertDomValuesToOriginalValues(domValues, columnIndices);
   
   // 生成唯一标识
   const uniqueId = generateUniqueId(name, originalValues);
