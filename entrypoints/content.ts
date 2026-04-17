@@ -38,6 +38,9 @@ const numericFields = [
 // 存储列索引
 let columnIndices: Record<string, number> = {};
 
+//固定列长度
+let fixedColumnLength: number = 1;
+
 // 遮盖层元素
 let overlayElement: HTMLElement | null = null;
 
@@ -101,10 +104,11 @@ function generateSortInfoKey() {
 }
 
 // 生成唯一标识（按照popup页面上显示的数值类数据相加，然后加上名字）
-function generateUniqueId(name: string, originalValues: any, columnIndices?: Record<string, number>): string {
+function generateUniqueId(name: string, originalValues: any): string {
   // 提取数值类字段并相加
   let sum = 0;
   
+  console.log('原始值:', originalValues, numericFields, name);
   
   // 检查originalValues中的字段
   if (typeof originalValues === 'object' && originalValues !== null) {
@@ -125,47 +129,6 @@ function generateUniqueId(name: string, originalValues: any, columnIndices?: Rec
           const roundedValue = Math.round(value * 100) / 100;
           sum += roundedValue;
           console.log(`从${field}提取并清理的值: ${fieldValue} → ${value} → ${roundedValue}`);
-        }
-      }
-    });
-    
-    // 检查scrollable_*字段
-    Object.keys(originalValues).forEach(key => {
-      if (key.startsWith('scrollable_')) {
-        const index = parseInt(key.replace('scrollable_', ''));
-        
-        // 判断该列是否需要计算
-        let shouldCalculate = false;
-        if (columnIndices) {
-          // 如果有columnIndices，检查该索引是否对应配置的字段
-          shouldCalculate = Object.values(columnIndices).some(colIndex => colIndex === index);
-        } else {
-          // 如果没有columnIndices，默认计算前5个（向后兼容）
-          shouldCalculate = index < 5;
-        }
-        
-        if (shouldCalculate) {
-          // 清理数字字符串，移除非数字字符（除了小数点和负号）
-          const text = originalValues[key];
-          if (typeof text === 'string') {
-            // 移除非数字字符（除了小数点和负号）
-            const cleanedText = text.replace(/[^\d.-]/g, '');
-            const value = parseFloat(cleanedText);
-            if (!isNaN(value)) {
-              // 保留两位小数
-              const roundedValue = Math.round(value * 100) / 100;
-              sum += roundedValue;
-              console.log(`从${key}提取并清理的值: ${text} → ${cleanedText} → ${value} → ${roundedValue}`);
-            }
-          } else {
-            const value = parseFloat(text);
-            if (!isNaN(value)) {
-              // 保留两位小数
-              const roundedValue = Math.round(value * 100) / 100;
-              sum += roundedValue;
-              console.log(`从${key}提取并清理的值: ${text} → ${value} → ${roundedValue}`);
-            }
-          }
         }
       }
     });
@@ -199,6 +162,22 @@ function generateUniqueId(name: string, originalValues: any, columnIndices?: Rec
   const uniqueId = `unique_${Math.abs(hash).toString(16)}`;
   console.log('生成的唯一标识:', uniqueId);
   return uniqueId;
+}
+
+// 将DOM提取的数据转换为缓存提取出来的原始值格式
+function convertDomValuesToOriginalValues(domValues: any, currentColumnIndices: Record<string, number>): any {
+  const originalValues = {};
+  
+  // 遍历配置的字段
+  numericFields.forEach(field => {
+    const columnIndex = currentColumnIndices[field]-fixedColumnLength;
+    if (columnIndex !== undefined && domValues[`scrollable_${columnIndex}`] !== undefined) {
+      originalValues[field] = domValues[`scrollable_${columnIndex}`];
+    }
+  });
+  
+  console.log('转换后的原始值:', originalValues);
+  return originalValues;
 }
 
 // 检测排序信息
@@ -448,8 +427,8 @@ export default {
         const columnMappingKey = generateCacheKey('columnMapping');
         
         // 使用 Promise 链获取列索引
-        browserStorage.get(columnMappingKey).then(columnIndices => {
-          console.log('保存时获取的列索引:', columnIndices);
+        browserStorage.get(columnMappingKey).then(async columnIndex => {
+          console.log('保存时获取的列索引:', columnIndex);  
           
           // 为每个修改项生成唯一标识
           const modificationsWithUniqueId = modifications.map(item => {
@@ -478,8 +457,8 @@ export default {
               
               console.log('生成唯一标识时的原始值:', originalValues);
               
-              // 生成唯一标识（只使用原始值，传入columnIndices）
-              const uniqueId = generateUniqueId(item.completeData.name, originalValues, columnIndices);
+              // 生成唯一标识（只使用原始值）
+              const uniqueId = generateUniqueId(item.completeData.name, originalValues);
               console.log('生成的唯一标识:', uniqueId);
               
               return {
@@ -500,22 +479,18 @@ export default {
           console.log('当前排序信息:', sortInfo,sortInfoKey);
           
           // 检查是否是第一次保存
-          return browserStorage.get(modificationsKey).then(existingModifications => {
-            const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
-            
-            console.log(`是否第一次保存: ${isFirstSave}`);
-            
-            return Promise.all([
-              browserStorage.set(modificationsKey, modificationsWithUniqueId),
-              browserStorage.set(sortInfoKey, sortInfo)
-            ]).then(() => {
-              // 保存成功后触发页面刷新
-              console.log('保存修改成功，触发页面刷新');
-              console.log('保存的排序信息:', sortInfo);
-              debouncedSync();
-              sendResponse({ success: true, isFirstSave });
-            });
-          });
+          const existingModifications = await browserStorage.get(modificationsKey);
+          const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
+          console.log(`是否第一次保存: ${isFirstSave}`);
+          await Promise.all([
+            browserStorage.set(modificationsKey, modificationsWithUniqueId),
+            browserStorage.set(sortInfoKey, sortInfo)
+          ]);
+          // 保存成功后触发页面刷新
+          console.log('保存修改成功，触发页面刷新');
+          console.log('保存的排序信息:', sortInfo);
+          debouncedSync();
+          sendResponse({ success: true, isFirstSave });
         }).catch((error) => {
           console.error('保存修改数据错误:', error);
           sendResponse({ success: false, error: error.message });
@@ -790,25 +765,21 @@ function getColumnIndicesSync() {
 // 获取列索引
 async function getColumnIndices(attempt = 0) {
   // 添加递归终止条件，避免无限递归
-  if (attempt > 10) {
+  if (attempt > 5) {
     console.warn('获取列索引最大尝试次数已达，停止尝试');
     return;
   }
   
-  console.log('开始获取列索引，当前值:', columnIndices);
   columnIndices = {};
-  console.log('重置列索引为:', columnIndices);
   
   try {
     // 首先尝试从缓存中获取列映射
     const columnMappingKey = generateCacheKey('columnMapping');
     console.log('列映射缓存键:', columnMappingKey);
     const DomColumnMapping = await browserStorage.get(columnMappingKey);
-    console.log('从缓存获取的列映射:', DomColumnMapping);
     
     // 如果从缓存中获取到了列映射，直接使用
     if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
-      console.log('使用缓存的 DomColumnMapping:', DomColumnMapping);
       columnIndices = DomColumnMapping;
       console.log('设置列索引为缓存值:', columnIndices);
       return;
@@ -1130,7 +1101,7 @@ function mapFieldNameToStandard(fieldName: string): string | null {
 }
 
 // 根据列索引确定字段类型
-function determineFieldTypeByIndex(index: number, columnIndices: Record<string, number>, fixIndex: number): string | null {
+function determineFieldTypeByIndex(index: number, fixIndex: number): string | null {
   const fieldTypes = [
     { key: 'results', label: '成效' },
     { key: 'reach', label: '覆盖人数' },
@@ -1364,7 +1335,7 @@ function updateElementText(element: Element, newValue: number, fieldType: string
 }
 
 // 更新可滚动行的显示值
-function updateScrollableRow(scrollableElement: Element, rowData: any, columnIndices: Record<string, number>, fixIndex: number): void {
+function updateScrollableRow(scrollableElement: Element, rowData: any, fixIndex: number): void {
   const scrollableElements = scrollableElement.children[0]?.children || [];
   console.log(`开始更新DOM，可滚动元素数量: ${scrollableElements.length}`);
   console.log(`列索引:`, columnIndices);
@@ -1384,7 +1355,7 @@ function updateScrollableRow(scrollableElement: Element, rowData: any, columnInd
       let fieldType = null;
       
       // 根据当前列索引确定字段类型
-      fieldType = determineFieldTypeByIndex(index, columnIndices, fixIndex);
+      fieldType = determineFieldTypeByIndex(index, fixIndex);
       
       if (fieldType) {
         console.log(`找到匹配字段: ${fieldType}`);
@@ -1547,10 +1518,11 @@ async function extractAdsFromDom() {
       console.log(`处理行 ${rowIndex}`, rowPair);
       const { fixed, scrollable } = rowPair;
       
+      fixedColumnLength = fixed.children[0]?.children?.length-1 || 0;
       // 提取广告名称 - 从固定行获取
       let name = '';
       const nameElements = fixed.querySelectorAll('div, span');
-      console.log(`固定行数据长度:`, fixed.children[0]?.children?.length-1 || 0);
+      console.log(`固定行数据长度:`, fixedColumnLength);
       for (const element of nameElements) {
         const text = element.textContent?.trim();
         if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
@@ -1605,6 +1577,7 @@ async function extractAdsFromDom() {
         results: 0,
         increase_results: 0,
         costPerResult: 0,
+        increase_costPerResult: 0,
         other_events: 0,
         website_clicks: 0,
         increase_website_clicks: 0,
@@ -1620,11 +1593,13 @@ async function extractAdsFromDom() {
         // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
         const modificationsKey = generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
+        console.log('从缓存获取的修改数据:', modificationsArray);
         if (modificationsArray && Array.isArray(modificationsArray)) {
           // 首先根据广告ID查找对应的数据
           let rowData = modificationsArray.find(item => 
             item && item.completeData && item.completeData.id === ad.id
           );
+          console.log('根据广告ID查找的行数据:', rowData);
           
           // 如果根据ID找不到，尝试根据广告名称查找
           if (!rowData) {
@@ -1657,6 +1632,7 @@ async function extractAdsFromDom() {
             ad.increase_reach = rowData.modifiedFields.reach || 0;
             ad.increase_spend = rowData.modifiedFields.spend || 0;
             ad.increase_results = rowData.modifiedFields.results || 0;
+            ad.increase_costPerResult = rowData.modifiedFields.costPerResult || 0;
             ad.increase_website_clicks = rowData.modifiedFields.website_clicks || 0;
             ad.increase_registrations = rowData.modifiedFields.registrations || 0;
             ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
@@ -1759,7 +1735,7 @@ async function extractAdsFromDom() {
 }
 
 // 从DOM行提取原始值并生成唯一标识
-function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableElement: Element, columnIndices: Record<string, number>): { name: string, originalValues: any, uniqueId: string } | null {
+function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableElement: Element): { name: string, originalValues: any, uniqueId: string } | null {
   // 提取广告名称
   const name = extractAdNameFromFixedElement(fixedElement);
   if (!name) {
@@ -1768,32 +1744,35 @@ function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableEle
   }
   
   // 提取原始值
-  const originalValues = {};
+  const domValues = {};
   
   console.log('开始提取可滚动列值');
   
   const scrollableCells = Array.from(scrollableElement.children[0]?.children || []);
   console.log('可滚动列单元格数量 (children):', scrollableCells.length);
-  console.log('当前columnIndices:', columnIndices);
+  console.log('当前DomColumnMapping:', DomColumnMapping);
   
   // 提取所有可滚动列的值
   scrollableCells.forEach((cell, index) => {
     const text = cell.textContent?.trim() || '';
-    originalValues[`scrollable_${index}`] = text;
+    domValues[`scrollable_${index}`] = text;
   });
   
   // 如果仍然没有提取到值，尝试获取整个元素的文本内容
-  if (Object.keys(originalValues).length === 0) {
+  if (Object.keys(domValues).length === 0) {
     const fixedText = fixedElement.textContent?.trim() || '';
     const scrollableText = scrollableElement.textContent?.trim() || '';
-    originalValues['fixed_text'] = fixedText;
-    originalValues['scrollable_text'] = scrollableText;
+    domValues['fixed_text'] = fixedText;
+    domValues['scrollable_text'] = scrollableText;
   }
   
-  console.log('从DOM提取的原始值:', originalValues);
+  console.log('从DOM提取的原始值:', domValues);
   
-  // 生成唯一标识（传入columnIndices）
-  const uniqueId = generateUniqueId(name, originalValues, columnIndices);
+  // 将DOM提取的数据转换为缓存提取出来的原始值格式
+  const originalValues = convertDomValuesToOriginalValues(domValues, DomColumnMapping);
+  
+  // 生成唯一标识
+  const uniqueId = generateUniqueId(name, originalValues);
   
   return { name, originalValues, uniqueId };
 }
@@ -1864,7 +1843,7 @@ async function syncAdDataToPage(sortInfo = null) {
       
       // 从DOM提取原始值并生成唯一标识
       console.log(`从dom中行 ${rowIndex} 提取信息`);
-      const domInfo = extractOriginalValuesAndGenerateId(fixed, scrollable, columnIndices);
+      const domInfo = extractOriginalValuesAndGenerateId(fixed, scrollable);
       
       if (!domInfo) {
         console.log(`无法从行 ${rowIndex} 提取信息`);
@@ -1907,7 +1886,7 @@ async function syncAdDataToPage(sortInfo = null) {
         console.log(`重新获取后的columnIndices:`, columnIndices);
       }
       
-      updateScrollableRow(scrollable, rowData, columnIndices, fixIndex);
+      updateScrollableRow(scrollable, rowData, fixIndex);
     }
     console.log('遍历行对，同步广告数据完成');
     console.log('同步广告数据到页面完成');
