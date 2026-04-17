@@ -149,7 +149,13 @@ function generateUniqueId(name: string, originalValues: any): string {
   };
   
   // 转换为字符串并计算哈希值
-  const str = JSON.stringify(combined);
+  // 确保浮点数的字符串表示一致
+  const str = JSON.stringify(combined, (key, value) => {
+    if (typeof value === 'number' && isFinite(value)) {
+      return value.toFixed(2);
+    }
+    return value;
+  });
   console.log('计算哈希的字符串:', str);
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -808,8 +814,6 @@ async function getColumnIndices(attempt = 0) {
     headerCells.forEach((cell, index) => {
       // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
       const cellId = cell?.children[0]?.children[0]?.id || '';
-//ads_manager_table_results_column_label_id // results
-//reporting_table_column_cost_per_result // costPerResult
       for (const [field, idPattern] of Object.entries(columnMapping)) {
         if (cellId.includes(idPattern)) {
           columnIndices[field] = index;
