@@ -125,8 +125,8 @@ function generateUniqueId(name: string, originalValues: any): string {
           value = parseFloat(fieldValue);
         }
         if (!isNaN(value)) {
-          // 保留两位小数
-          const roundedValue = Math.round(value * 100) / 100;
+          // 取整，不需要保留小数
+          const roundedValue = Math.round(value);
           sum += roundedValue;
           console.log(`从${field}提取并清理的值: ${fieldValue} → ${value} → ${roundedValue}`);
         }
@@ -137,25 +137,20 @@ function generateUniqueId(name: string, originalValues: any): string {
   console.log('计算唯一标识时的名称:', name);
   console.log('计算唯一标识时的数值总和:', sum);
   
-  // 对总和保留两位小数，避免浮点数精度问题
-  const roundedSum = Math.round(sum * 100) / 100;
-  console.log('保留两位小数后的总和:', roundedSum);
+  // 对总和取整，不需要保留小数
+  const roundedSum = Math.round(sum);
+  console.log('取整后的总和:', roundedSum);
   
-  // 组合名字和数值总和
+  // 组合名字和数值总和，确保属性顺序一致
   const cleanedName = cleanAdName(name);
-  const combined = {
-    name: cleanedName || `unnamed_${Date.now()}`, // 如果名称为空，使用时间戳
-    sum: roundedSum
-  };
+  // 使用数组确保顺序一致
+  const combinedArray = [
+    ['name', cleanedName || `unnamed_${Date.now()}`],
+    ['sum', roundedSum]
+  ];
   
   // 转换为字符串并计算哈希值
-  // 确保浮点数的字符串表示一致
-  const str = JSON.stringify(combined, (key, value) => {
-    if (typeof value === 'number' && isFinite(value)) {
-      return value.toFixed(2);
-    }
-    return value;
-  });
+  const str = JSON.stringify(combinedArray);
   console.log('计算哈希的字符串:', str);
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
