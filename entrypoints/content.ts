@@ -23,10 +23,17 @@ const columnMapping = {
   spend: 'reporting_table_column_spend',//花费
   results: 'reporting_table_column_results',//成效
   costPerResult: 'reporting_table_column_costPerResult',//单次成效
-  // website_clicks: 'reporting_table_column_website_clicks',//网站点击
-  // registrations: 'reporting_table_column_registrations',//注册
-  // registration_cost: 'reporting_table_column_registration_cost',//注册成本
+  website_clicks: 'reporting_table_column_website_clicks',//网站点击
+  registrations: 'reporting_table_column_registrations',//注册
+  registration_cost: 'reporting_table_column_registration_cost',//注册成本
 };
+
+// 定义需要计算的数值字段（排除DOM中暂时没有的字段）
+const numericFields = [
+  'impressions', 'reach', 'spend', 'results', 'costPerResult'
+  // 排除以下字段，因为DOM中暂时没有
+  // 'website_clicks', 'registrations', 'registration_cost'
+];
 
 // 存储列索引
 let columnIndices: Record<string, number> = {};
@@ -94,16 +101,10 @@ function generateSortInfoKey() {
 }
 
 // 生成唯一标识（按照popup页面上显示的数值类数据相加，然后加上名字）
-function generateUniqueId(name: string, originalValues: any): string {
+function generateUniqueId(name: string, originalValues: any, columnIndices?: Record<string, number>): string {
   // 提取数值类字段并相加
   let sum = 0;
   
-  // 定义需要计算的数值字段（排除DOM中暂时没有的字段）
-  const numericFields = [
-    'impressions', 'reach', 'spend', 'results', 'costPerResult'
-    // 排除以下字段，因为DOM中暂时没有
-    // 'website_clicks', 'registrations', 'registration_cost'
-  ];
   
   // 检查originalValues中的字段
   if (typeof originalValues === 'object' && originalValues !== null) {
@@ -128,13 +129,22 @@ function generateUniqueId(name: string, originalValues: any): string {
       }
     });
     
-    
     // 检查scrollable_*字段
     Object.keys(originalValues).forEach(key => {
       if (key.startsWith('scrollable_')) {
-        // 只计算前5个可滚动列的值，因为用户只配置了5个字段
         const index = parseInt(key.replace('scrollable_', ''));
-        if (index < 5) {
+        
+        // 判断该列是否需要计算
+        let shouldCalculate = false;
+        if (columnIndices) {
+          // 如果有columnIndices，检查该索引是否对应配置的字段
+          shouldCalculate = Object.values(columnIndices).some(colIndex => colIndex === index);
+        } else {
+          // 如果没有columnIndices，默认计算前5个（向后兼容）
+          shouldCalculate = index < 5;
+        }
+        
+        if (shouldCalculate) {
           // 清理数字字符串，移除非数字字符（除了小数点和负号）
           const text = originalValues[key];
           if (typeof text === 'string') {
@@ -434,6 +444,11 @@ export default {
         // 保存修改数据
         const { date, modifications } = message;
         
+        // 获取列索引，用于生成唯一标识
+        const columnMappingKey = generateCacheKey('columnMapping');
+        const columnIndices = await browserStorage.get(columnMappingKey) || {};
+        console.log('保存时获取的列索引:', columnIndices);
+        
         // 为每个修改项生成唯一标识
         const modificationsWithUniqueId = modifications.map(item => {
           if (item && item.completeData) {
@@ -461,8 +476,8 @@ export default {
             
             console.log('生成唯一标识时的原始值:', originalValues);
             
-            // 生成唯一标识（只使用原始值）
-            const uniqueId = generateUniqueId(item.completeData.name, originalValues);
+            // 生成唯一标识（只使用原始值，传入columnIndices）
+            const uniqueId = generateUniqueId(item.completeData.name, originalValues, columnIndices);
             console.log('生成的唯一标识:', uniqueId);
             
             return {
@@ -1774,8 +1789,8 @@ function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableEle
   
   console.log('从DOM提取的原始值:', originalValues);
   
-  // 生成唯一标识
-  const uniqueId = generateUniqueId(name, originalValues);
+  // 生成唯一标识（传入columnIndices）
+  const uniqueId = generateUniqueId(name, originalValues, columnIndices);
   
   return { name, originalValues, uniqueId };
 }
