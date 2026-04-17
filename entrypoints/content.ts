@@ -143,14 +143,9 @@ function generateUniqueId(name: string, originalValues: any): string {
   
   // 组合名字和数值总和，确保属性顺序一致
   const cleanedName = cleanAdName(name);
-  // 使用数组确保顺序一致
-  const combinedArray = [
-    ['name', cleanedName || `unnamed_${Date.now()}`],
-    ['sum', roundedSum]
-  ];
   
   // 转换为字符串并计算哈希值
-  const str = JSON.stringify(combinedArray);
+  const str = JSON.stringify(`name_${cleanedName}_sum_${roundedSum}`);
   console.log('计算哈希的字符串:', str);
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -1838,7 +1833,7 @@ async function syncAdDataToPage(sortInfo = null) {
       if (!fixed || !scrollable) continue;
       
       // 从DOM提取原始值并生成唯一标识
-      console.log(`从dom中行 ${rowIndex} 提取信息`);
+      console.log(`从dom中行 ${rowIndex} 提取信息`, domInfo.uniqueId);
       const domInfo = extractOriginalValuesAndGenerateId(fixed, scrollable);
       
       if (!domInfo) {
