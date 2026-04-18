@@ -1052,7 +1052,7 @@ input:checked + .slider:before {
 
 .editable-input,
 .editable-select {
-  width: 100%;
+  width: 64px;
   padding: 4px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
