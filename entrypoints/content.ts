@@ -1313,36 +1313,42 @@ function updateElementText(element: Element, newValue: number, fieldType: string
       
       // 根据字段类型决定显示格式
       if (fieldType === 'spend') {
-    // 花费字段：保留2位小数，保留货币符号
-    console.log(`更新花费字段: ${newValue.toFixed(2)}`);
-    
-    // 提取货币符号（如果有）
-    const currencyMatch = originalText.match(/^[^0-9]+/);
-    const currencySymbol = currencyMatch ? currencyMatch[0] : '';
-    
-    // 提取原始数值（去除货币符号）
-    const originalValue = parseFloat(originalText.replace(/[^0-9.]/g, '')) || 0;
-    
-    // 计算增加值
-    const addValue = Math.round(newValue) - originalValue;
-    
-    // 保留货币符号并更新数值
-    console.log(`货币符号更新: ${currencySymbol}`);
-    element.dataset.addValue = addValue.toString();
-    element.innerText = currencySymbol + newValue.toFixed(2);
-  } else {
-    // 其他字段：整数
-    console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
-    
-    // 提取原始数值
-    const originalValue = parseFloat(originalText.replace(/[^0-9.]/g, '')) || 0;
-    
-    // 计算增加值
-    const addValue = Math.round(newValue) - originalValue;
-    
-    element.dataset.addValue = addValue.toString();
-    element.innerText = Math.round(newValue).toString();
-  }
+        // 花费字段：保留2位小数，保留货币符号
+        console.log(`更新花费字段: ${newValue.toFixed(2)}`);
+        
+        // 提取货币符号（如果有）
+        const currencyMatch = originalText.match(/^[^0-9]+/);
+        const currencySymbol = currencyMatch ? currencyMatch[0] : '';
+        
+        // 提取原始数值（去除货币符号）
+        const originalValue = parseFloat(originalText.replace(/[^0-9.]/g, '')) || 0;
+        
+        // 计算增加值
+        const addValue = Math.round(newValue) - originalValue;
+        
+        // 保留货币符号并更新数值
+        console.log(`货币符号更新: ${currencySymbol}`);
+        element.dataset.addValue = addValue.toString();
+        element.innerText = currencySymbol + newValue.toFixed(2);
+      } else {
+        // 其他字段：整数
+        console.log(`更新非货币字段: ${Math.round(newValue)}`,element);
+        
+        // 提取原始数值
+        const originalValue = parseFloat(originalText.replace(/[^0-9.]/g, '')) || 0;
+        
+        // 计算增加值
+        const addValue = Math.round(newValue) - originalValue;
+        
+        element.dataset.addValue = addValue.toString();
+        element.innerText = Math.round(newValue).toString();
+      }
+      
+      // 强制浏览器重绘
+      element.style.display = 'none';
+      element.offsetHeight; // 触发重排
+      element.style.display = '';
+      
       resolve();
     }
   });
@@ -1760,9 +1766,12 @@ function findAddValue(element: Element): number {
   
   return 0;
 }
+// 60进制编码字符集
+const CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.split('');
+
 // 编码数字为60进制字符串
 function encodeNum(numStr) {
-    let num = BigInt(numStr); // 使用 BigInt 防止数字过大溢出
+    let num = BigInt(numStr); // 使用 BigInt 防止数字过大溢出   
     if (num === 0n) return CHARS[0];
 
     let result = '';
