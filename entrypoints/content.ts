@@ -6,6 +6,11 @@ let accountId: string = '';
 
 // 从URL中提取act参数的值
 function getAccountId() {
+  // 检查是否在浏览器环境中
+  if (typeof window === 'undefined' || !window.location) {
+    return '';
+  }
+  
   const url = window.location.href;
   const match = url.match(/act=(\d+)/);
   return match ? match[1] : '';
@@ -29,7 +34,23 @@ async function saveAccountId() {
 }
 
 // 获取保存的账户ID
-function getSavedAccountId() {
+async function getSavedAccountId() {
+  // 如果内存中有账户ID，直接返回
+  if (accountId) {
+    return accountId;
+  }
+  
+  // 从缓存中读取
+  try {
+    const savedId = await browserStorage.get('facebookAdAccountId');
+    if (savedId) {
+      accountId = savedId;
+      console.log('从缓存中获取账户ID:', savedId);
+    }
+  } catch (error) {
+    console.error('从缓存读取账户ID失败:', error);
+  }
+  
   return accountId;
 }
 
@@ -37,10 +58,15 @@ function getSavedAccountId() {
 saveAccountId();
 
 // 测试缓存key生成
-console.log('测试缓存key生成:');
-console.log('当前账户ID:', getSavedAccountId());
-console.log('测试缓存key:', generateCacheKey('test'));
-console.log('测试排序信息缓存key:', generateSortInfoKey());
+async function testCacheKeyGeneration() {
+  console.log('测试缓存key生成:');
+  console.log('当前账户ID:', getSavedAccountId());
+  console.log('测试缓存key:', await generateCacheKey('test'));
+  console.log('测试排序信息缓存key:', await generateSortInfoKey());
+}
+
+// 运行测试
+testCacheKeyGeneration();
 
 
 // 列映射配置 - 表头ID到字段名的映射
@@ -94,6 +120,15 @@ function getCurrentDate() {
 
 // 获取当前页面状态
 function getCurrentPageState() {
+  // 检查是否在浏览器环境中
+  if (typeof window === 'undefined' || !window.location) {
+    return {
+      level: '',
+      sortField: null,
+      sortDirection: null
+    };
+  }
+  
   // 从URL中获取当前tab名称
   const pathParts = window.location.href.split('/');
   const tab = pathParts[pathParts.length - 1];
@@ -119,18 +154,18 @@ function getCurrentPageState() {
 }
 
 // 生成缓存键（不包含排序信息，排序信息使用独立的key存储）
-function generateCacheKey(prefix: string) {
+async function generateCacheKey(prefix: string) {
   const date = getCurrentDate();
   const {level} = getCurrentPageState();
-  const accountId = getSavedAccountId();
+  const accountId = await getSavedAccountId();
   return `${prefix}_${accountId}_${date}_${level}`;
 }
 
 // 生成排序信息的缓存键
-function generateSortInfoKey() {
+async function generateSortInfoKey() {
   const date = getCurrentDate();
   const {level} = getCurrentPageState();
-  const accountId = getSavedAccountId();
+  const accountId = await getSavedAccountId();
   return `sortInfo_${accountId}_${date}_${level}`;
 }
 
@@ -216,6 +251,11 @@ function detectSortInfo() {
   let sortDirection = null;
   
   try {
+    // 检查是否在浏览器环境中
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return { sortField, sortDirection };
+    }
+    
     // 查找具有sorting属性且role="columnheader"的元素
     const columnHeaderElements = document.querySelectorAll('[role="columnheader"]');
     
@@ -368,6 +408,169 @@ function removeOverlay() {
   }
 }
 
+// 消息处理函数 - 从 DOM 获取广告数据
+function handleGetAdsFromDom(sendResponse: (response: any) => void): boolean {
+  extractAdsFromDom().then(({ ads, DomColumnMapping, sortInfo }) => {
+    sendResponse({ ads, DomColumnMapping, sortInfo });
+  }).catch((error) => {
+    console.error('提取广告数据错误:', error);
+    sendResponse({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
+  });
+  return true;
+}
+
+// 消息处理函数 - 刷新页面数据
+function handleRefreshPageWithData(sortInfo: any, sendResponse: (response: any) => void): boolean {
+  createOverlay();
+  syncAdDataToPage(sortInfo).then(() => {
+    sendResponse({ success: true });
+  }).catch((error) => {
+    console.error('刷新页面数据错误:', error);
+    sendResponse({ success: false, error: error.message });
+  });
+  return true;
+}
+
+// 消息处理函数 - 获取缓存数据
+function handleGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
+  (async () => {
+    try {
+      const adsKey = await generateCacheKey('ads');
+      const modificationsKey = await generateCacheKey('ad_modifications');
+      
+      const [adsData, modifications] = await Promise.all([
+        browserStorage.get(adsKey),
+        browserStorage.get(modificationsKey)
+      ]);
+      
+      const ads = adsData?.cacheData?.ads || [];
+      const columnMapping = adsData?.cacheData?.columnMapping || {};
+      const sortInfo = adsData?.sortInfo || { field: null, direction: null };
+      
+      sendResponse({ ads, columnMapping, sortInfo, modifications });
+    } catch (error) {
+      console.error('获取缓存数据错误:', error);
+      sendResponse({ ads: [], columnMapping: {}, sortInfo: { field: null, direction: null }, modifications: [] });
+    }
+  })();
+  return true;
+}
+
+// 消息处理函数 - 保存缓存数据
+function handleSaveCachedData(data: { date: string; ads: any; columnMapping: any; sortInfo: any }, sendResponse: (response: any) => void): boolean {
+  const { ads, columnMapping, sortInfo } = data;
+  (async () => {
+    try {
+      const adsKey = await generateCacheKey('ads');
+      
+      const cacheData = { ads, columnMapping };
+      const dataToSave = { sortInfo, cacheData };
+      
+      await browserStorage.set(adsKey, dataToSave);
+      console.log('已保存数据到缓存:', adsKey);
+      
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('保存缓存数据错误:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true;
+}
+
+// 消息处理函数 - 保存修改数据
+function handleSaveModifications(data: { date: string; modifications: any[] }, sendResponse: (response: any) => void): boolean {
+  const { modifications } = data;
+  (async () => {
+    try {
+      const columnMappingKey = await generateCacheKey('columnMapping');
+      const columnIndex = await browserStorage.get(columnMappingKey);
+      console.log('保存时获取的列索引:', columnIndex);
+      
+      const modificationsWithUniqueId = modifications.map(item => {
+        if (item && item.completeData) {
+          const originalValues = {};
+          
+          console.log('completeData:', item.completeData);
+          console.log('modifiedFields:', item.modifiedFields);
+          
+          Object.keys(item.completeData).forEach(key => {
+            if (!key.startsWith('increase_')) {
+              originalValues[key] = item.completeData[key];
+            }
+          });
+          
+          if (item.modifiedFields) {
+            Object.keys(item.modifiedFields).forEach(key => {
+              const originalValue = item.completeData[key] !== undefined && item.completeData[key] !== '' ? item.completeData[key] : 0;
+              originalValues[key] = originalValue;
+            });
+          }
+          
+          console.log('生成唯一标识时的原始值:', originalValues);
+          
+          const uniqueId = generateUniqueId(item.completeData.name, originalValues);
+          
+          const processedModifiedFields = {};
+          if (item.modifiedFields) {
+            Object.keys(item.modifiedFields).forEach(key => {
+              const value = item.modifiedFields[key];
+              processedModifiedFields[key] = value === undefined || value === null || value === '' ? 0 : value;
+            });
+          }
+          
+          return { ...item, modifiedFields: processedModifiedFields, uniqueId };
+        }
+        return item;
+      });
+      
+      const modificationsKey = await generateCacheKey('ad_modifications');
+      const sortInfo = detectSortInfo();
+      const sortInfoKey = await generateSortInfoKey();
+      
+      console.log('当前排序信息:', sortInfo, sortInfoKey);
+      
+      const existingModifications = await browserStorage.get(modificationsKey);
+      const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
+      console.log(`是否第一次保存: ${isFirstSave}`);
+      
+      await Promise.all([
+        browserStorage.set(modificationsKey, modificationsWithUniqueId),
+        browserStorage.set(sortInfoKey, sortInfo)
+      ]);
+      
+      console.log('保存修改成功，触发页面刷新');
+      console.log('保存的排序信息:', sortInfo);
+      debouncedSync();
+      sendResponse({ success: true, isFirstSave });
+    } catch (error) {
+      console.error('保存修改数据错误:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true;
+}
+
+// 消息处理函数 - 获取排序信息
+function handleGetSortInfo(date: string, sendResponse: (response: any) => void): boolean {
+  (async () => {
+    try {
+      const sortInfoKey = await generateSortInfoKey();
+      
+      browserStorage.get(sortInfoKey).then((sortInfo) => {
+        sendResponse(sortInfo);
+      }).catch((error) => {
+        console.error('获取排序信息错误:', error);
+        sendResponse({ field: null, direction: null });
+      });
+    } catch (error) {
+      console.error('生成排序信息缓存键错误:', error);
+      sendResponse({ field: null, direction: null });
+    }
+  })();
+  return true;
+}
+
 export default {
   matches: ['*://*.facebook.com/adsmanager/*'],
   main() {
@@ -376,176 +579,17 @@ export default {
     // 监听来自popup的消息
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'getAdsFromDom') {
-        // 处理异步的extractAdsFromDom函数
-        extractAdsFromDom().then(({ ads, DomColumnMapping, sortInfo }) => {
-          sendResponse({ ads, DomColumnMapping, sortInfo });
-        }).catch((error) => {
-          console.error('提取广告数据错误:', error);
-          sendResponse({ ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } });
-        });
-        // 返回true表示异步响应
-        return true;
+        return handleGetAdsFromDom(sendResponse);
       } else if (message.action === 'refreshPageWithData') {
-        // 收到刷新页面的请求，重新同步数据
-        const sortInfo = message.sortInfo;
-        // 创建遮盖层
-        createOverlay();
-        syncAdDataToPage(sortInfo).then(() => {
-          sendResponse({ success: true });
-        }).catch((error) => {
-          console.error('刷新页面数据错误:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-        // 返回true表示异步响应
-        return true;
+        return handleRefreshPageWithData(message.sortInfo, sendResponse);
       } else if (message.action === 'getCachedData') {
-        // 从缓存中获取数据
-        const date = message.date;
-        // 使用新的缓存键生成函数
-        const adsKey = generateCacheKey('ads');
-        // 使用缓存键获取修改数据
-        const modificationsKey = generateCacheKey('ad_modifications');
-        
-        Promise.all([
-          browserStorage.get(adsKey),
-          browserStorage.get(modificationsKey)
-        ]).then(([adsData, modifications]) => {
-          // 从新的缓存结构中提取数据
-          const ads = adsData?.cacheData?.ads || [];
-          const columnMapping = adsData?.cacheData?.columnMapping || {};
-          const sortInfo = adsData?.sortInfo || { field: null, direction: null };
-          
-          sendResponse({ ads, columnMapping, sortInfo, modifications });
-        }).catch((error) => {
-          console.error('获取缓存数据错误:', error);
-          sendResponse({ ads: [], columnMapping: {}, sortInfo: { field: null, direction: null }, modifications: [] });
-        });
-        // 返回true表示异步响应
-        return true;
+        return handleGetCachedData(message.date, sendResponse);
       } else if (message.action === 'saveCachedData') {
-        // 保存缓存数据
-        const { date, ads, columnMapping, sortInfo } = message;
-        // 使用新的缓存键生成函数
-        const adsKey = generateCacheKey('ads');
-        
-        // 构建新的缓存结构
-        const cacheData = {
-          ads,
-          columnMapping
-        };
-        const dataToSave = {
-          sortInfo,
-          cacheData
-        };
-        
-        browserStorage.set(adsKey, dataToSave).then(() => {
-          sendResponse({ success: true });
-        }).catch((error) => {
-          console.error('保存缓存数据错误:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-        // 返回true表示异步响应
-        return true;
+        return handleSaveCachedData(message, sendResponse);
       } else if (message.action === 'saveModifications') {
-        // 保存修改数据
-        const { date, modifications } = message;
-        
-        // 获取列索引，用于生成唯一标识
-        const columnMappingKey = generateCacheKey('columnMapping');
-        
-        // 使用 Promise 链获取列索引
-        browserStorage.get(columnMappingKey).then(async columnIndex => {
-          console.log('保存时获取的列索引:', columnIndex);  
-          
-          // 为每个修改项生成唯一标识
-          const modificationsWithUniqueId = modifications.map(item => {
-            if (item && item.completeData) {
-              // 提取所有原始值（排除增加字段）
-              const originalValues = {};
-              
-              console.log('completeData:', item.completeData);
-              console.log('modifiedFields:', item.modifiedFields);
-              
-              // 从completeData中提取原始值
-              Object.keys(item.completeData).forEach(key => {
-                if (!key.startsWith('increase_')) {
-                  originalValues[key] = item.completeData[key];
-                }
-              });
-              
-              // 从modifiedFields中提取原始值（如果有的话）
-              if (item.modifiedFields) {
-                Object.keys(item.modifiedFields).forEach(key => {
-                  // 尝试从completeData中获取原始值，如果没有则使用0
-                  const originalValue = item.completeData[key] !== undefined&&item.completeData[key] !== '' ? item.completeData[key] : 0;
-                  originalValues[key] = originalValue;
-                });
-              }
-              
-              console.log('生成唯一标识时的原始值:', originalValues);
-              
-              // 生成唯一标识（只使用原始值）
-              const uniqueId = generateUniqueId(item.completeData.name, originalValues);
-              
-              // 处理增加值，确保为0、为空、为undefined等都转为0
-              const processedModifiedFields = {};
-              if (item.modifiedFields) {
-                Object.keys(item.modifiedFields).forEach(key => {
-                  const value = item.modifiedFields[key];
-                  processedModifiedFields[key] = value === undefined || value === null || value === '' ? 0 : value;
-                });
-              }
-              
-              return {
-                ...item,
-                modifiedFields: processedModifiedFields,
-                uniqueId
-              };
-            }
-            return item;
-          });
-          
-          // 使用缓存键，因为修改数据应该与排序状态无关
-          const modificationsKey = generateCacheKey('ad_modifications');
-          
-          // 同时保存当前排序信息
-          const sortInfo = detectSortInfo();
-          const sortInfoKey = generateSortInfoKey();
-
-          console.log('当前排序信息:', sortInfo,sortInfoKey);
-          
-          // 检查是否是第一次保存
-          const existingModifications = await browserStorage.get(modificationsKey);
-          const isFirstSave = !existingModifications || !Array.isArray(existingModifications) || existingModifications.length === 0;
-          console.log(`是否第一次保存: ${isFirstSave}`);
-          await Promise.all([
-            browserStorage.set(modificationsKey, modificationsWithUniqueId),
-            browserStorage.set(sortInfoKey, sortInfo)
-          ]);
-          // 保存成功后触发页面刷新
-          console.log('保存修改成功，触发页面刷新');
-          console.log('保存的排序信息:', sortInfo);
-          debouncedSync();
-          sendResponse({ success: true, isFirstSave });
-        }).catch((error) => {
-          console.error('保存修改数据错误:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-        // 返回true表示异步响应
-        return true;
+        return handleSaveModifications(message, sendResponse);
       } else if (message.action === 'getSortInfo') {
-        // 获取排序信息
-        const date = message.date;
-        // 使用新的排序信息缓存键生成函数
-        const sortInfoKey = generateSortInfoKey();
-        browserStorage.get(sortInfoKey).then((sortInfo) => {
-          sendResponse(sortInfo);
-        }).catch((error) => {
-          console.error('获取排序信息错误:', error);
-          sendResponse({ field: null, direction: null });
-        });
-        // 返回true表示异步响应
-        return true;
+        return handleGetSortInfo(message.date, sendResponse);
       }
     });
     
@@ -565,8 +609,8 @@ export default {
           currentPageState = pageState;
           
           // 使用新的缓存键生成函数获取缓存数据
-          const modificationsKey = generateCacheKey('ad_modifications');
-          const columnMappingKey = generateCacheKey('columnMapping');
+          const modificationsKey = await generateCacheKey('ad_modifications');
+          const columnMappingKey = await generateCacheKey('columnMapping');
           
           const modifications = await browserStorage.get(modificationsKey);
           const columnMapping = await browserStorage.get(columnMappingKey);
