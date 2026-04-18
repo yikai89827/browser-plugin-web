@@ -587,6 +587,7 @@ const checkCacheOnMount = async () => {
       }
     } else {
       console.log('没有缓存数据，跳过加载');
+      alert('获取失败，请刷新页面');
     }
   } catch (error) {
     console.error('检查缓存数据错误:', error);
