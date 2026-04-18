@@ -1,5 +1,5 @@
 import { browserStorage } from '../../utils/storage';
-import { extractAdsFromDom, getColumnIndices, updateScrollableRow, createOverlay, removeOverlay } from './dom';
+import { extractAdsFromDom, getColumnIndices, updateScrollableRow, createOverlay, removeOverlay, getAdRowElement } from './dom';
 import { generateCacheKey } from './cache';
 
 // 全局同步状态
@@ -129,8 +129,7 @@ function calculateValuesToUpdate(modification: any) {
 // 更新广告行
 async function updateAdRow(adRow: any, valuesToUpdate: Record<string, string>) {
   try {
-    const rowElement = document.querySelector(`[data-ad-id="${adRow.id}"]`) || 
-                      document.querySelectorAll('[role="rowgroup"] > [role="row"]')[adRow.index];
+    const rowElement = getAdRowElement(adRow);
     
     if (rowElement) {
       // 获取固定列数量

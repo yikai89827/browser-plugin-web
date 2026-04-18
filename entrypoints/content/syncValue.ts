@@ -3,6 +3,7 @@
 
 import { AdEntity, hierarchyManager } from './hierarchy';
 import { numericFields } from './config';
+import {  updateDomRowByEntity } from './dom';
 
 // 同步类型
 export type SyncDirection = 'up' | 'down'; // up: 向上同步（子级到父级）, down: 向下同步（父级到子级）
@@ -23,32 +24,28 @@ class ValueSyncManager {
     try {
       // 广告系列 -> 广告组
       if (fromEntity.level === 'Campaigns') {
-        const adsets = hierarchyManager.getCampaignAdsets(fromEntity.id);
-        if (adsets.length > 0) {
-          // 同步第一个广告组
-          const firstAdset = adsets[0];
-          this.syncValues(fromEntity, firstAdset, fields);
-          syncedEntities.push(firstAdset);
+        // 从DOM中查找对应的广告组行
+        const adsetRow = this.findChildRowInDom(fromEntity.id, 'Adsets');
+        if (adsetRow) {
+          // 同步值到广告组行
+          await this.syncValuesToDom(adsetRow, fromEntity, fields);
+          syncedEntities.push(adsetRow);
           
           // 广告组 -> 广告
-          const ads = hierarchyManager.getAdsetAds(firstAdset.id);
-          if (ads.length > 0) {
-            // 同步第一个广告
-            const firstAd = ads[0];
-            this.syncValues(firstAdset, firstAd, fields);
-            syncedEntities.push(firstAd);
+          const adRow = this.findChildRowInDom(adsetRow.id, 'Ads');
+          if (adRow) {
+            await this.syncValuesToDom(adRow, adsetRow, fields);
+            syncedEntities.push(adRow);
           }
         }
       }
       
       // 广告组 -> 广告
       else if (fromEntity.level === 'Adsets') {
-        const ads = hierarchyManager.getAdsetAds(fromEntity.id);
-        if (ads.length > 0) {
-          // 同步第一个广告
-          const firstAd = ads[0];
-          this.syncValues(fromEntity, firstAd, fields);
-          syncedEntities.push(firstAd);
+        const adRow = this.findChildRowInDom(fromEntity.id, 'Ads');
+        if (adRow) {
+          await this.syncValuesToDom(adRow, fromEntity, fields);
+          syncedEntities.push(adRow);
         }
       }
       
@@ -73,26 +70,26 @@ class ValueSyncManager {
     try {
       // 广告 -> 广告组
       if (fromEntity.level === 'Ads') {
-        const adset = hierarchyManager.getAdAdset(fromEntity.id);
-        if (adset) {
-          this.syncValues(fromEntity, adset, fields);
-          syncedEntities.push(adset);
+        const adsetRow = this.findParentRowInDom(fromEntity.id, 'Adsets');
+        if (adsetRow) {
+          await this.syncValuesToDom(adsetRow, fromEntity, fields);
+          syncedEntities.push(adsetRow);
           
           // 广告组 -> 广告系列
-          const campaign = hierarchyManager.getAdsetCampaign(adset.id);
-          if (campaign) {
-            this.syncValues(adset, campaign, fields);
-            syncedEntities.push(campaign);
+          const campaignRow = this.findParentRowInDom(adsetRow.id, 'Campaigns');
+          if (campaignRow) {
+            await this.syncValuesToDom(campaignRow, adsetRow, fields);
+            syncedEntities.push(campaignRow);
           }
         }
       }
       
       // 广告组 -> 广告系列
       else if (fromEntity.level === 'Adsets') {
-        const campaign = hierarchyManager.getAdsetCampaign(fromEntity.id);
-        if (campaign) {
-          this.syncValues(fromEntity, campaign, fields);
-          syncedEntities.push(campaign);
+        const campaignRow = this.findParentRowInDom(fromEntity.id, 'Campaigns');
+        if (campaignRow) {
+          await this.syncValuesToDom(campaignRow, fromEntity, fields);
+          syncedEntities.push(campaignRow);
         }
       }
       
@@ -110,7 +107,90 @@ class ValueSyncManager {
     }
   }
 
-  // 同步数值
+  // 在DOM中查找子级行
+  private findChildRowInDom(parentId: string, childLevel: string): AdEntity | null {
+    const hierarchy = hierarchyManager.getHierarchy();
+    
+    if (childLevel === 'Adsets') {
+      // 查找广告组：ID包含父级广告系列ID的广告组
+      const adsets = Object.values(hierarchy.adsets);
+      for (const adset of adsets) {
+        if (adset.id.includes(parentId) || parentId.includes(adset.id.split('_')[0])) {
+          return adset;
+        }
+      }
+      // 如果没找到，尝试通过名称匹配
+      const parent = hierarchyManager.getEntity(parentId, 'Campaigns');
+      if (parent) {
+        const matchingAdset = adsets.find(adset => adset.name.includes(parent.name) || parent.name.includes(adset.name));
+        if (matchingAdset) return matchingAdset;
+      }
+    }
+    
+    if (childLevel === 'Ads') {
+      // 查找广告：ID包含父级广告组ID的广告
+      const ads = Object.values(hierarchy.ads);
+      for (const ad of ads) {
+        if (ad.id.includes(parentId) || parentId.includes(ad.id.split('_')[0])) {
+          return ad;
+        }
+      }
+      // 如果没找到，尝试通过名称匹配
+      const parent = hierarchyManager.getEntity(parentId, 'Adsets');
+      if (parent) {
+        const matchingAd = ads.find(ad => ad.name.includes(parent.name) || parent.name.includes(ad.name));
+        if (matchingAd) return matchingAd;
+      }
+    }
+    
+    return null;
+  }
+
+  // 在DOM中查找父级行
+  private findParentRowInDom(childId: string, parentLevel: string): AdEntity | null {
+    const hierarchy = hierarchyManager.getHierarchy();
+    
+    if (parentLevel === 'Campaigns') {
+      // 查找广告系列：其ID被广告组ID包含
+      const campaigns = Object.values(hierarchy.campaigns);
+      for (const campaign of campaigns) {
+        if (childId.includes(campaign.id) || campaign.id.includes(childId.split('_')[0])) {
+          return campaign;
+        }
+      }
+    }
+    
+    if (parentLevel === 'Adsets') {
+      // 查找广告组：其ID被广告ID包含
+      const adsets = Object.values(hierarchy.adsets);
+      for (const adset of adsets) {
+        if (childId.includes(adset.id) || adset.id.includes(childId.split('_')[0])) {
+          return adset;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  // 同步数值到DOM
+  private async syncValuesToDom(targetEntity: AdEntity, fromEntity: AdEntity, fields: string[]) {
+    const totalValues: Record<string, number> = {};
+    
+    fields.forEach(field => {
+      // 计算同步后的总值
+      const originalValue = targetEntity.values[field] || 0;
+      const increaseValue = fromEntity.increaseValues[field] || 0;
+      totalValues[field] = originalValue + increaseValue;
+      
+      console.log(`同步字段 ${field}: 从 ${fromEntity.name} (${fromEntity.id}) 到 ${targetEntity.name} (${targetEntity.id})，原始值: ${originalValue}, 增加值: ${increaseValue}, 新值: ${totalValues[field]}`);
+    });
+    
+    // 在DOM中查找对应的行并更新
+    await updateDomRowByEntity(targetEntity, totalValues);
+  }
+
+  // 同步数值（内存中）
   private syncValues(from: AdEntity, to: AdEntity, fields: string[]) {
     fields.forEach(field => {
       // 同步增加值

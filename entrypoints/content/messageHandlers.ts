@@ -3,18 +3,18 @@
 
 import { browserStorage } from '../../utils/storage';
 import { dataExtractor } from './dataExtractor';
-import { hierarchyManager } from './hierarchy';
+import { hierarchyManager, AdEntity } from './hierarchy';
 import { valueSyncManager } from './syncValue';
 import { generateCacheKey, generateSortInfoKey } from './cache';
 import { detectSortInfo } from './dom';
+import { getCurrentPageState } from './date';
 
 // 消息处理函数 - 从DOM获取广告数据
 export function handleGetAdsFromDom(sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       // 从DOM提取数据
-      const { entities, level } = dataExtractor.extractFromDom();
-      const columnMapping = {};
+      const { entities, columnIndices, level } = dataExtractor.extractFromDom();
       
       // 检测层级关系
       hierarchyManager.detectHierarchy(entities);
@@ -26,7 +26,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
       const sortInfo = detectSortInfo();
       const cacheData = { 
         ads: entities, 
-        columnMapping,
+        columnMapping: columnIndices,
         level
       };
       const dataToSave = { sortInfo, cacheData };
@@ -38,7 +38,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
       sendResponse({ 
         success: true, 
         ads: entities, 
-        columnMapping, 
+        columnMapping: columnIndices, 
         level 
       });
     } catch (error: any) {
@@ -129,16 +129,36 @@ export function handleSaveModifications(data: { date: string; modifications: any
   const { modifications } = data;
   (async () => {
     try {
-      // 处理修改数据
+      // 获取当前页面状态和层级
+      const pageState = getCurrentPageState();
+      const currentLevel = pageState.level || 'Campaigns';
+      
+      // 处理修改数据，建立层级关系
       const modificationsWithUniqueId = modifications.map(item => {
         if (item && item.completeData) {
-          // 这里可以添加唯一ID生成逻辑
-          return { ...item, uniqueId: item.completeData.id || `id_${Math.random().toString(36).substr(2, 9)}` };
+          const completeData = item.completeData;
+          
+          // 根据当前层级建立parentId关系
+          let parentId: string | undefined;
+          if (currentLevel === 'Adsets' && completeData.campaign_id) {
+            parentId = completeData.campaign_id;
+          } else if (currentLevel === 'Ads' && completeData.adset_id) {
+            parentId = completeData.adset_id;
+          }
+          
+          // 使用编号字段作为唯一标识
+          return { 
+            ...item, 
+            uniqueId: completeData.id || `id_${Math.random().toString(36).slice(2, 9)}`,
+            level: currentLevel,
+            parentId: parentId
+          };
         }
         return item;
       });
       
       const modificationsKey = await generateCacheKey('ad_modifications');
+      const syncTasksKey = await generateCacheKey('sync_tasks');
       const sortInfo = detectSortInfo();
       const sortInfoKey = await generateSortInfoKey();
       
@@ -148,14 +168,67 @@ export function handleSaveModifications(data: { date: string; modifications: any
         browserStorage.set(sortInfoKey, sortInfo)
       ]);
       
-      console.log('保存修改成功，触发数值同步');
+      console.log('保存修改成功，当前层级:', currentLevel);
       
-      // 执行数值同步
+      // 生成同步任务
       if (modificationsWithUniqueId.length > 0) {
-        const entities = modificationsWithUniqueId.map(item => ({
+        // 为每个修改的实体生成同步任务
+        const syncTasks: Array<{
+          sourceEntity: {
+            id: string;
+            name: string;
+            level: string;
+            parentId?: string;
+          };
+          modifiedFields: Record<string, number>;
+          syncDirection: 'down' | 'up';
+          timestamp: number;
+        }> = [];
+        
+        modificationsWithUniqueId.forEach(item => {
+          if (item && item.modifiedFields && Object.keys(item.modifiedFields).length > 0) {
+            // 向下同步：父级修改同步到子级
+            if (currentLevel === 'Campaigns') {
+              syncTasks.push({
+                sourceEntity: {
+                  id: item.uniqueId,
+                  name: item.completeData?.name || 'Unknown',
+                  level: currentLevel
+                },
+                modifiedFields: item.modifiedFields,
+                syncDirection: 'down',
+                timestamp: Date.now()
+              });
+            }
+            // 向上同步：子级修改同步到父级
+            else if (currentLevel === 'Adsets' || currentLevel === 'Ads') {
+              syncTasks.push({
+                sourceEntity: {
+                  id: item.uniqueId,
+                  name: item.completeData?.name || 'Unknown',
+                  level: currentLevel,
+                  parentId: item.parentId
+                },
+                modifiedFields: item.modifiedFields,
+                syncDirection: 'up',
+                timestamp: Date.now()
+              });
+            }
+          }
+        });
+        
+        // 保存同步任务
+        if (syncTasks.length > 0) {
+          await browserStorage.set(syncTasksKey, syncTasks);
+          console.log('已保存同步任务:', syncTasks);
+        }
+        
+        // 在当前tab直接执行数值更新（因为当前tab的数据已经在DOM中）
+        const entities: AdEntity[] = modificationsWithUniqueId.map(item => ({
           id: item.uniqueId,
           name: item.completeData?.name || 'Unknown',
-          level: item.level || 'Campaigns',
+          level: item.level || currentLevel,
+          parentId: item.parentId,
           values: item.completeData || {},
           increaseValues: item.modifiedFields || {}
         }));
@@ -163,9 +236,9 @@ export function handleSaveModifications(data: { date: string; modifications: any
         // 检测层级关系
         hierarchyManager.detectHierarchy(entities);
         
-        // 执行向下同步
-        const syncResult = await valueSyncManager.batchSync(entities, 'down');
-        console.log('数值同步结果:', syncResult);
+        // 执行同步（更新当前tab的DOM）
+        const syncResult = await valueSyncManager.batchSync(entities, currentLevel === 'Campaigns' ? 'down' : 'up');
+        console.log('当前tab数值同步结果:', syncResult);
       }
       
       sendResponse({ success: true, isFirstSave: true });
@@ -203,10 +276,10 @@ export function handleSyncValues(data: { entities: any[]; direction: string }, s
   (async () => {
     try {
       // 检测层级关系
-      hierarchyManager.detectHierarchy(entities);
+      hierarchyManager.detectHierarchy(entities as AdEntity[]);
       
       // 执行同步
-      const syncResult = await valueSyncManager.batchSync(entities, direction as 'up' | 'down');
+      const syncResult = await valueSyncManager.batchSync(entities as AdEntity[], direction as 'up' | 'down');
       
       sendResponse({ success: true, syncResult });
     } catch (error: any) {
