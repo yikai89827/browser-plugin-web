@@ -805,6 +805,43 @@ export default {
   }
 };
 
+// 提取列索引的核心逻辑
+function extractColumnIndices(tableContainer: HTMLElement) {
+  const result: Record<string, number> = {};
+  
+  // 找到表头行
+  const headerRow = tableContainer.querySelector('[role="row"]');
+  if (!headerRow) {
+    console.log('extractColumnIndices: 未找到表头行');
+    return result;
+  }
+  
+  // 获取所有表头单元格
+  const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
+  console.log('extractColumnIndices: 找到表头单元格数量:', headerCells.length);
+  
+  headerCells.forEach((cell, index) => {
+    // ID在孙元素层级：div[role="columnheader"] > div > div#id
+    const cellId = cell?.children[0]?.children[0]?.id || '';
+    
+    // 尝试获取单元格的文本内容（用于调试）
+    const cellText = cell?.textContent?.trim().substring(0, 30) || '';
+    
+    console.log(`表头[${index}]: ID="${cellId}", 文本="${cellText}"`);
+    
+    for (const [field, idPattern] of Object.entries(columnMapping)) {
+      if (cellId.includes(idPattern)) {
+        result[field] = index;
+        console.log(`  → 匹配字段: ${field}, 模式: ${idPattern}`);
+        break;
+      }
+    }
+  });
+  
+  console.log('extractColumnIndices: 提取结果:', result);
+  return result;
+}
+
 // 获取列索引（同步版本）
 function getColumnIndicesSync() {
   const result = {};
@@ -812,34 +849,18 @@ function getColumnIndicesSync() {
     // 找到表格容器
     const tableContainer = findTableContainer();
     if (!tableContainer) {
+      console.log('getColumnIndicesSync: 未找到表格容器');
       return result;
     }
     
-    // 找到表头行
-    const headerRow = tableContainer.querySelector('[role="row"]');
-    if (!headerRow) {
-      return result;
-    }
-    
-    // 获取所有表头单元格
-    const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
-    
-    headerCells.forEach((cell, index) => {
-      // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
-      const cellId = cell?.children[0]?.children[0]?.id || '';
-
-      for (const [field, idPattern] of Object.entries(columnMapping)) {
-        if (cellId.includes(idPattern)) {
-          result[field] = index;
-          break;
-        }
-      }
-    });
-    
+    // 调用公共函数提取列索引
+    const extractedIndices = extractColumnIndices(tableContainer);
+    console.log('getColumnIndicesSync: 最终结果:', extractedIndices);
+    return extractedIndices;
   } catch (error) {
     console.error('Error getting column indices sync:', error);
+    return result;
   }
-  return result;
 }
 
 // 获取列索引
@@ -875,27 +896,8 @@ async function getColumnIndices(attempt = 0) {
       return;
     }
     
-    // 找到表头行
-    const headerRow = tableContainer.querySelector('[role="row"]');
-    if (!headerRow) {
-      console.log('未找到表头行');
-      return;
-    }
-    
-    // 获取所有表头单元格
-    const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
-    console.log('找到表头单元格:', headerCells.length);
-    
-    headerCells.forEach((cell, index) => {
-      // 检查单元格的ID是否匹配列映射（在孙元素上查找ID）
-      const cellId = cell?.children[0]?.children[0]?.id || '';
-      for (const [field, idPattern] of Object.entries(columnMapping)) {
-        if (cellId.includes(idPattern)) {
-          columnIndices[field] = index;
-          break;
-        }
-      }
-    });
+    // 调用公共函数提取列索引
+    columnIndices = extractColumnIndices(tableContainer);
     
     // 确保所有必要的列都被找到
     const missingFields = numericFields.filter(field => !columnIndices[field]);
