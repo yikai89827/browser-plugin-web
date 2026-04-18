@@ -228,16 +228,19 @@ function generateUniqueId(name: string, originalValues: any): string {
 }
 
 // 将DOM提取的数据转换为缓存提取出来的原始值格式
-function convertDomValuesToOriginalValues(domValues: any, currentColumnIndices: Record<string, number>): any {
+function convertDomValuesToOriginalValues(domValues: any, currentColumnIndices: Record<string, number>, currentFixedColumnLength: number): any {
   const originalValues = {};
   
   // 遍历配置的字段
   numericFields.forEach(field => {
-    const columnIndex = currentColumnIndices[field]-fixedColumnLength;
-    // console.log(`convertDomValuesToOriginalValues转换后的列索引: ${columnIndex}`);
+    const columnIndex = currentColumnIndices[field]-currentFixedColumnLength;
+    console.log(`convertDomValuesToOriginalValues转换后的列索引: ${columnIndex}, 原始索引: ${currentColumnIndices[field]}, 固定列长度: ${currentFixedColumnLength}`);
        
-    if (columnIndex !== undefined && domValues[`scrollable_${columnIndex}`] !== undefined) {
+    if (columnIndex !== undefined && columnIndex >= 0 && domValues[`scrollable_${columnIndex}`] !== undefined) {
       originalValues[field] = domValues[`scrollable_${columnIndex}`];
+      console.log(`  → 字段 ${field} 的值: ${domValues[`scrollable_${columnIndex}`]}`);
+    } else {
+      console.log(`  → 字段 ${field} 未找到对应的值, 列索引: ${columnIndex}`);
     }
   });
   
@@ -1520,31 +1523,20 @@ async function extractAdsFromDom() {
   const cachedData = await browserStorage.get(adsKey);
   
   // 检测当前页面的排序信息
-  let currentSortInfo = { field: null, direction: null };
-  try {
-    const { sortField, sortDirection } = detectSortInfo();
-    if (sortField && sortDirection) {
-      currentSortInfo = { field: sortField, direction: sortDirection };
-    }
-  } catch (error) {
-    console.error('检测排序信息错误:', error);
-  }
+  const currentSortInfo = detectSortInfoSafely();
   
   // 检查缓存数据的排序信息是否与当前页面一致
   const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
-  const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
-                         cachedSortInfo.direction === currentSortInfo.direction;
+  const isSortInfoSame = isSortInfoIdentical(cachedSortInfo, currentSortInfo);
   
   // 如果有缓存数据且排序信息一致，使用缓存数据
   // 否则从DOM重新提取数据
-  if (cachedData && cachedData.cacheData && cachedData.cacheData.ads && cachedData.cacheData.ads.length > 0 && 
-      cachedData.cacheData.columnMapping && Object.keys(cachedData.cacheData.columnMapping).length > 0 &&
-      isSortInfoSame) {
+  if (hasValidCachedData(cachedData) && isSortInfoSame) {
     console.log('使用缓存数据（排序信息一致）');
-    return { 
-      ads: cachedData.cacheData.ads, 
-      DomColumnMapping: cachedData.cacheData.columnMapping, 
-      sortInfo: currentSortInfo 
+    return {
+      ads: cachedData.cacheData.ads,
+      DomColumnMapping: cachedData.cacheData.columnMapping,
+      sortInfo: currentSortInfo
     };
   } else if (isSortInfoSame) {
     console.log('排序信息一致但缓存数据不完整，从DOM提取');
@@ -1553,22 +1545,53 @@ async function extractAdsFromDom() {
   }
   
   // 没有缓存数据，从DOM提取并缓存
+  return await extractDataFromDomAndCache(adsKey, currentSortInfo);
+}
+
+// 安全检测排序信息
+function detectSortInfoSafely() {
+  try {
+    const { sortField, sortDirection } = detectSortInfo();
+    if (sortField && sortDirection) {
+      return { field: sortField, direction: sortDirection };
+    }
+  } catch (error) {
+    console.error('检测排序信息错误:', error);
+  }
+  return { field: null, direction: null };
+}
+
+// 检查排序信息是否相同
+function isSortInfoIdentical(cachedSortInfo: any, currentSortInfo: any) {
+  return cachedSortInfo.field === currentSortInfo.field && 
+         cachedSortInfo.direction === currentSortInfo.direction;
+}
+
+// 检查缓存数据是否有效
+function hasValidCachedData(cachedData: any) {
+  return cachedData && 
+         cachedData.cacheData && 
+         cachedData.cacheData.ads && 
+         cachedData.cacheData.ads.length > 0 && 
+         cachedData.cacheData.columnMapping && 
+         Object.keys(cachedData.cacheData.columnMapping).length > 0;
+}
+
+// 从DOM提取数据并缓存
+async function extractDataFromDomAndCache(adsKey: string, currentSortInfo: any) {
   const ads = [];
   const DomColumnMapping = {};
-  
-  // 存储排序信息
   const sortInfo = currentSortInfo;
   
   try {
     // 找到表格容器
     const tableContainer = findTableContainer();
-    
     if (!tableContainer) {
       console.log('未找到表格容器');
       return { ads, DomColumnMapping, sortInfo };
     }
     
-    // 找到表头行
+    // 解析表头，确定各列的索引
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
       console.log('未找到表头行');
@@ -1576,222 +1599,23 @@ async function extractAdsFromDom() {
     }
     
     // 解析表头，确定各列的索引
-    const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
-    
-    // 表头文本到字段名的映射表
-    const headerFieldMap = [
-      { field: 'name', labels: ['campaign', '活动', 'ad set', '广告组', 'ad', '广告'] },
-      { field: 'results', labels: ['results', '成效', '结果'] },
-      { field: 'spend', labels: ['amount spent', '花费', '金额', '支出金额'] },
-      { field: 'impressions', labels: ['impressions', '展示', '印象'] },
-      { field: 'reach', labels: ['reach', '覆盖', '抵达'] },
-      { field: 'costPerResult', labels: ['cost per result', '单次成效', '每次结果成本'] },
-      { field: 'registrations', labels: ['registrations','registrations completed', '注册', '注册量', '注册已完成'] },
-      { field: 'registration_cost', labels: ['registration cost', '注册成本', ] },
-      { field: 'purchases', labels: ['purchases', '购买', '购买量', '购买次数'] },
-      { field: 'clicks', labels: ['clicks', '点击', '点击量', '点击(全部)'] }
-    ];
-    
-    // 首先找出固定列的数量（通常只有名称列是固定的）
-    headerCells.forEach((cell, index) => {
-      // 获取单元格的文本内容，转换为小写进行匹配
-      const text = cell.textContent?.trim().toLowerCase();
-      if (text) {
-        console.log(`表头列 ${index}: ${text}`);
-        
-        // 遍历映射表，查找匹配的字段
-        for (const { field, labels } of headerFieldMap) {
-          if (labels.some(label => text === label.toLowerCase())) {
-            DomColumnMapping[field] = index;
-            break;
-          }
-        }
-      }
-    });
+    parseTableHeader(headerRow, DomColumnMapping);
     console.log('DOM 列映射:', DomColumnMapping);
     
     // 获取表格数据行对
     const rowPairs = getTableDataRows(tableContainer);
-    console.log('找到行数组:',rowPairs, rowPairs.length);
+    console.log('找到行数组:', rowPairs, rowPairs.length);
     
     // 使用for循环代替forEach，确保异步操作按顺序完成
     for (let rowIndex = 0; rowIndex < rowPairs.length; rowIndex++) {
       const rowPair = rowPairs[rowIndex];
       const { fixed, scrollable } = rowPair;
       
-      fixedColumnLength = fixed.children[0]?.children?.length-1 || 0;
-      // 提取广告名称 - 从固定行获取
-      let name = '';
-      const nameElements = fixed.querySelectorAll('div, span');
-      console.log(`固定行数据长度:`, fixedColumnLength);
-      for (const element of nameElements) {
-        const text = element.textContent?.trim();
-        if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
-          name = text;
-          break;
-        }
+      // 提取广告数据
+      const adData = await extractAdData(fixed, scrollable, rowIndex, DomColumnMapping);
+      if (adData) {
+        ads.push(adData);
       }
-      
-      // 清理广告名称
-      name = cleanAdName(name);
-      
-      // 跳过没有有效名称的行
-      if (!name || name === '' || name.match(/^广告\s*\d+$/)) {
-        // console.log(`Skipping row ${rowIndex} with invalid name: ${name}`);
-        continue;
-      }
-      
-      // 尝试从DOM中获取唯一标识符
-      let adId = `ad_${rowIndex}`;
-      
-      // 检查固定行是否有唯一标识符属性
-      const fixedRowElement = fixed;
-      if (fixedRowElement) {
-        // 检查是否有data-id或其他唯一属性
-        const dataId = fixedRowElement.getAttribute('data-id') || 
-                      fixedRowElement.getAttribute('id') || 
-                      fixedRowElement.querySelector('[data-id]')?.getAttribute('data-id') ||
-                      fixedRowElement.querySelector('[id]')?.getAttribute('id');
-        
-        if (dataId) {
-          adId = `ad_${dataId}`;
-        }
-      }
-      
-      // 从可滚动行获取其他数据
-      const scrollableElements = scrollable.children[0]?.children || [];
-      // console.log(`Found scrollable elements for ${name}:`, scrollableElements.length);
-      
-      // 提取各列数据
-      const ad = {
-        id: adId,
-        name: name,
-        status: 'ACTIVE',
-        campaign_id: `campaign_${rowIndex}`,
-        adset_id: `adset_${rowIndex}`,
-        impressions: 0,
-        increase_impressions: 0,
-        reach: 0,
-        increase_reach: 0,
-        spend: 0,
-        increase_spend: 0,
-        results: 0,
-        increase_results: 0,
-        costPerResult: 0,
-        increase_costPerResult: 0,
-        other_events: 0,
-        registrations: 0,
-        increase_registrations: 0,
-        registration_cost: 0,
-        increase_registration_cost: 0,
-        purchases: 0,
-        increase_purchases: 0,
-        clicks: 0,
-        increase_clicks: 0
-      };
-      
-      // 检查本地存储中是否有对应的广告数据
-      try {
-        // 从新的缓存结构中获取数据
-          // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
-        const modificationsKey = await generateCacheKey('ad_modifications');
-        const modificationsArray = await browserStorage.get(modificationsKey);
-        console.log('从缓存获取的修改数据:',modificationsKey, modificationsArray);
-        if (modificationsArray && Array.isArray(modificationsArray)) {
-          // 首先根据广告ID查找对应的数据
-          let rowData = modificationsArray.find(item => 
-            item && item.completeData && item.completeData.id === ad.id
-          );
-          console.log('根据广告ID查找的行数据:', rowData);
-          
-          // 如果根据ID找不到，尝试根据广告名称查找
-          if (!rowData) {
-            const itemsWithSameName = modificationsArray.filter(item => 
-              item && item.completeData && item.completeData.name === name
-            );
-            
-            if (itemsWithSameName.length > 0) {
-              // 如果只有一个项目，直接使用
-              if (itemsWithSameName.length === 1) {
-                rowData = itemsWithSameName[0];
-              } else {
-                // 如果有多个项目，尝试根据索引匹配
-                console.warn(`广告名称 ${name} 重复，尝试根据索引匹配`);
-                if (modificationsArray[rowIndex]) {
-                  rowData = modificationsArray[rowIndex];
-                }
-              }
-            }
-          }
-          
-          // 如果还是找不到，使用索引作为后备方案
-          if (!rowData && modificationsArray[rowIndex]) {
-            rowData = modificationsArray[rowIndex];
-          }
-          
-          if (rowData && rowData.modifiedFields) {
-            // 恢复增加的值，但不要修改原始值
-            ad.increase_impressions = rowData.modifiedFields.impressions || 0;
-            ad.increase_reach = rowData.modifiedFields.reach || 0;
-            ad.increase_spend = rowData.modifiedFields.spend || 0;
-            ad.increase_results = rowData.modifiedFields.results || 0;
-            ad.increase_costPerResult = rowData.modifiedFields.costPerResult || 0;
-            ad.increase_registrations = rowData.modifiedFields.registrations || 0;
-            ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
-            ad.increase_purchases = rowData.modifiedFields.purchases || 0;
-            ad.increase_clicks = rowData.modifiedFields.clicks || 0;
-            console.log(`找到存储的广告数据 ${name} (ID: ${ad.id}):`, rowData);
-            console.log(`提取的原始值: ${ad.reach}, 增加值: ${ad.increase_reach}`);
-          }
-        }
-      } catch (error) {
-        console.error('获取存储广告数据错误:', error);
-      }
-      
-      // // 存储所有文本内容用于调试
-      const allTexts = [];
-      Array.from(scrollableElements).forEach((element, index) => {
-        const text = element.textContent?.trim();
-        if (text) {
-          allTexts.push(`${index}: ${text}`);
-        }
-      });
-      console.log(`滚动行数据长度:`, scrollableElements.length, allTexts.length);
-      
-      // 根据表头映射提取数据
-      Object.entries(DomColumnMapping).forEach(([key, index]) => {
-        // 计算滚动列的索引（减去固定列的数量）
-        const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
-        
-        // 尝试使用计算的fixIndex
-        let targetElement = scrollableElements[fixIndex];
-        
-        
-        if (targetElement) {
-          const text = targetElement.textContent?.trim();
-          if (text) {
-            // 尝试解析数值
-            const cleanedText = text.replace(/[^0-9.]/g, '');
-            const num = parseFloat(cleanedText);
-            
-            if (!isNaN(num) || cleanedText === '0') {
-              // 直接使用从DOM中提取的值作为原始值
-              // 当页面重新加载时，DOM中显示的就是原始值，不需要减去增加值
-              let originalValue = cleanedText === '0' ? (text?.includes('—') ? '—' : 0) : num;
-              
-              ad[key] = originalValue;
-              console.log(`提取 ${key} for ${name}: ${ad[key]} (raw: ${text}, increase: ${ad[`increase_${key}`]})`);
-            }
-          }
-        } else {
-          console.log(`${name}: 未找到 ${key} 元素 at index ${fixIndex}`);
-        }
-      });
-      
-      // 输出提取的数据用于调试
-      console.log(`提取数据 ${name}:`, ad);
-      
-      ads.push(ad);
     }
     
     console.log('从DOM提取的广告:', ads);
@@ -1810,29 +1634,286 @@ async function extractAdsFromDom() {
     console.log('检测到的排序信息:', sortInfo);
     
     // 保存数据到浏览器存储（包含排序信息）
-    try {
-      if (browser && browser.storage) {
-        // 使用新的缓存键生成函数
-        const adsKey = await generateCacheKey('ads');
-        const cacheData = {
-          ads,
-          columnMapping: DomColumnMapping
-        };
-        const dataToSave = {
-          sortInfo,
-          cacheData
-        };
-        await browser.storage.local.set({ [adsKey]: dataToSave });
-        console.log('已保存数据到存储:', adsKey, dataToSave);
-      }
-    } catch (error) {
-      console.error('保存数据错误:', error);
-    }
+    await saveDataToStorage(adsKey, ads, DomColumnMapping, sortInfo);
   } catch (error) {
     console.error('提取广告数据错误:', error);
   }
   
   return { ads, DomColumnMapping, sortInfo };
+}
+
+// 解析表格表头
+function parseTableHeader(headerRow: Element, DomColumnMapping: any) {
+  const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
+  
+  // 表头文本到字段名的映射表
+  const headerFieldMap = [
+    { field: 'name', labels: ['campaign', '活动', 'ad set', '广告组', 'ad', '广告'] },
+    { field: 'results', labels: ['results', '成效', '结果'] },
+    { field: 'spend', labels: ['amount spent', '花费', '金额', '支出金额'] },
+    { field: 'impressions', labels: ['impressions', '展示', '印象'] },
+    { field: 'reach', labels: ['reach', '覆盖', '抵达'] },
+    { field: 'costPerResult', labels: ['cost per result', '单次成效', '每次结果成本'] },
+    { field: 'registrations', labels: ['registrations','registrations completed', '注册', '注册量', '注册已完成'] },
+    { field: 'registration_cost', labels: ['registration cost', '注册成本', ] },
+    { field: 'purchases', labels: ['purchases', '购买', '购买量', '购买次数'] },
+    { field: 'clicks', labels: ['clicks', '点击', '点击量', '点击(全部)'] }
+  ];
+  
+  // 首先找出固定列的数量（通常只有名称列是固定的）
+  headerCells.forEach((cell, index) => {
+    // 获取单元格的文本内容，转换为小写进行匹配
+    const text = cell.textContent?.trim().toLowerCase();
+    if (text) {
+      console.log(`表头列 ${index}: ${text}`);
+      
+      // 遍历映射表，查找匹配的字段
+      for (const { field, labels } of headerFieldMap) {
+        if (labels.some(label => text === label.toLowerCase())) {
+          DomColumnMapping[field] = index;
+          break;
+        }
+      }
+    }
+  });
+}
+
+// 提取广告数据
+async function extractAdData(fixed: Element, scrollable: Element, rowIndex: number, DomColumnMapping: any) {
+  // 计算固定列长度
+  fixedColumnLength = fixed.children[0]?.children?.length-1 || 0;
+  
+  // 提取广告名称 - 从固定行获取
+  const name = extractAdName(fixed);
+  
+  // 清理广告名称
+  const cleanedName = cleanAdName(name);
+  
+  // 跳过没有有效名称的行
+  if (!cleanedName || cleanedName === '' || cleanedName.match(/^广告\s*\d+$/)) {
+    return null;
+  }
+  
+  // 尝试从DOM中获取唯一标识符
+  const adId = generateAdId(fixed, rowIndex);
+  
+  // 初始化广告对象
+  const ad = createAdObject(adId, cleanedName, rowIndex);
+  
+  // 从缓存中获取修改数据
+  await loadModifiedData(ad, cleanedName, rowIndex);
+  
+  // 从可滚动行获取其他数据
+  const scrollableElements = scrollable.children[0]?.children || [];
+  
+  // 存储所有文本内容用于调试
+  const allTexts = [];
+  Array.from(scrollableElements).forEach((element, index) => {
+    const text = element.textContent?.trim();
+    if (text) {
+      allTexts.push(`${index}: ${text}`);
+    }
+  });
+  console.log(`滚动行数据长度:`, scrollableElements.length, allTexts.length);
+  
+  // 根据表头映射提取数据
+  extractAdValues(ad, scrollableElements, fixed, DomColumnMapping);
+  
+  // 输出提取的数据用于调试
+  console.log(`提取数据 ${cleanedName}:`, ad);
+  
+  return ad;
+}
+
+// 提取广告名称
+function extractAdName(fixed: Element): string {
+  const nameElements = fixed.querySelectorAll('div, span');
+  console.log(`固定行数据长度:`, fixedColumnLength);
+  
+  for (const element of nameElements) {
+    const text = element.textContent?.trim();
+    if (text && text.length > 0 && !text.match(/^\s*\$?\d+(\.\d+)?\s*$/)) {
+      return text;
+    }
+  }
+  
+  return '';
+}
+
+// 生成广告ID
+function generateAdId(fixed: Element, rowIndex: number): string {
+  let adId = `ad_${rowIndex}`;
+  
+  // 检查固定行是否有唯一标识符属性
+  const fixedRowElement = fixed;
+  if (fixedRowElement) {
+    // 检查是否有data-id或其他唯一属性
+    const dataId = fixedRowElement.getAttribute('data-id') || 
+                  fixedRowElement.getAttribute('id') || 
+                  fixedRowElement.querySelector('[data-id]')?.getAttribute('data-id') ||
+                  fixedRowElement.querySelector('[id]')?.getAttribute('id');
+    
+    if (dataId) {
+      adId = `ad_${dataId}`;
+    }
+  }
+  
+  return adId;
+}
+
+// 创建广告对象
+function createAdObject(adId: string, name: string, rowIndex: number) {
+  return {
+    id: adId,
+    name: name,
+    status: 'ACTIVE',
+    campaign_id: `campaign_${rowIndex}`,
+    adset_id: `adset_${rowIndex}`,
+    impressions: 0,
+    increase_impressions: 0,
+    reach: 0,
+    increase_reach: 0,
+    spend: 0,
+    increase_spend: 0,
+    results: 0,
+    increase_results: 0,
+    costPerResult: 0,
+    increase_costPerResult: 0,
+    other_events: 0,
+    registrations: 0,
+    increase_registrations: 0,
+    registration_cost: 0,
+    increase_registration_cost: 0,
+    purchases: 0,
+    increase_purchases: 0,
+    clicks: 0,
+    increase_clicks: 0
+  };
+}
+
+// 从缓存中加载修改数据
+async function loadModifiedData(ad: any, name: string, rowIndex: number) {
+  try {
+    // 从新的缓存结构中获取数据
+    const modificationsKey = await generateCacheKey('ad_modifications');
+    const modificationsArray = await browserStorage.get(modificationsKey);
+    console.log('从缓存获取的修改数据:', modificationsKey, modificationsArray);
+    
+    if (modificationsArray && Array.isArray(modificationsArray)) {
+      // 查找对应的数据
+      const rowData = findRowData(modificationsArray, ad.id, name, rowIndex);
+      
+      if (rowData && rowData.modifiedFields) {
+        // 恢复增加的值，但不要修改原始值
+        restoreModifiedValues(ad, rowData.modifiedFields);
+        console.log(`找到存储的广告数据 ${name} (ID: ${ad.id}):`, rowData);
+        console.log(`提取的原始值: ${ad.reach}, 增加值: ${ad.increase_reach}`);
+      }
+    }
+  } catch (error) {
+    console.error('获取存储广告数据错误:', error);
+  }
+}
+
+// 查找行数据
+function findRowData(modificationsArray: any[], adId: string, name: string, rowIndex: number): any {
+  // 首先根据广告ID查找对应的数据
+  let rowData = modificationsArray.find(item => 
+    item && item.completeData && item.completeData.id === adId
+  );
+  console.log('根据广告ID查找的行数据:', rowData);
+  
+  // 如果根据ID找不到，尝试根据广告名称查找
+  if (!rowData) {
+    const itemsWithSameName = modificationsArray.filter(item => 
+      item && item.completeData && item.completeData.name === name
+    );
+    
+    if (itemsWithSameName.length > 0) {
+      // 如果只有一个项目，直接使用
+      if (itemsWithSameName.length === 1) {
+        rowData = itemsWithSameName[0];
+      } else {
+        // 如果有多个项目，尝试根据索引匹配
+        console.warn(`广告名称 ${name} 重复，尝试根据索引匹配`);
+        if (modificationsArray[rowIndex]) {
+          rowData = modificationsArray[rowIndex];
+        }
+      }
+    }
+  }
+  
+  // 如果还是找不到，使用索引作为后备方案
+  if (!rowData && modificationsArray[rowIndex]) {
+    rowData = modificationsArray[rowIndex];
+  }
+  
+  return rowData;
+}
+
+// 恢复修改的值
+function restoreModifiedValues(ad: any, modifiedFields: any) {
+  ad.increase_impressions = modifiedFields.impressions || 0;
+  ad.increase_reach = modifiedFields.reach || 0;
+  ad.increase_spend = modifiedFields.spend || 0;
+  ad.increase_results = modifiedFields.results || 0;
+  ad.increase_costPerResult = modifiedFields.costPerResult || 0;
+  ad.increase_registrations = modifiedFields.registrations || 0;
+  ad.increase_registration_cost = modifiedFields.registration_cost || 0;
+  ad.increase_purchases = modifiedFields.purchases || 0;
+  ad.increase_clicks = modifiedFields.clicks || 0;
+}
+
+// 提取广告值
+function extractAdValues(ad: any, scrollableElements: any[], fixed: Element, DomColumnMapping: any) {
+  // 根据表头映射提取数据
+  Object.entries(DomColumnMapping).forEach(([key, index]) => {
+    // 计算滚动列的索引（减去固定列的数量）
+    const fixIndex = index - (fixed.children[0]?.children?.length-1 || 0);
+    
+    // 尝试使用计算的fixIndex
+    let targetElement = scrollableElements[fixIndex];
+    
+    if (targetElement) {
+      const text = targetElement.textContent?.trim();
+      if (text) {
+        // 尝试解析数值
+        const cleanedText = text.replace(/[^0-9.]/g, '');
+        const num = parseFloat(cleanedText);
+        
+        if (!isNaN(num) || cleanedText === '0') {
+          // 直接使用从DOM中提取的值作为原始值
+          // 当页面重新加载时，DOM中显示的就是原始值，不需要减去增加值
+          let originalValue = cleanedText === '0' ? (text?.includes('—') ? '—' : 0) : num;
+          
+          ad[key] = originalValue;
+          console.log(`提取 ${key} for ${ad.name}: ${ad[key]} (raw: ${text}, increase: ${ad[`increase_${key}`]})`);
+        }
+      }
+    } else {
+      console.log(`${ad.name}: 未找到 ${key} 元素 at index ${fixIndex}`);
+    }
+  });
+}
+
+// 保存数据到存储
+async function saveDataToStorage(adsKey: string, ads: any[], DomColumnMapping: any, sortInfo: any) {
+  try {
+    if (browser && browser.storage) {
+      const cacheData = {
+        ads,
+        columnMapping: DomColumnMapping
+      };
+      const dataToSave = {
+        sortInfo,
+        cacheData
+      };
+      await browser.storage.local.set({ [adsKey]: dataToSave });
+      console.log('已保存数据到存储:', adsKey, dataToSave);
+    }
+  } catch (error) {
+    console.error('保存数据错误:', error);
+  }
 }
 
 // 递归查找元素的data-add-value属性
@@ -1879,6 +1960,10 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
     return null;
   }
   
+  // 计算固定列长度
+  const currentFixedColumnLength = fixedElement.children[0]?.children?.length-1 || 0;
+  console.log(`当前行的固定列长度:`, currentFixedColumnLength);
+  
   // 提取原始值
   const domValues = {};
   
@@ -1924,7 +2009,7 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
   console.log('从DOM提取的原始值:', domValues);
   
   // 将DOM提取的数据转换为缓存提取出来的原始值格式
-  const originalValues = convertDomValuesToOriginalValues(domValues, columnIndices);
+  const originalValues = convertDomValuesToOriginalValues(domValues, columnIndices, currentFixedColumnLength);
   
   // 生成唯一标识
   const uniqueId = generateUniqueId(name, originalValues);
