@@ -663,7 +663,7 @@ export default {
           lastSyncTime = now;
           try {
             // 检查是否有缓存数据
-            const modificationsKey = generateCacheKey('ad_modifications');
+            const modificationsKey = await generateCacheKey('ad_modifications');
             const modificationsArray = await browserStorage.get(modificationsKey);
             
             // 只有在有缓存数据时才创建遮盖层
@@ -679,7 +679,7 @@ export default {
             
             // 保存更新后的列映射
             if (DomColumnMapping && Object.keys(DomColumnMapping).length > 0) {
-              const columnMappingKey = generateCacheKey('columnMapping');
+              const columnMappingKey = await generateCacheKey('columnMapping');
               await browserStorage.set(columnMappingKey, DomColumnMapping);
               lastColumnMapping = DomColumnMapping;
             }
@@ -762,13 +762,14 @@ export default {
         console.log('检测到排序变更或表格列位置变化，触发同步');
         
         // 立即显示遮盖层
-        const modificationsKey = generateCacheKey('ad_modifications');
-        browserStorage.get(modificationsKey).then((modificationsArray) => {
+        (async () => {
+          const modificationsKey = await generateCacheKey('ad_modifications');
+          const modificationsArray = await browserStorage.get(modificationsKey);
           if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
             console.log('有缓存数据，显示遮盖层');
             createOverlay();
           }
-        });
+        })();
         
         // 延迟执行同步，等待排序操作完成
         setTimeout(() => {
@@ -875,7 +876,7 @@ async function getColumnIndices(attempt = 0) {
   
   try {
     // 首先尝试从缓存中获取列映射
-    const columnMappingKey = generateCacheKey('columnMapping');
+    const columnMappingKey = await generateCacheKey('columnMapping');
     console.log('列映射缓存键:', columnMappingKey);
     const DomColumnMapping = await browserStorage.get(columnMappingKey);
     
@@ -1513,7 +1514,7 @@ function parseNumber(text: string): number | string {
 async function extractAdsFromDom() {
   // 首先检查是否有缓存数据
   const currentDate = getCurrentDate();
-  const adsKey = generateCacheKey('ads');
+  const adsKey = await generateCacheKey('ads');
   
   // 获取缓存数据（包含排序信息）
   const cachedData = await browserStorage.get(adsKey);
@@ -1692,8 +1693,8 @@ async function extractAdsFromDom() {
       // 检查本地存储中是否有对应的广告数据
       try {
         // 从新的缓存结构中获取数据
-        // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
-        const modificationsKey = generateCacheKey('ad_modifications');
+          // 使用不包含排序信息的缓存键，因为修改数据应该与排序状态无关
+        const modificationsKey = await generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
         console.log('从缓存获取的修改数据:',modificationsKey, modificationsArray);
         if (modificationsArray && Array.isArray(modificationsArray)) {
@@ -1812,7 +1813,7 @@ async function extractAdsFromDom() {
     try {
       if (browser && browser.storage) {
         // 使用新的缓存键生成函数
-        const adsKey = generateCacheKey('ads');
+        const adsKey = await generateCacheKey('ads');
         const cacheData = {
           ads,
           columnMapping: DomColumnMapping
@@ -1951,7 +1952,7 @@ async function syncAdDataToPage(sortInfo = null) {
     // 获取存储的所有广告数据
     // 使用缓存键，因为修改数据应该与排序状态无关
     console.log('获取存储项开始');
-    const modificationsKey = generateCacheKey('ad_modifications');
+    const modificationsKey = await generateCacheKey('ad_modifications');
     const modificationsArray = await browserStorage.get(modificationsKey);
     
     // 第一次保存时，存储中可能没有数据，这是正常的
