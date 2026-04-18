@@ -733,9 +733,9 @@ onUnmounted(() => {
         <tbody>
           <tr v-for="ad in ads" :key="ad.id">
             <!-- <td>{{ ad.id }}</td> -->
-            <td class="ellipsis-cell" :title="ad.name">
+            <!-- <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
-            </td>
+            </td> -->
             <td class="ellipsis-cell" :title="ad.reach || '-' ">
               {{ ad.reach || '-' }}
             </td>
@@ -908,7 +908,7 @@ onUnmounted(() => {
 }
 
 .date-input {
-  padding: 6px 12px;
+  padding: 6px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   font-size: 14px;
@@ -1034,10 +1034,10 @@ input:checked + .slider:before {
 
 .ads-table th,
 .ads-table td {
-  padding: 12px 4px;
+  padding: 12px 2px;
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
-  max-width: 70px!important;
+  max-width: 64px!important;
 }
 
 .ads-table th {
@@ -1053,7 +1053,7 @@ input:checked + .slider:before {
 .editable-input,
 .editable-select {
   width: 100%;
-  padding: 4px 8px;
+  padding: 4px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   font-size: 14px;
@@ -1096,19 +1096,19 @@ input:checked + .slider:before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 80px;
+  max-width: 64px;
 }
 
 .ads-table td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 80px;
+  max-width: 64px;
 }
 
 .ads-table th {
   white-space: nowrap;
-  min-width: 56px;
+  min-width: 52px;
 }
 /*  */
 /* 事件下拉菜单样式 */
@@ -1127,7 +1127,7 @@ input:checked + .slider:before {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -1167,7 +1167,7 @@ input:checked + .slider:before {
 }
 
 .event-dropdown-item {
-  padding: 8px 12px;
+  padding: 8px 4px;
   transition: background-color 0.2s;
   color: #fff;
   border-bottom: 1px solid #fff;
@@ -1208,8 +1208,8 @@ input:checked + .slider:before {
 }
 
 .event-item-input-field {
-  width: 80px;
-  padding: 4px 8px;
+  width: 64px;
+  padding: 4px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
