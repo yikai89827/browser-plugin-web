@@ -83,6 +83,20 @@ const columnMapping = {
   // registration_cost: 'reporting_table_column_registration_cost',//注册成本
 };
 
+// 字段映射配置 - 用于表头文本到字段名的映射
+const fieldMappingConfig = [
+  { field: 'name', labels: ['campaign', '活动', 'ad set', '广告组', 'ad', '广告'] },
+  { field: 'results', labels: ['results', '成效', '结果'] },
+  { field: 'spend', labels: ['amount spent', '花费', '金额', '支出金额'] },
+  { field: 'impressions', labels: ['impressions', '展示', '印象'] },
+  { field: 'reach', labels: ['reach', '覆盖', '抵达'] },
+  { field: 'costPerResult', labels: ['cost per result', '单次成效', '每次结果成本'] },
+  { field: 'registrations', labels: ['registrations','registrations completed', '注册', '注册量', '注册已完成'] },
+  { field: 'registration_cost', labels: ['registration cost', '注册成本', ] },
+  { field: 'purchases', labels: ['purchases', '购买', '购买量', '购买次数'] },
+  { field: 'clicks', labels: ['clicks', 'clicks(all)', '点击', '点击量', '点击(全部)'] },
+];
+
 // 定义需要计算的数值字段（排除DOM中暂时没有的字段）
 const numericFields = [
   'impressions', 'reach', 'spend','clicks','registrations','purchases'
@@ -1154,22 +1168,9 @@ function extractAdNamesFromRowPairs(rowPairs: any[]): string[] {
 function mapFieldNameToStandard(fieldName: string): string | null {
   const lowerFieldName = fieldName.toLowerCase();
   
-  // 使用映射表存储关键词和标准字段名的对应关系
-  const fieldMap = [
-    { field: 'results', keywords: ['results', '成效', '结果'] },
-    { field: 'spend', keywords: ['spent', '花费', '支出'] },
-    { field: 'impressions', keywords: ['impressions', '展示', '印象'] },
-    { field: 'reach', keywords: ['reach', '覆盖', '抵达'] },
-    { field: 'costPerResult', keywords: ['cost per result', '单次成效', '每次结果成本'] },
-    { field: 'registration_cost', keywords: ['registration cost', '注册成本'] },
-    { field: 'clicks', keywords: ['clicks(all)', '点击（全部）'] },
-    { field: 'registrations', keywords: ['registrations completed)', '注册已完成'] },
-    { field: 'purchases', keywords: ['purchases', '购买'] }
-  ];
-  
   // 遍历映射表，检查字段名是否包含任何关键词
-  for (const { field, keywords } of fieldMap) {
-    if (keywords.some(keyword => lowerFieldName.includes(keyword))) {
+  for (const { field, labels } of fieldMappingConfig) {
+    if (labels.some(keyword => lowerFieldName.includes(keyword.toLowerCase()))) {
       return field;
     }
   }
@@ -1646,20 +1647,6 @@ async function extractDataFromDomAndCache(adsKey: string, currentSortInfo: any) 
 function parseTableHeader(headerRow: Element, DomColumnMapping: any) {
   const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
   
-  // 表头文本到字段名的映射表
-  const headerFieldMap = [
-    { field: 'name', labels: ['campaign', '活动', 'ad set', '广告组', 'ad', '广告'] },
-    { field: 'results', labels: ['results', '成效', '结果'] },
-    { field: 'spend', labels: ['amount spent', '花费', '金额', '支出金额'] },
-    { field: 'impressions', labels: ['impressions', '展示', '印象'] },
-    { field: 'reach', labels: ['reach', '覆盖', '抵达'] },
-    { field: 'costPerResult', labels: ['cost per result', '单次成效', '每次结果成本'] },
-    { field: 'registrations', labels: ['registrations','registrations completed', '注册', '注册量', '注册已完成'] },
-    { field: 'registration_cost', labels: ['registration cost', '注册成本', ] },
-    { field: 'purchases', labels: ['purchases', '购买', '购买量', '购买次数'] },
-    { field: 'clicks', labels: ['clicks', '点击', '点击量', '点击(全部)'] }
-  ];
-  
   // 首先找出固定列的数量（通常只有名称列是固定的）
   headerCells.forEach((cell, index) => {
     // 获取单元格的文本内容，转换为小写进行匹配
@@ -1668,7 +1655,7 @@ function parseTableHeader(headerRow: Element, DomColumnMapping: any) {
       console.log(`表头列 ${index}: ${text}`);
       
       // 遍历映射表，查找匹配的字段
-      for (const { field, labels } of headerFieldMap) {
+      for (const { field, labels } of fieldMappingConfig) {
         if (labels.some(label => text === label.toLowerCase())) {
           DomColumnMapping[field] = index;
           break;
