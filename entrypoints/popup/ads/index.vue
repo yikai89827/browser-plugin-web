@@ -1034,7 +1034,7 @@ input:checked + .slider:before {
 
 .ads-table th,
 .ads-table td {
-  padding: 12px 2px;
+  padding: 12px 1px;
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
   max-width: 64px!important;
@@ -1052,15 +1052,15 @@ input:checked + .slider:before {
 
 .editable-input,
 .editable-select {
-  width: 64px;
-  padding: 4px;
+  width: 60px;
+  padding: 3px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   font-size: 14px;
   box-sizing: border-box;
   /* 确保没有额外的内边距或边框影响宽度 */
-  min-width: 64px;
-  max-width: 64px;
+  min-width: 60px;
+  max-width: 60px;
 }
 
 .editable-input:focus,
