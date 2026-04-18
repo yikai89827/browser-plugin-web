@@ -156,7 +156,10 @@ function generateUniqueId(name: string, originalValues: any): string {
   // 使用 charCodeAt 算法计算唯一id
   const uniqueId = Array.from(str).map(c => c.charCodeAt(0)).join('');
   console.log('生成的唯一标识:', uniqueId);
-  return uniqueId;
+  // 编码为60进制字符串
+  const uniqueId60 = encodeNum(uniqueId);
+  console.log('60进制编码后的唯一标识:', uniqueId60);
+  return uniqueId60;
 }
 
 // 将DOM提取的数据转换为缓存提取出来的原始值格式
@@ -1757,6 +1760,21 @@ function findAddValue(element: Element): number {
   
   return 0;
 }
+// 编码数字为60进制字符串
+function encodeNum(numStr) {
+    let num = BigInt(numStr); // 使用 BigInt 防止数字过大溢出
+    if (num === 0n) return CHARS[0];
+
+    let result = '';
+    const base = BigInt(60);
+
+    while (num > 0n) {
+        const remainder = num % base;
+        result = CHARS[Number(remainder)] + result;
+        num = (num - remainder) / base;
+    }
+    return result;
+}
 
 // 从DOM行提取原始值并生成唯一标识
 async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrollableElement: Element): Promise<{ name: string, originalValues: any, uniqueId: string } | null> {
@@ -1816,8 +1834,9 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
   
   // 生成唯一标识
   const uniqueId = generateUniqueId(name, originalValues);
+  const uniqueId60 = encodeNum(uniqueId);
   
-  return { name, originalValues, uniqueId };
+  return { name, originalValues, uniqueId: uniqueId60 };
 }
 
 // 同步广告数据到页面
