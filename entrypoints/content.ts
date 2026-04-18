@@ -1843,9 +1843,8 @@ async function extractOriginalValuesAndGenerateId(fixedElement: Element, scrolla
   
   // 生成唯一标识
   const uniqueId = generateUniqueId(name, originalValues);
-  const uniqueId60 = encodeNum(uniqueId);
   
-  return { name, originalValues, uniqueId: uniqueId60 };
+  return { name, originalValues, uniqueId };
 }
 
 // 同步广告数据到页面
