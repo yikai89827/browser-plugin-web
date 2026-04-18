@@ -1,20 +1,6 @@
 // @ts-nocheck
 import { browserStorage } from '../utils/storage';
-// import md5 from 'blueimp-md5';
 
-// 广告数据类型
-interface AdData {
-  id: string;
-  name: string;
-  increase_impressions: number;
-  increase_reach: number;
-  increase_spend: number;
-  increase_results: number;
-  increase_website_clicks: number;
-  increase_registrations: number;
-  increase_registration_cost: number;
-  updated_at: string;
-}
 
 // 列映射配置 - 表头ID到字段名的映射
 const columnMapping = {
@@ -22,18 +8,19 @@ const columnMapping = {
   impressions: 'reporting_table_column_impressions',//展示次数
   reach: 'reporting_table_column_reach',//覆盖次数
   spend: 'reporting_table_column_spend',//花费
-  results: 'ads_manager_table_results_column_label_id',//成效
-  costPerResult: 'reporting_table_column_cost_per_result',//单次成效
-  website_clicks: 'reporting_table_column_website_clicks',//网站点击
-  registrations: 'reporting_table_column_registrations',//注册
-  registration_cost: 'reporting_table_column_registration_cost',//注册成本
+  clicks: 'reporting_table_column_clicks',//点击（全部）
+  registrations: 'reporting_table_column_actions:omni_complete_registration)',//注册已完成
+  purchases: 'reporting_table_column_actions:omni_purchase',//购买次数
+  // results: 'ads_manager_table_results_column_label_id',//成效
+  // costPerResult: 'reporting_table_column_cost_per_result',//单次成效
+  // registration_cost: 'reporting_table_column_registration_cost',//注册成本
 };
 
 // 定义需要计算的数值字段（排除DOM中暂时没有的字段）
 const numericFields = [
-  'impressions', 'reach', 'spend', 'results', 'costPerResult'
+  'impressions', 'reach', 'spend','clicks','registrations','purchases'
   // 排除以下字段，因为DOM中暂时没有
-  // 'website_clicks', 'registrations', 'registration_cost'
+  // 'registration_cost','results', 'costPerResult'
 ];
 
 // 存储列索引
@@ -1074,22 +1061,24 @@ function extractAdNamesFromRowPairs(rowPairs: any[]): string[] {
 function mapFieldNameToStandard(fieldName: string): string | null {
   const lowerFieldName = fieldName.toLowerCase();
   
-  if (lowerFieldName.includes('results') || lowerFieldName.includes('成效') || lowerFieldName.includes('结果')) {
-    return 'results';
-  } else if (lowerFieldName.includes('spent') || lowerFieldName.includes('花费') || lowerFieldName.includes('支出')) {
-    return 'spend';
-  } else if (lowerFieldName.includes('impressions') || lowerFieldName.includes('展示') || lowerFieldName.includes('印象')) {
-    return 'impressions';
-  } else if (lowerFieldName.includes('reach') || lowerFieldName.includes('覆盖') || lowerFieldName.includes('抵达')) {
-    return 'reach';
-  } else if (lowerFieldName.includes('cost per result') || lowerFieldName.includes('单次成效') || lowerFieldName.includes('每次结果成本')) {
-    return 'costPerResult';
-  } else if (lowerFieldName.includes('website clicks') || lowerFieldName.includes('网站点击')) {
-    return 'website_clicks';
-  } else if (lowerFieldName.includes('registrations') || lowerFieldName.includes('注册')) {
-    return 'registrations';
-  } else if (lowerFieldName.includes('registration cost') || lowerFieldName.includes('注册成本')) {
-    return 'registration_cost';
+  // 使用映射表存储关键词和标准字段名的对应关系
+  const fieldMap = [
+    { field: 'results', keywords: ['results', '成效', '结果'] },
+    { field: 'spend', keywords: ['spent', '花费', '支出'] },
+    { field: 'impressions', keywords: ['impressions', '展示', '印象'] },
+    { field: 'reach', keywords: ['reach', '覆盖', '抵达'] },
+    { field: 'costPerResult', keywords: ['cost per result', '单次成效', '每次结果成本'] },
+    { field: 'registration_cost', keywords: ['registration cost', '注册成本'] },
+    { field: 'clicks', keywords: ['clicks(all)', '点击（全部）'] },
+    { field: 'registrations', keywords: ['registrations completed)', '注册已完成'] },
+    { field: 'purchases', keywords: ['purchases', '购买'] }
+  ];
+  
+  // 遍历映射表，检查字段名是否包含任何关键词
+  for (const { field, keywords } of fieldMap) {
+    if (keywords.some(keyword => lowerFieldName.includes(keyword))) {
+      return field;
+    }
   }
   
   return null;
@@ -1102,7 +1091,10 @@ function determineFieldTypeByIndex(index: number, fixIndex: number): string | nu
     { key: 'reach', label: '覆盖人数' },
     { key: 'spend', label: '花费' },
     { key: 'impressions', label: '展示次数' },
-    { key: 'costPerResult', label: '每次结果成本' }
+    { key: 'costPerResult', label: '每次结果成本' },
+    { key: 'clicks', label: '点击(全部)' },
+    { key: 'registrations', label: '注册已完成' },
+    { key: 'purchases', label: '购买次数' }
   ];
   
   for (const field of fieldTypes) {
@@ -1599,7 +1591,7 @@ async function extractAdsFromDom() {
         increase_costPerResult: 0,
         other_events: 0,
         website_clicks: 0,
-        increase_website_clicks: 0,
+        increase_clicks: 0,
         registrations: 0,
         increase_registrations: 0,
         registration_cost: 0,
@@ -1652,7 +1644,7 @@ async function extractAdsFromDom() {
             ad.increase_spend = rowData.modifiedFields.spend || 0;
             ad.increase_results = rowData.modifiedFields.results || 0;
             ad.increase_costPerResult = rowData.modifiedFields.costPerResult || 0;
-            ad.increase_website_clicks = rowData.modifiedFields.website_clicks || 0;
+            ad.increase_clicks = rowData.modifiedFields.clicks || 0;
             ad.increase_registrations = rowData.modifiedFields.registrations || 0;
             ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
             console.log(`找到存储的广告数据 ${name} (ID: ${ad.id}):`, rowData);

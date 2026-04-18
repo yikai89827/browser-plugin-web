@@ -20,9 +20,10 @@ interface AdData {
   results: number;
   increase_results: number;
   costPerResult: number;
-  other_events: number;
-  website_clicks: number;
-  increase_website_clicks: number;
+  clicks: number;
+  increase_clicks: number;
+  purchases: number;
+  increase_purchases: number;
   registrations: number;
   increase_registrations: number;
   registration_cost: number;
@@ -64,12 +65,6 @@ async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, 
   }
 }
 
-// 响应数据类型
-interface ApiResponse {
-  data: AdData[];
-  error?: any;
-}
-
 // 状态管理
 const ads = ref<AdData[]>([]);
 const loading = ref(false);
@@ -93,11 +88,11 @@ const getCurrentDate = () => {
 const columnMapping = ref<any>({});
 
 // 其他数据管理项
-const events = ref([
-  { id: 'website_clicks', name: '网站点击' },
-  { id: 'registrations', name: '注册' },
-  { id: 'registration_cost', name: '注册成本' }
-]);
+// const events = ref([
+//   { id: 'website_clicks', name: '网站点击' },
+//   { id: 'registrations', name: '注册' },
+//   { id: 'registration_cost', name: '注册成本' }
+// ]);
 
 // // 广告账户ID
 // const accountId = '2174042080104706';
@@ -416,9 +411,9 @@ const saveChanges = async () => {
             results: ad.results,
             increase_results: ad.increase_results,
             costPerResult: ad.costPerResult,
-            other_events: ad.other_events,
+            clicks: ad.clicks || 0,
             website_clicks: ad.website_clicks || 0,
-            increase_website_clicks: ad.increase_website_clicks || 0,
+            increase_clicks: ad.increase_clicks || 0,
             registrations: ad.registrations || 0,
             increase_registrations: ad.increase_registrations || 0,
             registration_cost: ad.registration_cost || 0,
@@ -587,7 +582,6 @@ const checkCacheOnMount = async () => {
       }
     } else {
       console.log('没有缓存数据，跳过加载');
-      alert('获取失败，请刷新页面');
     }
   } catch (error) {
     console.error('检查缓存数据错误:', error);
@@ -722,11 +716,12 @@ onUnmounted(() => {
             <th>展示次数</th>
             <th>增加</th>
             <th>花费金额</th>
-            <th>增值</th>
-            <th>成效</th>
-            <th>加成效</th>
-            <th>单次成效</th>
-            <th>其它事件</th>
+            <th>点击次数</th>
+            <th>增加</th>
+            <th>注册次数</th>
+            <th>增加</th>
+            <th>购买次数</th>
+            <th>增加</th>
           </tr>
         </thead>
         <tbody>
@@ -768,8 +763,19 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.results || '-' ">
-              {{ ad.results || '-' }}
+            <td class="ellipsis-cell" :title="ad.clicks || '0' ">
+              {{ ad.clicks || '0' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_clicks" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <td class="ellipsis-cell" :title="ad.registrations || '0' ">
+              {{ ad.registrations || '0' }}
             </td>
             <td>
               <input 
@@ -779,9 +785,21 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.costPerResult || '-' ">
-              {{ ad.costPerResult || '-' }}</td>
-            <td class="event-dropdown-cell">
+            <td class="ellipsis-cell" :title="ad.purchases || '0' ">
+              {{ ad.purchases || '0' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_purchases" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <!-- <td class="ellipsis-cell" :title="ad.costPerResult || '-' ">
+              {{ ad.costPerResult || '-' }}
+            </td> -->
+            <!-- <td class="event-dropdown-cell">
               <div class="event-dropdown" :ref="el => setDropdownRef(el, ad.id)">
                 <button 
                   class="event-dropdown-btn" 
@@ -818,7 +836,7 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-            </td>
+            </td> -->
           </tr>
           <tr v-if="ads.length === 0 && !loading">
             <td colspan="12" class="empty-state">
