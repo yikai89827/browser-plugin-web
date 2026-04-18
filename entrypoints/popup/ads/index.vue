@@ -1057,6 +1057,10 @@ input:checked + .slider:before {
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   font-size: 14px;
+  box-sizing: border-box;
+  /* 确保没有额外的内边距或边框影响宽度 */
+  min-width: 64px;
+  max-width: 64px;
 }
 
 .editable-input:focus,
