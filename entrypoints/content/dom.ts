@@ -182,7 +182,7 @@ export async function updateScrollableRow(row: Element, data: any, columnIndices
         if (columnIndex !== undefined) {
           const cellIndex = columnIndex - fixIndex;
           if (cellIndex >= 0 && cellIndex < cells.length) {
-            updatePromises.push(updateElementText(cells[cellIndex], value));
+            updatePromises.push(updateElementText(cells[cellIndex], String(value)));
           }
         }
       }

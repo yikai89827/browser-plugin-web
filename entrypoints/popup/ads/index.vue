@@ -282,43 +282,6 @@ const fetchAds = async () => {
   }
 };
 
-// 添加延迟和限流
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 2000;
-
-/**
- * 带重试机制的API更新函数
- * @param adId 广告ID
- * @param data 要更新的数据
- * @param retries 当前重试次数
- * @param accessToken Facebook API访问令牌
- * @returns 返回API响应
- * @description 实现了一个带指数退避的重试机制，当API调用失败时会自动重试，最多重试MAX_RETRIES次
- * 每次重试的延迟时间会递增，以避免对API服务器造成过大压力
- */
-async function updateWithRetry(adId: string, data: any, retries = 0, accessToken: string) {
-  try {
-    // 发送POST请求到Facebook Graph API更新广告数据
-    const response = await axios.post(
-      `https://graph.facebook.com/v22.0/${adId}`,
-      data,
-      { params: { access_token: accessToken } }
-    );
-    return response;
-  } catch (err) {
-    // 如果重试次数未达到上限，进行重试
-    if (retries < MAX_RETRIES) {
-      // 指数退避延迟：每次重试的延迟时间递增
-      await delay(RETRY_DELAY * (retries + 1));
-      return updateWithRetry(adId, data, retries + 1, accessToken);
-    }
-    // 重试次数达到上限，抛出错误
-    throw err;
-  }
-}
-
 /**
  * 保存修改的函数
  * @description 1. 将修改后的数据保存到本地存储
@@ -476,59 +439,6 @@ const saveChanges = async () => {
     error.value = `保存失败: ${err.message}`;
     console.error('保存失败:', err);
     saving.value = false;
-  }
-};
-
-// 设置下拉菜单ref
-const setDropdownRef = (el: HTMLElement | null, adId: string) => {
-  if (el) {
-    dropdownRefs.value[adId] = el;
-  }
-};
-
-// 切换下拉菜单
-const toggleDropdown = (adId: string, event: MouseEvent) => {
-  // 先关闭所有其他弹窗
-  Object.keys(dropdownOpen.value).forEach(id => {
-    if (id !== adId) {
-      dropdownOpen.value[id] = false;
-    }
-  });
-  
-  // 切换当前弹窗的状态
-  const isOpen = !dropdownOpen.value[adId];
-  dropdownOpen.value[adId] = isOpen;
-};
-
-
-// 触发事件
-const triggerEvent = (adId: string, eventId: string) => {
-  console.log('触发事件:', eventId, '广告:', adId);
-  
-  // 关闭下拉菜单
-  dropdownOpen.value[adId] = false;
-  
-  // 根据事件ID执行不同的操作
-  switch (eventId) {
-    case '1':
-      alert('查看广告详情：' + adId);
-      break;
-    case '2':
-      alert('编辑广告：' + adId);
-      break;
-    case '3':
-      alert('复制广告：' + adId);
-      break;
-    case '4':
-      alert('暂停广告：' + adId);
-      break;
-    case '5':
-      if (confirm('确定要删除广告 ' + adId + ' 吗？')) {
-        alert('删除广告：' + adId);
-      }
-      break;
-    default:
-      break;
   }
 };
 
@@ -736,7 +646,7 @@ onUnmounted(() => {
             <!-- <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
             </td> -->
-            <td class="ellipsis-cell" :title="ad.reach || '-' ">
+            <td class="ellipsis-cell" :title="String(ad.reach || '-')">
               {{ ad.reach || '-' }}
             </td>
             <td>
@@ -747,7 +657,7 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.impressions || '-' ">
+            <td class="ellipsis-cell" :title="String(ad.impressions || '-')">
               {{ ad.impressions|| '-' }}
             </td>
             <td>
@@ -758,7 +668,7 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.spend || '0' ">
+            <td class="ellipsis-cell" :title="String(ad.spend || '-')">
               {{ ad.spend || '0' }}
             </td>
             <td>
@@ -769,7 +679,7 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.clicks || '0' ">
+            <td class="ellipsis-cell" :title="String(ad.clicks || '-')">  
               {{ ad.clicks || '0' }}
             </td>
             <td>
@@ -780,7 +690,7 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.registrations || '0' ">
+            <td class="ellipsis-cell" :title="String(ad.registrations || '-')">  
               {{ ad.registrations || '0' }}
             </td>
             <td>
@@ -791,7 +701,7 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="ad.purchases || '0' ">
+            <td class="ellipsis-cell" :title="String(ad.purchases || '-')">  
               {{ ad.purchases || '0' }}
             </td>
             <td>

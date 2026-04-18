@@ -1,7 +1,6 @@
 import { browserStorage } from '../../utils/storage';
 import { extractAdsFromDom, getColumnIndices, updateScrollableRow, createOverlay, removeOverlay } from './dom';
-import { generateCacheKey, generateSortInfoKey } from './cache';
-import { generateUniqueId } from './uniqueId';
+import { generateCacheKey } from './cache';
 
 // 全局同步状态
 if (typeof window !== 'undefined') {
@@ -25,8 +24,8 @@ export function debouncedSync() {
   clearTimeout(syncTimeout!);
   syncTimeout = setTimeout(async () => {
     // 检查全局的isSyncing变量
-    if (!window.isSyncing && !isUpdatingDOM) {
-      window.isSyncing = true;
+    if (!(window as any).isSyncing && !isUpdatingDOM) {
+      (window as any).isSyncing = true;
       lastSyncTime = now;
       try {
         // 检查是否有缓存数据
@@ -57,7 +56,7 @@ export function debouncedSync() {
       } finally {
         // 无论成功失败都关闭遮盖层
         removeOverlay();
-        window.isSyncing = false;
+        (window as any).isSyncing = false;
       }
     }
   }, 0);

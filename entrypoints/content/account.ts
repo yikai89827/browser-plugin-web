@@ -11,7 +11,7 @@ export function getAccountId() {
   }
   
   const url = window.location.href;
-  const match = url.match(/act=(+)/);
+  const match = url.match(/act=(\d+)/);
   return match ? match[1] : '';
 }
 
