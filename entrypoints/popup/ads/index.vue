@@ -480,21 +480,6 @@ const toggleDropdown = (adId: string, event: MouseEvent) => {
   dropdownOpen.value[adId] = isOpen;
 };
 
-// 获取其他数据的原始值
-const getOriginalValue = (ad: AdData, eventId: string): number => {
-  return ad[eventId] || 0;
-};
-
-// 获取其他数据的增加的值
-const getIncreaseValue = (ad: AdData, eventId: string): number => {
-  const increaseField = `increase_${eventId}`;
-  return ad[increaseField] || 0;
-};
-
-// 获取下拉菜单样式
-const getDropdownStyle = (adId: string) => {
-  return {}; // 样式已通过CSS固定，无需动态计算
-};
 
 // 触发事件
 const triggerEvent = (adId: string, eventId: string) => {
@@ -710,12 +695,13 @@ onUnmounted(() => {
         <thead>
           <tr>
             <!-- <th>广告id</th> -->
-            <th>名称</th>
+            <!-- <th>名称</th> -->
             <th>覆盖人数</th>
             <th>增加</th>
             <th>展示次数</th>
             <th>增加</th>
             <th>花费金额</th>
+            <th>增加</th>
             <th>点击次数</th>
             <th>增加</th>
             <th>注册次数</th>
