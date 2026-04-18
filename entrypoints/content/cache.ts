@@ -20,8 +20,8 @@ export async function generateSortInfoKey() {
 
 // 预加载缓存数据
 export async function loadCachedData() {
-  if (!window.isSyncing) {
-    window.isSyncing = true;
+  if (!(window as any).isSyncing) {
+    (window as any).isSyncing = true;
     try {
       // 获取当前页面状态
       const pageState = getCurrentPageState();
@@ -40,7 +40,7 @@ export async function loadCachedData() {
       console.error('加载缓存数据错误:', error);
       return { modifications: null, columnMapping: null };
     } finally {
-      window.isSyncing = false;
+      (window as any).isSyncing = false;
     }
   }
   return { modifications: null, columnMapping: null };

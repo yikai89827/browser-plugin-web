@@ -178,7 +178,7 @@ const fetchAds = async () => {
       // 如果有排序信息，根据排序信息对数据进行排序
       if (sortInfo && sortInfo.field && sortInfo.direction) {
         console.log('根据排序信息对广告数据进行排序:', sortInfo.field, sortInfo.direction);
-        adsData.sort((a, b) => {
+        adsData.sort((a: { [x: string]: number; }, b: { [x: string]: number; }) => {
           const field = sortInfo.field;
           const valueA = a[field] || 0;
           const valueB = b[field] || 0;
