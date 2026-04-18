@@ -236,14 +236,17 @@ const fetchAds = async () => {
           if (rowData.modifiedFields.results !== undefined) {
             ad.increase_results = rowData.modifiedFields.results;
           }
-          if (rowData.modifiedFields.website_clicks !== undefined) {
-            ad.increase_website_clicks = rowData.modifiedFields.website_clicks;
+          if (rowData.modifiedFields.registration_cost !== undefined) {
+            ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+          }
+          if (rowData.modifiedFields.purchases !== undefined) {
+            ad.increase_purchases = rowData.modifiedFields.purchases;
+          }
+          if (rowData.modifiedFields.clicks !== undefined) {
+            ad.increase_clicks = rowData.modifiedFields.clicks;
           }
           if (rowData.modifiedFields.registrations !== undefined) {
             ad.increase_registrations = rowData.modifiedFields.registrations;
-          }
-          if (rowData.modifiedFields.registration_cost !== undefined) {
-            ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
           }
           }
         });
@@ -347,7 +350,10 @@ const saveChanges = async () => {
               ad.increase_results !== undefined ||
               ad.increase_website_clicks !== undefined ||
               ad.increase_registrations !== undefined ||
-              ad.increase_registration_cost !== undefined;
+              ad.increase_registration_cost !== undefined ||
+              ad.increase_purchases !== undefined ||
+              ad.increase_clicks !== undefined ||
+              ad.increase_registrations !== undefined;
             
             // 获取当前行在表格中的索引
             const rowIndex = ads.value.indexOf(ad);
@@ -371,6 +377,18 @@ const saveChanges = async () => {
               }
               if (ad.increase_website_clicks !== undefined) {
                 modifiedFields.website_clicks = ad.increase_website_clicks;
+              }
+              if (ad.increase_registrations !== undefined) {
+                modifiedFields.registrations = ad.increase_registrations;
+              }
+              if (ad.increase_registration_cost !== undefined) {
+                modifiedFields.registration_cost = ad.increase_registration_cost;
+              }
+              if (ad.increase_purchases !== undefined) {
+                modifiedFields.purchases = ad.increase_purchases;
+              }
+              if (ad.increase_clicks !== undefined) {
+                modifiedFields.clicks = ad.increase_clicks;
               }
               if (ad.increase_registrations !== undefined) {
                 modifiedFields.registrations = ad.increase_registrations;
@@ -417,7 +435,9 @@ const saveChanges = async () => {
             registrations: ad.registrations || 0,
             increase_registrations: ad.increase_registrations || 0,
             registration_cost: ad.registration_cost || 0,
-            increase_registration_cost: ad.increase_registration_cost || 0
+            increase_registration_cost: ad.increase_registration_cost || 0,
+            purchases: ad.purchases || 0,
+            increase_purchases: ad.increase_purchases || 0,
           },
           modifiedFields: modifiedFields
         };
