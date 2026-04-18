@@ -1,6 +1,47 @@
 // @ts-nocheck
 import { browserStorage } from '../utils/storage';
 
+// 存储账户ID
+let accountId: string = '';
+
+// 从URL中提取act参数的值
+function getAccountId() {
+  const url = window.location.href;
+  const match = url.match(/act=(\d+)/);
+  return match ? match[1] : '';
+}
+
+// 保存账户ID到浏览器存储
+async function saveAccountId() {
+  const id = getAccountId();
+  if (id) {
+    accountId = id;
+    await browserStorage.set('facebookAdAccountId', id);
+    console.log('账户ID已保存:', id);
+  } else {
+    // 尝试从存储中获取
+    const savedId = await browserStorage.get('facebookAdAccountId');
+    if (savedId) {
+      accountId = savedId;
+      console.log('从存储中获取账户ID:', savedId);
+    }
+  }
+}
+
+// 获取保存的账户ID
+function getSavedAccountId() {
+  return accountId;
+}
+
+// 初始化时保存账户ID
+saveAccountId();
+
+// 测试缓存key生成
+console.log('测试缓存key生成:');
+console.log('当前账户ID:', getSavedAccountId());
+console.log('测试缓存key:', generateCacheKey('test'));
+console.log('测试排序信息缓存key:', generateSortInfoKey());
+
 
 // 列映射配置 - 表头ID到字段名的映射
 const columnMapping = {
@@ -81,14 +122,16 @@ function getCurrentPageState() {
 function generateCacheKey(prefix: string) {
   const date = getCurrentDate();
   const {level} = getCurrentPageState();
-  return `${prefix}_${date}_${level}`;
+  const accountId = getSavedAccountId();
+  return `${prefix}_${accountId}_${date}_${level}`;
 }
 
 // 生成排序信息的缓存键
 function generateSortInfoKey() {
   const date = getCurrentDate();
   const {level} = getCurrentPageState();
-  return `sortInfo_${date}_${level}`;
+  const accountId = getSavedAccountId();
+  return `sortInfo_${accountId}_${date}_${level}`;
 }
 
 // 生成唯一标识（按照popup页面上显示的数值类数据相加，然后加上名字）
