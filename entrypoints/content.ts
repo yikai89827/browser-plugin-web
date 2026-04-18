@@ -1488,33 +1488,33 @@ async function extractAdsFromDom() {
     // 解析表头，确定各列的索引
     const headerCells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
     
+    // 表头文本到字段名的映射表
+    const headerFieldMap = [
+      { field: 'name', labels: ['campaign', '活动', 'ad set', '广告组', 'ad', '广告'] },
+      { field: 'results', labels: ['results', '成效', '结果'] },
+      { field: 'spend', labels: ['amount spent', '花费', '金额', '支出金额'] },
+      { field: 'impressions', labels: ['impressions', '展示', '印象'] },
+      { field: 'reach', labels: ['reach', '覆盖', '抵达'] },
+      { field: 'costPerResult', labels: ['cost per result', '单次成效', '每次结果成本'] },
+      { field: 'registrations', labels: ['registrations','registrations completed', '注册', '注册量', '注册已完成'] },
+      { field: 'registration_cost', labels: ['registration cost', '注册成本', ] },
+      { field: 'purchases', labels: ['purchases', '购买', '购买量', '购买次数'] },
+      { field: 'clicks', labels: ['clicks', '点击', '点击量', '点击(全部)'] }
+    ];
+    
     // 首先找出固定列的数量（通常只有名称列是固定的）
     headerCells.forEach((cell, index) => {
-      // 获取单元格的文本内容，排除子元素的文本
+      // 获取单元格的文本内容，转换为小写进行匹配
       const text = cell.textContent?.trim().toLowerCase();
       if (text) {
         console.log(`表头列 ${index}: ${text}`);
         
-        // 匹配常见的表头文本
-        if (text==='Campaign' || text==='活动'||text==='ad set' || text==='广告组'|| text==='ad' || text==='广告') {
-          DomColumnMapping.name = index;
-        } else if (text==='results' || text==='成效'|| text==='结果') {
-          // 滚动列的索引需要减去固定列的数量
-          DomColumnMapping.results = index;
-        } else if (text==='amount spent' || text==='花费' || text==='金额' || text==='支出金额') {
-          DomColumnMapping.spend = index;
-        } else if (text==='impressions' || text==='展示' || text==='印象') {
-          DomColumnMapping.impressions = index;  
-        } else if (text==='reach' || text==='覆盖' || text==='抵达') {
-          DomColumnMapping.reach = index;
-        } else if (text==='cost per result' || text==='单次成效' || text==='每次结果成本') {
-          DomColumnMapping.costPerResult = index;
-        }else if (text==='website clicks' || text==='网站点击' || text==='网站点击量') {
-          DomColumnMapping.website_clicks = index;
-        } else if (text==='registrations' || text==='注册' || text==='注册量') {
-          DomColumnMapping.registrations = index;
-        } else if (text==='registration cost' || text==='注册成本' || text==='注册成本') {
-          DomColumnMapping.registration_cost = index;
+        // 遍历映射表，查找匹配的字段
+        for (const { field, labels } of headerFieldMap) {
+          if (labels.some(label => text === label.toLowerCase())) {
+            DomColumnMapping[field] = index;
+            break;
+          }
         }
       }
     });
@@ -1590,12 +1590,14 @@ async function extractAdsFromDom() {
         costPerResult: 0,
         increase_costPerResult: 0,
         other_events: 0,
-        website_clicks: 0,
-        increase_clicks: 0,
         registrations: 0,
         increase_registrations: 0,
         registration_cost: 0,
-        increase_registration_cost: 0
+        increase_registration_cost: 0,
+        purchases: 0,
+        increase_purchases: 0,
+        clicks: 0,
+        increase_clicks: 0
       };
       
       // 检查本地存储中是否有对应的广告数据
@@ -1644,9 +1646,10 @@ async function extractAdsFromDom() {
             ad.increase_spend = rowData.modifiedFields.spend || 0;
             ad.increase_results = rowData.modifiedFields.results || 0;
             ad.increase_costPerResult = rowData.modifiedFields.costPerResult || 0;
-            ad.increase_clicks = rowData.modifiedFields.clicks || 0;
             ad.increase_registrations = rowData.modifiedFields.registrations || 0;
             ad.increase_registration_cost = rowData.modifiedFields.registration_cost || 0;
+            ad.increase_purchases = rowData.modifiedFields.purchases || 0;
+            ad.increase_clicks = rowData.modifiedFields.clicks || 0;
             console.log(`找到存储的广告数据 ${name} (ID: ${ad.id}):`, rowData);
             console.log(`提取的原始值: ${ad.reach}, 增加值: ${ad.increase_reach}`);
           }
