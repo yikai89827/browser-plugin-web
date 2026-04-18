@@ -97,12 +97,11 @@ const fieldMappingConfig = [
   { field: 'clicks', labels: ['clicks', 'clicks(all)', '点击', '点击量', '点击(全部)'] },
 ];
 
-// 定义需要计算的数值字段（排除DOM中暂时没有的字段）
-const numericFields = [
-  'impressions', 'reach', 'spend','clicks','registrations','purchases'
-  // 排除以下字段，因为DOM中暂时没有
-  // 'registration_cost','results', 'costPerResult'
-];
+// 非数值字段（不参与数值计算的字段）
+const nonNumericFields = ['name'];
+
+// 从columnMapping动态计算需要计算的数值字段
+const numericFields = Object.keys(columnMapping).filter(field => !nonNumericFields.includes(field));
 
 // 存储列索引
 let columnIndices: Record<string, number> = {};
