@@ -2,32 +2,8 @@
 // 负责从DOM中提取广告数据，包括编号字段
 
 import { AdEntity, AdLevel } from './hierarchy';
-// 临时定义配置，避免模块导入错误
-const columnMapping: Record<string, string> = {
-  campaign_id: 'campaign_id',
-  adset_id: 'adset_id',
-  ad_id: 'ad_id',
-  name: 'name',
-  impressions: 'impressions',
-  reach: 'reach',
-  spend: 'spend',
-  clicks: 'clicks',
-  registrations: 'registrations',
-  purchases: 'purchases'
-};
-
-const fieldMappingConfig: Array<{ field: string; labels: string[] }> = [
-  { field: 'campaign_id', labels: ['Campaign ID', '编号'] },
-  { field: 'adset_id', labels: ['Ad Set ID', '编号'] },
-  { field: 'ad_id', labels: ['Ad ID', '编号'] },
-  { field: 'name', labels: ['Name', '名称'] },
-  { field: 'impressions', labels: ['Impressions', '展示次数'] },
-  { field: 'reach', labels: ['Reach', '覆盖人数'] },
-  { field: 'spend', labels: ['Spend', '花费'] },
-  { field: 'clicks', labels: ['Clicks', '点击次数'] },
-  { field: 'registrations', labels: ['Registrations', '注册'] },
-  { field: 'purchases', labels: ['Purchases', '购买'] }
-];
+import {  numericFields } from './config';
+import { getTableDataRows, findTableContainer, getColumnIndicesSync } from './dom';
 
 // 列索引映射
 export interface ColumnIndices {
@@ -46,7 +22,8 @@ class DataExtractor {
   // 从DOM提取数据
   extractFromDom(): ExtractionResult {
     const level = this.detectCurrentLevel();
-    const columnIndices = this.extractColumnIndices();
+    // 使用dom.ts中的函数获取列索引
+    const columnIndices = getColumnIndicesSync();
     const entities = this.extractEntities(level, columnIndices);
     
     return {
@@ -63,82 +40,58 @@ class DataExtractor {
     }
 
     const path = window.location.pathname;
-    if (path.includes('/campaigns/')) {
+    // 分割路径并获取最后一部分
+    const pathParts = path.split('/').filter(part => part.trim() !== '');
+    const lastPart = pathParts[pathParts.length - 1];
+    
+    if (lastPart === 'campaigns') {
       return 'Campaigns';
-    } else if (path.includes('/adsets/')) {
+    } else if (lastPart === 'adsets') {
       return 'Adsets';
-    } else if (path.includes('/ads/')) {
+    } else if (lastPart === 'ads') {
       return 'Ads';
     }
     return 'Campaigns';
   }
 
-  // 提取列索引
-  private extractColumnIndices(): ColumnIndices {
-    const result: ColumnIndices = {};
-    const headerRow = document.querySelector('[role="table"] thead tr');
-    
-    if (headerRow) {
-      const cells = Array.from(headerRow.querySelectorAll('[role="columnheader"]'));
-      
-      cells.forEach((cell, index) => {
-        const cellId = cell?.children[0]?.children[0]?.id || '';
-        const cellText = cell?.textContent?.trim().toLowerCase() || '';
-        
-        // 通过ID模式匹配
-        for (const [field, idPattern] of Object.entries(columnMapping)) {
-          if (cellId.includes(idPattern as string)) {
-            result[field] = index;
-            break;
-          }
-        }
-        
-        // 通过文本匹配
-        if (!Object.keys(result).length) {
-          for (const { field, labels } of fieldMappingConfig) {
-            if (labels.some((label: string) => cellText === label.toLowerCase())) {
-              result[field] = index;
-              break;
-            }
-          }
-        }
-      });
-    }
-    
-    return result;
-  }
-
   // 提取广告实体
   private extractEntities(level: AdLevel, columnIndices: ColumnIndices): AdEntity[] {
     const entities: AdEntity[] = [];
-    const tableBody = document.querySelector('[role="table"] tbody');
     
-    if (tableBody) {
-      const rows = Array.from(tableBody.querySelectorAll('[role="row"]'));
-      
-      rows.forEach((row, rowIndex) => {
-        const entity = this.extractEntityFromRow(row, level, columnIndices, rowIndex);
-        if (entity) {
-          entities.push(entity);
-        }
-      });
+    // 使用dom.ts中的函数找到表格容器
+    const tableContainer = findTableContainer();
+    if (!tableContainer) {
+      console.warn('extractEntities: 未找到表格容器');
+      return entities;
     }
+    
+    // 使用dom.ts中的函数获取表格数据行
+    const rowPairs = getTableDataRows(tableContainer);
+    
+    rowPairs.forEach((rowPair, rowIndex) => {
+      const entity = this.extractEntityFromRowPair(rowPair, level, columnIndices, rowIndex);
+      if (entity) {
+        entities.push(entity);
+      }
+    });
     
     return entities;
   }
 
-  // 从行中提取广告实体
-  private extractEntityFromRow(row: Element, level: AdLevel, columnIndices: ColumnIndices, rowIndex: number): AdEntity | null {
-    const cells = Array.from(row.querySelectorAll('[role="gridcell"]'));
+  // 从行对中提取广告实体
+  private extractEntityFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTMLElement }, level: AdLevel, columnIndices: ColumnIndices, rowIndex: number): AdEntity | null {
+    // 从固定列提取名称
+    const nameDiv = rowPair.fixed.querySelector('div');
+    const name = nameDiv?.textContent?.trim() || '';
+    
+    // 从可滚动列提取数据
+    const cells = Array.from(rowPair.scrollable.querySelectorAll('div'));
     
     // 提取编号字段（ID）
     const id = this.extractId(cells, level, columnIndices);
     if (!id) {
       return null;
     }
-    
-    // 提取名称
-    const name = this.extractName(cells, columnIndices);
     
     // 提取数值字段
     const values = this.extractValues(cells, columnIndices);
@@ -173,19 +126,9 @@ class DataExtractor {
     }
   }
 
-  // 提取名称
-  private extractName(cells: Element[], columnIndices: ColumnIndices): string {
-    return this.extractCellValue(cells, columnIndices, 'name') || 'Unknown';
-  }
-
   // 提取数值字段
-  private extractValues(cells: Element[], columnIndices: ColumnIndices): Record<string, number> {
+  private extractValues(cells: Element[], columnIndices: ColumnIndices): Record<string, number> {// 提取数值字段
     const values: Record<string, number> = {};
-    
-    const numericFields = [
-      'impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'
-    ];
-    
     numericFields.forEach(field => {
       const value = this.extractCellValue(cells, columnIndices, field);
       if (value) {

@@ -11,7 +11,7 @@ export let fixedColumnLength = 1;
 export let columnIndices: Record<string, number> = {};
 
 // 找到表格容器
-function findTableContainer(): HTMLElement | null {
+export function findTableContainer(): HTMLElement | null {
   const selectors = [
     'div[role="table"]',
     'div._3hi._1mie[role="table"]',
@@ -33,7 +33,7 @@ function findTableContainer(): HTMLElement | null {
 }
 
 // 获取表格数据行 - 处理固定行和可滚动行
-function getTableDataRows(tableContainer: HTMLElement): Array<{ fixed: HTMLElement; scrollable: HTMLElement }> {
+export function getTableDataRows(tableContainer: HTMLElement): Array<{ fixed: HTMLElement; scrollable: HTMLElement }> {
   const rowPairs: Array<{ fixed: HTMLElement; scrollable: HTMLElement }> = [];
 
   try {
