@@ -477,7 +477,7 @@ export default {
       if (message.action === 'getAdsFromDom') {
         return handleGetAdsFromDom(sendResponse);
       } else if (message.action === 'refreshPageWithData') {
-        return handleRefreshPageWithData(message.sortInfo, sendResponse);
+        return handleRefreshPageWithData(message, sendResponse);
       } else if (message.action === 'getCachedData') {
         return handleGetCachedData(message.date, sendResponse);
       } else if (message.action === 'saveCachedData') {

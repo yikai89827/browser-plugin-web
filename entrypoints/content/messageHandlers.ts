@@ -151,12 +151,12 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
 }
 
 // 消息处理函数 - 刷新页面数据
-export function handleRefreshPageWithData(data: { id: string; fields: Record<string, number> }, sendResponse: (response: any) => void): boolean {
+export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[] }, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
       
-      const { id, fields } = data;
+      const { modifications } = data;
       
       // 找到表体
       const tableBody = findTableBody();
@@ -168,19 +168,38 @@ export function handleRefreshPageWithData(data: { id: string; fields: Record<str
       // 过滤有效的行
       const filteredRows = getFilteredRows(tableBody);
       
-      // 查找匹配的行
-      const foundRow = findRowById(filteredRows, id);
-      if (!foundRow) {
-        console.warn(`刷新页面数据: 未找到匹配的行: ${id}`);
-        sendResponse({ success: false, error: `未找到匹配的行: ${id}` });
-        return;
+      // 处理每个修改项
+      let successCount = 0;
+      let failCount = 0;
+      
+      for (const modification of modifications) {
+        if (modification && modification.completeData) {
+          const id = modification.completeData.id;
+          const modifiedFields = modification.modifiedFields;
+          
+          if (!id || !modifiedFields || Object.keys(modifiedFields).length === 0) {
+            console.warn('刷新页面数据: 修改项缺少id或modifiedFields');
+            failCount++;
+            continue;
+          }
+          
+          // 查找匹配的行
+          const foundRow = findRowById(filteredRows, id);
+          if (!foundRow) {
+            console.warn(`刷新页面数据: 未找到匹配的行: ${id}`);
+            failCount++;
+            continue;
+          }
+          
+          // 更新行数据
+          await updateRowData(foundRow.scrollable, foundRow.fixed, modifiedFields);
+          console.log(`已刷新页面数据行: ${id}`, modifiedFields);
+          successCount++;
+        }
       }
       
-      // 更新行数据
-      await updateRowData(foundRow.scrollable, foundRow.fixed, fields);
-      console.log(`已刷新页面数据行: ${id}`, fields);
-      
-      sendResponse({ success: true });
+      console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
+      sendResponse({ success: true, successCount, failCount });
     } catch (error: any) {
       console.error('刷新页面数据错误:', error);
       sendResponse({ success: false, error: error.message });
@@ -248,6 +267,122 @@ export function handleSaveCachedData(data: { date: string; ads: any; columnMappi
   return true;
 }
 
+// 处理修改数据，建立层级关系
+function processModifications(modifications: any[], currentLevel: string) {
+  return modifications.map(item => {
+    if (item && item.completeData) {
+      const completeData = item.completeData;
+      
+      // 根据当前层级建立parentId关系
+      let parentId: string | undefined;
+      if (currentLevel === 'Adsets' && completeData.campaign_id) {
+        parentId = completeData?.campaign_id || '';
+      } else if (currentLevel === 'Ads' && completeData.adset_id) {
+        parentId = completeData?.adset_id || '';
+      }
+      
+      return { 
+        ...item, 
+        level: currentLevel,
+        parentId: parentId,
+        campaign_id: completeData?.campaign_id || '',
+        adset_id: completeData?.adset_id || ''
+      };
+    }
+    // 如果completeData为null，跳过这个修改项
+    return null;
+  }).filter(item => item !== null);
+}
+
+// 生成同步任务
+function generateSyncTasks(modificationsWithId: any[], currentLevel: string) {
+  const syncTasks: Array<{
+    sourceEntity: {
+      id: string;
+      name: string;
+      level: string;
+      parentId?: string;
+      grandParentId?: string;
+    };
+    modifiedFields: Record<string, number>;
+    syncDirection: 'down' | 'up';
+    timestamp: number;
+  }> = [];
+  
+  modificationsWithId.forEach(item => {
+    if (item && item.completeData && item.modifiedFields && Object.keys(item.modifiedFields).length > 0) {
+      // 向下同步：父级修改同步到子级
+      if (currentLevel === 'Campaigns') {
+        syncTasks.push({
+          sourceEntity: {
+            id: item.completeData.id,
+            name: item.completeData.name || 'Unknown',
+            level: currentLevel
+          },
+          modifiedFields: item.modifiedFields,
+          syncDirection: 'down',
+          timestamp: Date.now()
+        });
+      }
+      // 向上同步：子级修改同步到父级
+      else if (currentLevel === 'Adsets') {
+        syncTasks.push({
+          sourceEntity: {
+            id: item.completeData.id,
+            name: item.completeData.name || 'Unknown',
+            level: currentLevel,
+            parentId: item.parentId,
+            grandParentId: item.campaign_id
+          },
+          modifiedFields: item.modifiedFields,
+          syncDirection: 'up',
+          timestamp: Date.now()
+        });
+      }
+      else if (currentLevel === 'Ads') {
+        syncTasks.push({
+          sourceEntity: {
+            id: item.completeData.id,
+            name: item.completeData.name || 'Unknown',
+            level: currentLevel,
+            parentId: item.parentId,
+            grandParentId: item.campaign_id
+          },
+          modifiedFields: item.modifiedFields,
+          syncDirection: 'up',
+          timestamp: Date.now()
+        });
+      }
+    }
+  });
+  
+  return syncTasks;
+}
+
+// 执行同步
+async function executeSync(modificationsWithId: any[], currentLevel: string) {
+  // 在当前tab直接执行数值更新（因为当前tab的数据已经在DOM中）
+  const entities: AdEntity[] = modificationsWithId.map(item => ({
+    id: item?.completeData?.id || '',
+    name: item?.completeData?.name || '',
+    level: item?.level || currentLevel,
+    parentId: item?.parentId || '',
+    values: item?.completeData || {},
+    increaseValues: item?.modifiedFields || {}
+  }));
+  
+  // 过滤掉没有ID的实体
+  const validEntities = entities.filter(entity => entity.id);
+  
+  // 检测层级关系
+  hierarchyManager.detectHierarchy(validEntities);
+  
+  // 执行同步（更新当前tab的DOM）
+  const syncResult = await valueSyncManager.batchSync(validEntities, currentLevel === 'Campaigns' ? 'down' : 'up');
+  console.log('当前tab数值同步结果:', syncResult);
+  
+  return syncResult;
+}
 // 消息处理函数 - 保存修改数据
 export function handleSaveModifications(data: { date: string; modifications: any[] }, sendResponse: (response: any) => void): boolean {
   const { modifications } = data;
@@ -258,29 +393,7 @@ export function handleSaveModifications(data: { date: string; modifications: any
       const currentLevel = pageState.level || 'Campaigns';
       
       // 处理修改数据，建立层级关系
-      const modificationsWithId = modifications.map(item => {
-        if (item && item.completeData) {
-          const completeData = item.completeData;
-          
-          // 根据当前层级建立parentId关系
-          let parentId: string | undefined;
-          if (currentLevel === 'Adsets' && completeData.campaign_id) {
-            parentId = completeData?.campaign_id || '';
-          } else if (currentLevel === 'Ads' && completeData.adset_id) {
-            parentId = completeData?.adset_id || '';
-          }
-          
-          return { 
-            ...item, 
-            level: currentLevel,
-            parentId: parentId,
-            campaign_id: completeData?.campaign_id || '',
-            adset_id: completeData?.adset_id || ''
-          };
-        }
-        // 如果completeData为null，跳过这个修改项
-        return null;
-      }).filter(item => item !== null);
+      const modificationsWithId = processModifications(modifications, currentLevel);
       
       const modificationsKey = await generateCacheKey('ad_modifications');
       const syncTasksKey = await generateCacheKey('sync_tasks');
@@ -297,66 +410,7 @@ export function handleSaveModifications(data: { date: string; modifications: any
       
       // 生成同步任务
       if (modificationsWithId.length > 0) {
-        // 为每个修改的实体生成同步任务
-        const syncTasks: Array<{
-          sourceEntity: {
-            id: string;
-            name: string;
-            level: string;
-            parentId?: string;
-            grandParentId?: string;
-          };
-          modifiedFields: Record<string, number>;
-          syncDirection: 'down' | 'up';
-          timestamp: number;
-        }> = [];
-        
-        modificationsWithId.forEach(item => {
-          if (item && item.completeData && item.modifiedFields && Object.keys(item.modifiedFields).length > 0) {
-            // 向下同步：父级修改同步到子级
-            if (currentLevel === 'Campaigns') {
-              syncTasks.push({
-                sourceEntity: {
-                  id: item.completeData.id,
-                  name: item.completeData.name || 'Unknown',
-                  level: currentLevel
-                },
-                modifiedFields: item.modifiedFields,
-                syncDirection: 'down',
-                timestamp: Date.now()
-              });
-            }
-            // 向上同步：子级修改同步到父级
-            else if (currentLevel === 'Adsets') {
-              syncTasks.push({
-                sourceEntity: {
-                  id: item.completeData.id,
-                  name: item.completeData.name || 'Unknown',
-                  level: currentLevel,
-                  parentId: item.parentId,
-                  grandParentId: item.campaign_id
-                },
-                modifiedFields: item.modifiedFields,
-                syncDirection: 'up',
-                timestamp: Date.now()
-              });
-            }
-            else if (currentLevel === 'Ads') {
-              syncTasks.push({
-                sourceEntity: {
-                  id: item.completeData.id,
-                  name: item.completeData.name || 'Unknown',
-                  level: currentLevel,
-                  parentId: item.parentId,
-                  grandParentId: item.campaign_id
-                },
-                modifiedFields: item.modifiedFields,
-                syncDirection: 'up',
-                timestamp: Date.now()
-              });
-            }
-          }
-        });
+        const syncTasks = generateSyncTasks(modificationsWithId, currentLevel);
         
         // 保存同步任务
         if (syncTasks.length > 0) {
@@ -364,25 +418,8 @@ export function handleSaveModifications(data: { date: string; modifications: any
           console.log('已保存同步任务:', syncTasks);
         }
         
-        // 在当前tab直接执行数值更新（因为当前tab的数据已经在DOM中）
-        const entities: AdEntity[] = modificationsWithId.map(item => ({
-          id: item?.completeData?.id || '',
-          name: item?.completeData?.name || '',
-          level: item?.level || currentLevel,
-          parentId: item?.parentId || '',
-          values: item?.completeData || {},
-          increaseValues: item?.modifiedFields || {}
-        }));
-        
-        // 过滤掉没有ID的实体
-        const validEntities = entities.filter(entity => entity.id);
-        
-        // 检测层级关系
-        hierarchyManager.detectHierarchy(validEntities);
-        
-        // 执行同步（更新当前tab的DOM）
-        const syncResult = await valueSyncManager.batchSync(validEntities, currentLevel === 'Campaigns' ? 'down' : 'up');
-        console.log('当前tab数值同步结果:', syncResult);
+        // 执行同步
+        await executeSync(modificationsWithId, currentLevel);
       }
       
       sendResponse({ success: true, isFirstSave: true });

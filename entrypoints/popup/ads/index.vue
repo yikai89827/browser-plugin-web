@@ -427,7 +427,7 @@ const saveChanges = async () => {
     console.log('当前排序信息:', sortInfo);
     
     // 向content script发送消息，通知页面刷新
-    await sendMessageToContent('refreshPageWithData', { sortInfo });
+    await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray });
     
     // 保存完成后重新渲染页面
     // await fetchAds();
@@ -491,9 +491,6 @@ const checkCacheOnMount = async () => {
             }
             if (rowData.modifiedFields.results !== undefined) {
               ad.increase_results = rowData.modifiedFields.results;
-            }
-            if (rowData.modifiedFields.website_clicks !== undefined) {
-              ad.increase_website_clicks = rowData.modifiedFields.website_clicks;
             }
             if (rowData.modifiedFields.registrations !== undefined) {
               ad.increase_registrations = rowData.modifiedFields.registrations;
