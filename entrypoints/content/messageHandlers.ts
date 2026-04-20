@@ -6,7 +6,7 @@ import { dataExtractor } from './dataExtractor';
 import { hierarchyManager, AdEntity } from './hierarchy';
 import { valueSyncManager } from './syncValue';
 import { generateCacheKey, generateSortInfoKey } from './cache';
-import { columnIndices, detectSortInfo, findTableContainer, getColumnIndices, getColumnIndicesSync } from './dom';
+import { detectSortInfo, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows } from './dom';
 import { getCurrentPageState } from './date';
 
 // 消息处理函数 - 从DOM获取广告数据
@@ -70,17 +70,6 @@ function findTableBody(): HTMLElement | null {
   }
   
   return tableBody as HTMLElement;
-}
-
-// 过滤有效的表格行
-function getFilteredRows(tableBody: HTMLElement): Array<HTMLElement> {
-  const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
-  
-  return Array.from(presentationRows).filter((row) => {
-    const hasGrandchildren = row.children[0]?.children.length > 0;
-    const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
-    return hasGrandchildren && hasNonSvgchildren;
-  }) as Array<HTMLElement>;
 }
 
 // 根据ID查找行

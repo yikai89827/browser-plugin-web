@@ -31,37 +31,46 @@ export function findTableContainer(): HTMLElement | null {
   return null;
 }
 
-// 获取表格数据行 - 处理固定行和可滚动行
-export function getTableDataRows(tableContainer: HTMLElement): Array<{ fixed: HTMLElement; scrollable: HTMLElement }> {
-  const rowPairs: Array<{ fixed: HTMLElement; scrollable: HTMLElement }> = [];
+// 获取表格展示行 - 公共函数
+export function getTablePresentationRows(tableContainer: HTMLElement): Array<HTMLElement> {
+  const presentationRows: Array<HTMLElement> = [];
 
   try {
     // 找到表头行
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
       console.log('未找到表头行');
-      return rowPairs;
+      return presentationRows;
     }
 
     // 获取表头行的下一个兄弟元素（表体元素）
     const tableBody = headerRow.nextElementSibling;
     if (!tableBody) {
       console.log('未找到表体');
-      return rowPairs;
+      return presentationRows;
     }
 
-    // 找到所有role=presentation的元素（每一行的容器）
-    const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
+    // 过滤有效的行
+    presentationRows.push(...getFilteredRows(tableBody as HTMLElement));
 
-    // 过滤掉没有孙子元素的节点，以及孙子元素是SVG的节点
-    const filteredPresentationRows = Array.from(presentationRows).filter((row) => {
-      const hasGrandchildren = row.children[0]?.children.length > 0;
-      const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
-      return hasGrandchildren && hasNonSvgchildren;
-    });
+  } catch (error) {
+    console.error('获取表格展示行错误:', error);
+  }
+
+  console.log('找到展示行:', presentationRows.length);
+  return presentationRows;
+}
+
+// 获取表格数据行 - 处理固定行和可滚动行
+export function getTableDataRows(tableContainer: HTMLElement): Array<{ fixed: HTMLElement; scrollable: HTMLElement }> {
+  const rowPairs: Array<{ fixed: HTMLElement; scrollable: HTMLElement }> = [];
+
+  try {
+    // 获取展示行
+    const presentationRows = getTablePresentationRows(tableContainer);
 
     // 处理过滤后的节点
-    filteredPresentationRows.forEach((presentationRow) => {
+    presentationRows.forEach((presentationRow) => {
       const children = presentationRow.children;
       if (children.length === 1) {
         const firstChild = children[0] as HTMLElement;
@@ -149,7 +158,6 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   // 从可滚动列提取数据
   const scrollableElements = rowPair.scrollable.children[0]?.children || [];
   const cells = Array.from(scrollableElements);
-  console.log(`  → 可滚动列单元格数量: ${cells.length}`);
   const values: Record<string, string> = {};
   
   for (const [field, originalIndex] of Object.entries(columnIndices)) {
@@ -393,78 +401,42 @@ export function getAdRowElement(adRow: any): Element | null {
   if (adRow.id) {
     let tableContainer = findTableContainer();
     if (tableContainer) {
-      const headerRow = tableContainer.querySelector('[role="row"]');
-      if (headerRow) {
-        const tableBody = headerRow.nextElementSibling;
-        if (tableBody) {
-          const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
+      // 获取展示行
+      const presentationRows = getTablePresentationRows(tableContainer);
+      
+      // 获取列索引
+      const columnIndices = getColumnIndicesSync();
+      
+      // 根据当前层级选择正确的ID列名
+      const idColumn = getIdColumn();
+      
+      for (const presentationRow of presentationRows) {
+        const children = presentationRow.children;
+        if (children.length === 1) {
+          const firstChild = children[0] as HTMLElement;
+          const grandchildren = firstChild.children;
           
-          // 获取列索引
-          const columnIndices = getColumnIndicesSync();
-          
-          // 根据当前层级选择正确的ID列名
-          const idColumn = getIdColumn();
-          
-          for (const presentationRow of Array.from(presentationRows)) {
-            const children = presentationRow.children;
-            if (children.length === 1) {
-              const firstChild = children[0] as HTMLElement;
-              const grandchildren = firstChild.children;
-              
-              if (grandchildren.length >= 2) {
-                const fixed = grandchildren[0] as HTMLElement;
-                const scrollable = grandchildren[1] as HTMLElement;
-                
-                // 计算固定列长度
-                fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
-                
-                // 查找编号列
-                const scrollableCells = scrollable.children[0]?.children || [];
-                if (scrollableCells.length > 0 && columnIndices[idColumn]) {
-                  // 计算滚动列的索引（减去固定列的长度）
-                  const idColumnIndex = columnIndices[idColumn];
-                  const scrollableIndex = idColumnIndex - fixedColumnLength;
-                  
-                  if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
-                    const idCell = scrollableCells[scrollableIndex];
-                    const idText = idCell?.textContent?.trim() || '';
-                    
-                    if (idText === adRow.id) {
-                      return presentationRow as Element;
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  // 然后尝试通过名称查找
-  let tableContainer = findTableContainer();
-
-  if (tableContainer) {
-    const headerRow = tableContainer.querySelector('[role="row"]');
-    if (headerRow) {
-      const tableBody = headerRow.nextElementSibling;
-      if (tableBody) {
-        const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
-        
-        for (const presentationRow of Array.from(presentationRows)) {
-          const children = presentationRow.children;
-          if (children.length === 1) {
-            const firstChild = children[0] as HTMLElement;
-            const grandchildren = firstChild.children;
+          if (grandchildren.length >= 2) {
+            const fixed = grandchildren[0] as HTMLElement;
+            const scrollable = grandchildren[1] as HTMLElement;
             
-            if (grandchildren.length >= 2) {
-              const fixed = grandchildren[0] as HTMLElement;
-              const nameDiv = fixed?.querySelector('div');
-              const rowName = nameDiv?.textContent?.trim() || '';
+            // 计算固定列长度
+            fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+            
+            // 查找编号列
+            const scrollableCells = scrollable.children[0]?.children || [];
+            if (scrollableCells.length > 0 && columnIndices[idColumn]) {
+              // 计算滚动列的索引（减去固定列的长度）
+              const idColumnIndex = columnIndices[idColumn];
+              const scrollableIndex = idColumnIndex - fixedColumnLength;
               
-              if (rowName === adRow.name || rowName.includes(adRow.name) || adRow.name.includes(rowName)) {
-                return presentationRow as Element;
+              if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
+                const idCell = scrollableCells[scrollableIndex];
+                const idText = idCell?.textContent?.trim() || '';
+                
+                if (idText === adRow.id) {
+                  return presentationRow as Element;
+                }
               }
             }
           }
@@ -516,31 +488,23 @@ export async function updateRowDataWithScrollable(presentationRow: HTMLElement, 
 
   await Promise.all(updatePromises);
 }
+// 过滤有效的表格行
+export function getFilteredRows(tableBody: HTMLElement): Array<HTMLElement> {
+  const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
+  
+  return Array.from(presentationRows).filter((row) => {
+    const hasGrandchildren = row.children[0]?.children.length > 0;
+    const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
+    return hasGrandchildren && hasNonSvgchildren;
+  }) as Array<HTMLElement>;
+}
 
 // 通过实体在DOM中查找并更新行
 export async function updateDomRowByEntity(entity: any, data: Record<string, number>) {
   // 找到表格容器
   const tableContainer = findTableContainer();
-  if (!tableContainer) {
-    console.warn('updateDomRowByEntity: 未找到表格容器');
-    return;
-  }
-
-  // 获取表格数据行
-  const headerRow = tableContainer.querySelector('[role="row"]');
-  if (!headerRow) return;
-
-  const tableBody = headerRow.nextElementSibling;
-  if (!tableBody) return;
-
-  const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
-
-  // 过滤有效的行
-  const filteredRows = Array.from(presentationRows).filter((row) => {
-    const hasGrandchildren = row.children[0]?.children.length > 0;
-    const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
-    return hasGrandchildren && hasNonSvgchildren;
-  });
+  // 获取展示行
+  const filteredRows = getTablePresentationRows(tableContainer as HTMLElement);
 
   // 遍历查找匹配的行
   for (const presentationRow of filteredRows) {
