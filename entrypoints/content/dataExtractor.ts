@@ -180,7 +180,7 @@ class DataExtractor {
         continue; // 跳过name字段，只在AdEntity对象中存储
       }
       
-      console.log(`  → 处理字段值: ${field} = ${value}`);
+      // console.log(`  → 处理字段值: ${field} = ${value}`);
       if (value) {
         // 检查是否为数值字段
         if (numericFields.includes(field)) {
