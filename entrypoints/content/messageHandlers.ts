@@ -203,6 +203,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
         if (modification && modification.completeData) {
           const { completeData, modifiedFields } = modification;
           const id = completeData.id;
+          // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果，
           const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
             if (completeData.hasOwnProperty(key)) {
               acc[key] = completeData[key] + modifiedFields[key];
