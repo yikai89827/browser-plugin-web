@@ -11,16 +11,16 @@ export type SyncDirection = 'up' | 'down'; // up: 向上同步（子级到父级
 // 同步结果
 export interface SyncResult {
   [x: string]: number;
-  success: boolean;
-  syncedEntities: AdEntity[];
-  message: string;
+  success: any;
+  syncedEntities: any;
+  message: any;
 }
 
 // 数值同步管理器
 class ValueSyncManager {
   // 向下同步：从父级同步到子级
   async syncDown(fromEntity: AdEntity, fields: string[] = numericFields): Promise<SyncResult> {
-    const syncedEntities: AdEntity[] = [];
+    const syncedEntities: any = [];
     
     try {
       // 广告系列 -> 广告组
@@ -39,10 +39,7 @@ class ValueSyncManager {
             syncedEntities.push(adRow);
           }
         }
-      }
-      
-      // 广告组 -> 广告
-      else if (fromEntity.level === 'Adsets') {
+      } else if (fromEntity.level === 'Adsets') {
         const adRow = this.findChildRowInDom(fromEntity.id, 'Ads');
         if (adRow) {
           await this.syncValuesToDom(adRow, fromEntity, fields);
@@ -50,17 +47,19 @@ class ValueSyncManager {
         }
       }
       
-      return {
+      const result: any = {
         success: true,
         syncedEntities,
         message: `成功向下同步 ${syncedEntities.length} 个实体`
       };
+      return result;
     } catch (error: any) {
-      return {
+      const result: any = {
         success: false,
         syncedEntities,
         message: `同步失败: ${error?.message || '未知错误'}`
       };
+      return result;
     }
   }
 
@@ -94,17 +93,19 @@ class ValueSyncManager {
         }
       }
       
-      return {
+      const result: any = {
         success: true,
         syncedEntities,
         message: `成功向上同步 ${syncedEntities.length} 个实体`
       };
+      return result;
     } catch (error: any) {
-      return {
+      const result: any = {
         success: false,
         syncedEntities,
         message: `同步失败: ${error?.message || '未知错误'}`
       };
+      return result;
     }
   }
 
@@ -225,11 +226,12 @@ class ValueSyncManager {
       }
     }
     
-    return {
+    const result: any = {
       success: allSuccess,
       syncedEntities: allSynced,
       message: `批量同步完成，成功同步 ${allSynced.length} 个实体`
     };
+    return result;
   }
 
   // 重置所有增加值
