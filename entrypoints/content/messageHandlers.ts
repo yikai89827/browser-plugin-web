@@ -88,8 +88,21 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
   console.log(`查找ID为 ${id} 的行`);
   console.log(`  → 行数量: ${rows.length}`, rows);
   
+  // 获取当前页面层级
+  const pageState = getCurrentPageState();
+  const currentLevel = pageState.level || 'Campaigns';
+  console.log(`  → 当前层级: ${currentLevel}`);
+  
   // 获取列索引
   const columnIndices = getColumnIndicesSync();
+  
+  // 根据当前层级选择正确的ID列名
+  const idColumn = {
+    Ads: 'ad_id',
+    Adsets: 'adset_id',
+    Campaigns: 'campaign_id'
+  }[currentLevel] || 'campaign_id';
+  console.log(`  → 使用ID列: ${idColumn}`);
   
   for (const row of rows) {
     const children = row.children;
@@ -108,23 +121,17 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
         // 尝试通过ID查找行
         const scrollableCells = scrollable.children[0]?.children || [];
         if (scrollableCells.length > 0) {
-          // 尝试使用不同的ID列名
-          const idColumns = ['id', 'ad_id', 'adset_id', 'campaign_id'];
-          
-          for (const idColumn of idColumns) {
-            const idColumnIndex = columnIndices[idColumn];
-            if (idColumnIndex !== undefined) {
-              // 计算滚动列的索引（减去固定列的长度）
-              const scrollableColumnIndex = idColumnIndex - fixedColumnLength;
-              console.log(`  → 固定列长度: ${fixedColumnLength}, ${idColumn}列索引: ${idColumnIndex}, 滚动列索引: ${scrollableColumnIndex}`);
-              
-              if (scrollableColumnIndex >= 0 && scrollableCells[scrollableColumnIndex]) {
-                const idCell = scrollableCells[scrollableColumnIndex];
-                const idText = idCell?.textContent?.trim() || '';
-                console.log(`缓存数据id:${id}  → ${idColumn}单元格文本: ${idText}`);
-                if (idText === id) {
-                  return { row, fixed, scrollable };
-                }
+          const idColumnIndex = columnIndices[idColumn];
+          if (idColumnIndex !== undefined) {
+            // 计算滚动列的索引（减去固定列的长度）
+            const scrollableColumnIndex = idColumnIndex - fixedColumnLength;
+            console.log(`  → 固定列长度: ${fixedColumnLength}, ${idColumn}列索引: ${idColumnIndex}, 滚动列索引: ${scrollableColumnIndex}`);
+            if (scrollableColumnIndex >= 0 && scrollableCells[scrollableColumnIndex]) {
+              const idCell = scrollableCells[scrollableColumnIndex];
+              const idText = idCell?.textContent?.trim() || '';
+              console.log(`缓存数据id:${id}  → ${idColumn}单元格文本: ${idText}`);
+              if (idText === id) {
+                return { row, fixed, scrollable };
               }
             }
           }
