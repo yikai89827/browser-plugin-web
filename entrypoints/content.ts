@@ -204,6 +204,10 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
     const { ads } = await extractAdsFromDom();
     console.log('当前页面的广告数据:', ads?.length || 0);
     
+    // 获取当前页面层级
+    const pageState = getCurrentPageState();
+    const currentLevel = pageState.level || 'Campaigns';
+    
     // 遍历修改数据，更新到页面
     for (const modification of modifications) {
       if (!modification || !modification.completeData || !modification.completeData.id || !modification.modifiedFields) {
@@ -211,7 +215,23 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
       }
       
       // 找到对应的广告行
-      const adRow = ads.find(ad => ad[getIdColumn()] === modification.completeData.id);
+      let adRow: any = null;
+      const idColumn = getIdColumn();
+      
+      // 首先尝试使用当前层级的ID列查找
+      if (modification.completeData[idColumn]) {
+        adRow = ads.find(ad => ad[idColumn] === modification.completeData[idColumn]);
+      }
+      
+      // 如果没找到，尝试使用其他可能的ID列查找
+      if (!adRow) {
+        adRow = ads.find(ad => 
+          ad.ad_id === modification.completeData.id ||
+          ad.adset_id === modification.completeData.id ||
+          ad.campaign_id === modification.completeData.id
+        );
+      }
+      
       if (adRow) {
         // 计算原始值和增加值的总和
         const valuesToUpdate = calculateValuesToUpdate(modification);
