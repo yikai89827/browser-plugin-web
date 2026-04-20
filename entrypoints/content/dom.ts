@@ -1,4 +1,5 @@
 import { fieldMappingConfig } from './config';
+import { getCurrentPageState } from './date';
 // 全局遮盖层元素
 let overlayElement: HTMLElement | null = null;
 
@@ -392,6 +393,20 @@ export function getAdRowElement(adRow: any): Element | null {
         if (tableBody) {
           const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
           
+          // 获取列索引
+          const columnIndices = getColumnIndicesSync();
+          
+          // 获取当前页面层级
+          const pageState = getCurrentPageState();
+          const currentLevel = pageState.level || 'Campaigns';
+          
+          // 根据当前层级选择正确的ID列名
+          const idColumn = {
+            Ads: 'ad_id',
+            Adsets: 'adset_id',
+            Campaigns: 'campaign_id'
+          }[currentLevel] || 'campaign_id';
+          
           for (const presentationRow of Array.from(presentationRows)) {
             const children = presentationRow.children;
             if (children.length === 1) {
@@ -399,15 +414,26 @@ export function getAdRowElement(adRow: any): Element | null {
               const grandchildren = firstChild.children;
               
               if (grandchildren.length >= 2) {
+                const fixed = grandchildren[0] as HTMLElement;
                 const scrollable = grandchildren[1] as HTMLElement;
-                // 查找编号列（通常是第一列）
+                
+                // 计算固定列长度
+                const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+                
+                // 查找编号列
                 const scrollableCells = scrollable.children[0]?.children || [];
-                if (scrollableCells.length > 0) {
-                  const idCell = scrollableCells[0];
-                  const idText = idCell?.textContent?.trim() || '';
+                if (scrollableCells.length > 0 && columnIndices[idColumn]) {
+                  // 计算滚动列的索引（减去固定列的长度）
+                  const idColumnIndex = columnIndices[idColumn];
+                  const scrollableIndex = idColumnIndex - fixedColumnLength;
                   
-                  if (idText === adRow.id) {
-                    return presentationRow as Element;
+                  if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
+                    const idCell = scrollableCells[scrollableIndex];
+                    const idText = idCell?.textContent?.trim() || '';
+                    
+                    if (idText === adRow.id) {
+                      return presentationRow as Element;
+                    }
                   }
                 }
               }

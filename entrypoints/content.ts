@@ -276,7 +276,7 @@ function calculateValuesToUpdate(modification: any) {
 async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, string>) {
   try {
     // 获取广告行的DOM元素
-    const adRowElement = getAdRowElement(entity.id);
+    const adRowElement = getAdRowElement({ id: entity.id });
     if (!adRowElement) {
       console.log('未找到广告行的DOM元素:', entity.id);
       return;
@@ -290,13 +290,22 @@ async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, s
     }
     
     // 获取固定列和可滚动列
-    const fixedElement = adRowElement.querySelector('.fixed') as HTMLElement;
-    const scrollableElement = adRowElement.querySelector('.scrollable') as HTMLElement;
-    
-    if (!fixedElement || !scrollableElement) {
-      console.log('未找到固定列或可滚动列元素');
+    const children = adRowElement.children;
+    if (children.length !== 1) {
+      console.log('广告行元素结构不正确');
       return;
     }
+    
+    const firstChild = children[0] as HTMLElement;
+    const grandchildren = firstChild.children;
+    
+    if (grandchildren.length < 2) {
+      console.log('广告行元素缺少固定列或滚动列');
+      return;
+    }
+    
+    const fixedElement = grandchildren[0] as HTMLElement;
+    const scrollableElement = grandchildren[1] as HTMLElement;
     
     // 计算固定列长度
     const fixedColumnLength = fixedElement.children[0]?.children?.length - 1 || 0;
@@ -310,7 +319,12 @@ async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, s
       if (columnIndex !== undefined) {
         const scrollableIndex = columnIndex - fixedColumnLength;
         if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
-          scrollableCells[scrollableIndex].textContent = value;
+          // 找到最内层的DOM元素进行更新
+          let currentElement = scrollableCells[scrollableIndex];
+          while (currentElement.firstElementChild) {
+            currentElement = currentElement.firstElementChild;
+          }
+          currentElement.textContent = value;
         }
       }
     });
