@@ -3,18 +3,19 @@
 
 import { AdEntity, AdLevel } from './hierarchy';
 import {  numericFields } from './config';
-import { getTableDataRows, findTableContainer, getColumnIndicesSync } from './dom';
+import { getTableDataRows, findTableContainer, getColumnIndicesSync, detectSortInfo } from './dom';
 
 // 列索引映射
 export interface ColumnIndices {
   [key: string]: number;
 }
 
-// 数据提取结果
+// 提取结果接口
 export interface ExtractionResult {
   entities: AdEntity[];
   columnIndices: ColumnIndices;
   level: AdLevel;
+  sortInfo: { field: string | null; direction: string | null };
 }
 
 // 数据提取管理器
@@ -24,12 +25,15 @@ class DataExtractor {
     const level = this.detectCurrentLevel();
     // 使用dom.ts中的函数获取列索引
     const columnIndices = getColumnIndicesSync();
+    // 检测排序信息
+    const sortInfo = detectSortInfo();
     const entities = this.extractEntities(level, columnIndices);
     
     return {
       entities,
       columnIndices,
-      level
+      level,
+      sortInfo
     };
   }
 
@@ -93,8 +97,14 @@ class DataExtractor {
       return null;
     }
     
-    // 提取数值字段
-    const values = this.extractValues(cells, columnIndices);
+    // 根据层级提取相应的ID字段
+    const idFields = this.extractIdFields(cells, level, columnIndices);
+    
+    // 提取所有字段值
+    const values = this.extractAllFields(cells, columnIndices);
+    
+    // 将ID字段合并到values中
+    Object.assign(values, idFields);
     
     return {
       id,
@@ -124,6 +134,66 @@ class DataExtractor {
       default:
         return `entity_${Math.random().toString(36).slice(2, 9)}`;
     }
+  }
+
+  // 根据层级提取相应的ID字段
+  private extractIdFields(cells: Element[], level: AdLevel, columnIndices: ColumnIndices): Record<string, string> {
+    const idFields: Record<string, string> = {};
+    
+    // 广告：需要包含 campaign_id, adset_id, ad_id
+    if (level === 'Ads') {
+      const campaignId = this.extractCellValue(cells, columnIndices, 'campaign_id');
+      const adsetId = this.extractCellValue(cells, columnIndices, 'adset_id');
+      const adId = this.extractCellValue(cells, columnIndices, 'ad_id');
+      
+      if (campaignId) idFields.campaign_id = campaignId;
+      if (adsetId) idFields.adset_id = adsetId;
+      if (adId) idFields.ad_id = adId;
+    }
+    // 广告组：需要包含 campaign_id, adset_id
+    else if (level === 'Adsets') {
+      const campaignId = this.extractCellValue(cells, columnIndices, 'campaign_id');
+      const adsetId = this.extractCellValue(cells, columnIndices, 'adset_id');
+      
+      if (campaignId) idFields.campaign_id = campaignId;
+      if (adsetId) idFields.adset_id = adsetId;
+    }
+    // 广告系列：需要包含 campaign_id
+    else if (level === 'Campaigns') {
+      const campaignId = this.extractCellValue(cells, columnIndices, 'campaign_id');
+      
+      if (campaignId) idFields.campaign_id = campaignId;
+    }
+    
+    return idFields;
+  }
+
+  // 提取所有字段值
+  private extractAllFields(cells: Element[], columnIndices: ColumnIndices): Record<string, any> {
+    const values: Record<string, any> = {};
+    
+    // 遍历所有列索引中的字段
+    for (const field of Object.keys(columnIndices)) {
+      const value = this.extractCellValue(cells, columnIndices, field);
+      if (value) {
+        // 检查是否为数值字段
+        if (numericFields.includes(field)) {
+          // 清理数值，去除货币符号和逗号
+          const cleanedValue = value.replace(/[\$,]/g, '');
+          const numValue = parseFloat(cleanedValue);
+          if (!isNaN(numValue)) {
+            values[field] = numValue;
+          } else {
+            values[field] = value;
+          }
+        } else {
+          // 非数值字段保持原始值
+          values[field] = value;
+        }
+      }
+    }
+    
+    return values;
   }
 
   // 提取数值字段

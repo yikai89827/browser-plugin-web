@@ -1,8 +1,6 @@
 import { fieldMappingConfig } from './config';
 // 全局遮盖层元素
 let overlayElement: HTMLElement | null = null;
-// 数值类字段配置
-export const numericFields = ['impressions', 'reach', 'spend', 'results', 'costPerResult'];
 
 // 固定列数量
 export let fixedColumnLength = 1;

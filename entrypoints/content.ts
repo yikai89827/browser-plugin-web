@@ -39,7 +39,7 @@ saveAccountId();
 // 测试缓存key生成
 async function testCacheKeyGeneration() {
   console.log('测试缓存key生成:');
-  console.log('当前账户ID:', getSavedAccountId());
+  console.log('当前账户ID:', await getSavedAccountId());
   console.log('测试缓存key:', await generateCacheKey('test'));
   console.log('测试排序信息缓存key:', await generateSortInfoKey());
 }
@@ -88,8 +88,14 @@ async function debouncedSync(): Promise<void> {
           lastColumnMapping = columnIndices;
         }
 
+        // 保存排序信息
+        if (sortInfo) {
+          const sortInfoKey = await generateSortInfoKey();
+          await browserStorage.set(sortInfoKey, sortInfo);
+        }
+
         // 这里可以添加页面数据同步逻辑
-        console.log('页面数据同步完成:', { entities: entities.length, level });
+        console.log('页面数据同步完成:', { entities: entities.length, level, sortInfo });
       } catch (error) {
         console.error('刷新页面数据错误:', error);
       } finally {

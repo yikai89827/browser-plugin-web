@@ -8,14 +8,14 @@ export const columnMapping = {
   reach: 'reporting_table_column_reach',//覆盖次数
   spend: 'reporting_table_column_spend',//花费
   clicks: 'reporting_table_column_clicks',//点击（全部）
-  registrations: 'reporting_table_column_actions:omni_complete_registration)',//注册已完成
+  registrations: 'reporting_table_column_actions:omni_complete_registration',//注册已完成
   purchases: 'reporting_table_column_actions:omni_purchase',//购买次数
+  results: 'ads_manager_table_results_column_label_id',//成效
+  costPerResult: 'reporting_table_column_cost_per_result',//单次成效
+  registration_cost: 'reporting_table_column_registration_cost',//注册成本
   campaign_id: 'reporting_table_column_campaign_id',//广告系列编号
   adset_id: 'reporting_table_column_adset_id',//广告组编号
   ad_id: 'reporting_table_column_ad_id',//广告编号
-  // results: 'ads_manager_table_results_column_label_id',//成效
-  // costPerResult: 'reporting_table_column_cost_per_result',//单次成效
-  // registration_cost: 'reporting_table_column_registration_cost',//注册成本
 };
 
 // 字段映射配置 - 用于表头文本到字段名的映射
