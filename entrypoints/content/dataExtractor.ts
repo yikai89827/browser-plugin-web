@@ -98,9 +98,15 @@ class DataExtractor {
     // 过滤掉name中的多余文本，比如"复制"等按钮文本
     name = this.filterNameText(name);
     
-    // 从可滚动列提取数据
-    const cells = Array.from(rowPair.scrollable.querySelectorAll('div'));
-    console.log(`  → 可滚动列单元格数量: ${cells.length}`, cells);
+    // 从可滚动列提取数据 - 只获取实际的数据单元格
+    // 找到包含数据的容器，避免获取过多的div元素
+    const dataContainer = rowPair.scrollable.querySelector('div > [role="presentation"]') || rowPair.scrollable;
+    const cells = Array.from(dataContainer.querySelectorAll('div')).filter(div => {
+      // 过滤掉空内容的div和按钮等非数据元素
+      const text = div.textContent?.trim() || '';
+      return text !== '' && !div.querySelector('button');
+    });
+    console.log(`  → 可滚动列单元格数量: ${cells.length}`);
     
     // 提取编号字段（ID）
     const id = this.extractId(cells, level, columnIndices);

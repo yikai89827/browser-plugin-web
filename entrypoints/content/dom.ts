@@ -177,17 +177,17 @@ function getColumnIndicesBase(isSync: boolean = false): Record<string, number> {
       const text = cell.textContent?.trim().toLowerCase();
       if (text) {
         if (!isSync) {
-          console.log(`[${new Date().toISOString()}] 表头列 ${index}: ${text}`);
+          // console.log(`[${new Date().toISOString()}] 表头列 ${index}: ${text}`);
         }
 
         // 遍历映射表，查找匹配的字段
         for (const { field, labels } of fieldMappingConfig) {
           if (!isSync) {
-            console.log(`  → 检查标签: ${labels.join(', ')}`, field);
+            // console.log(`  → 检查标签: ${labels.join(', ')}`, field);
           }
           if (labels.some(label => text === label.toLowerCase())) {
             if (!isSync) {
-              console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
+              // console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
             }
             indices[field] = index;
             break;
