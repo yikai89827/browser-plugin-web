@@ -419,6 +419,44 @@ function initPageObserver(): void {
       console.error('检测列位置变化错误:', error);
     }
 
+    // 检查是否有新的表格元素被创建（可能是页面刷新）
+    let hasTableCreated = false;
+    try {
+      hasTableCreated = mutations.some(mutation => {
+        if (mutation.type === 'childList') {
+          // 检查是否有新的表格元素被添加
+          return Array.from(mutation.addedNodes).some(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as HTMLElement;
+              return element.getAttribute('role') === 'table' ||
+                     element.querySelector('[role="table"]');
+            }
+            return false;
+          });
+        }
+        return false;
+      });
+
+      if (hasTableCreated) {
+        console.log('检测到表格元素被创建，可能是页面刷新');
+        // 显示遮盖层
+        createOverlay();
+        // 等待DOM更新完成后再应用修改数据
+        setTimeout(async () => {
+          const modificationsKey = await generateCacheKey('ad_modifications');
+          const modificationsArray = await browserStorage.get(modificationsKey);
+          if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+            console.log('有缓存数据，应用修改数据');
+            await applyCachedModifications(modificationsArray);
+          }
+          removeOverlay();
+        }, 1000); // 等待1秒让表格数据加载完成
+      }
+    } catch (error) {
+      console.error('检测表格创建错误:', error);
+      removeOverlay();
+    }
+
     // 只在排序变化或表格列位置变化时触发同步
     if (hasSortChange || hasColumnChange) {
       console.log('检测到排序变更或表格列位置变化，触发同步');
@@ -457,6 +495,12 @@ function initPageObserver(): void {
     console.log('页面变化监听已启动');
   } else {
     console.warn('未找到表格元素，页面变化监听未启动');
+    // 尝试在整个文档上监听，以捕获表格元素的创建
+    observer.observe(document.body, {
+      childList: true, // 监听子节点变化
+      subtree: true // 监听子树变化
+    });
+    console.log('在整个文档上启动页面变化监听');
   }
 }
 
