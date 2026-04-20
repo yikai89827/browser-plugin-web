@@ -247,9 +247,13 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
   const { date, tabType } = data;
   (async () => {
     try {
+      // 临时修改当前页面状态，使用 tabType 作为 level
+      const originalPageState = getCurrentPageState();
+      (window as any).pageState = { ...originalPageState, level: tabType };
+      
       // 获取当前 tab 的缓存数据
-      const adsKey = await generateCacheKey(`ads_${tabType}`);
-      const modificationsKey = await generateCacheKey(`ad_modifications_${tabType}`);
+      const adsKey = await generateCacheKey('ads');
+      const modificationsKey = await generateCacheKey('ad_modifications');
       
       const [adsData, modifications] = await Promise.all([
         browserStorage.get(adsKey),
@@ -266,12 +270,18 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       let syncTasks: any[] = [];
       
       for (const otherTabType of otherTabTypes) {
-        const syncTasksKey = await generateCacheKey(`sync_tasks_${otherTabType}`);
+        // 临时修改当前页面状态，生成其他 tab 的缓存键
+        (window as any).pageState = { ...originalPageState, level: otherTabType };
+        
+        const syncTasksKey = await generateCacheKey('sync_tasks');
         const otherSyncTasks = await browserStorage.get(syncTasksKey) || [];
         if (Array.isArray(otherSyncTasks)) {
           syncTasks = syncTasks.concat(otherSyncTasks);
         }
       }
+      
+      // 恢复原始页面状态
+      (window as any).pageState = originalPageState;
       
       // 处理同步任务
       if (syncTasks.length > 0) {
@@ -320,10 +330,15 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
               const { entities: updatedEntities, columnIndices: updatedColumnIndices, level: updatedLevel } = dataExtractor.extractFromDom();
               
               // 保存更新后的数据到缓存
+              (window as any).pageState = { ...originalPageState, level: tabType };
+              const updatedAdsKey = await generateCacheKey('ads');
               const updatedCacheData = { ads: updatedEntities, columnMapping: updatedColumnIndices, level: updatedLevel };
               const updatedDataToSave = { sortInfo, cacheData: updatedCacheData };
               
-              await browserStorage.set(adsKey, updatedDataToSave);
+              await browserStorage.set(updatedAdsKey, updatedDataToSave);
+              
+              // 恢复原始页面状态
+              (window as any).pageState = originalPageState;
               
               // 更新返回的数据
               ads = updatedEntities;
@@ -352,12 +367,19 @@ export function handleSaveCachedData(data: { date: string; ads: any; columnMappi
   const { ads, columnMapping, sortInfo, level, tabType } = data;
   (async () => {
     try {
-      const adsKey = await generateCacheKey(`ads_${tabType}`);
+      // 临时修改当前页面状态，使用 tabType 作为 level
+      const originalPageState = getCurrentPageState();
+      (window as any).pageState = { ...originalPageState, level: tabType };
+      
+      const adsKey = await generateCacheKey('ads');
       
       const cacheData = { ads, columnMapping, level };
       const dataToSave = { sortInfo, cacheData };
       
       await browserStorage.set(adsKey, dataToSave);
+      
+      // 恢复原始页面状态
+      (window as any).pageState = originalPageState;
       
       // 检测层级关系
       if (ads.length > 0) {
@@ -503,8 +525,11 @@ export function handleSaveModifications(data: { date: string; modifications: any
       // 处理修改数据，建立层级关系
       const modificationsWithId = processModifications(modifications, currentLevel);
       
-      const modificationsKey = await generateCacheKey(`ad_modifications_${tabType}`);
-      const syncTasksKey = await generateCacheKey(`sync_tasks_${tabType}`);
+      // 临时修改当前页面状态，使用 tabType 作为 level
+      const originalPageState = getCurrentPageState();
+      (window as any).pageState = { ...originalPageState, level: tabType };
+      
+      const modificationsKey = await generateCacheKey('ad_modifications');
       const sortInfo = detectSortInfo();
       const sortInfoKey = await generateSortInfoKey();
       
@@ -514,6 +539,9 @@ export function handleSaveModifications(data: { date: string; modifications: any
         browserStorage.set(sortInfoKey, sortInfo)
       ]);
       
+      // 恢复原始页面状态
+      (window as any).pageState = originalPageState;
+      
       console.log('保存修改成功，当前层级:', currentLevel);
       
       // 生成同步任务
@@ -522,7 +550,12 @@ export function handleSaveModifications(data: { date: string; modifications: any
         
         // 保存同步任务
         if (syncTasks.length > 0) {
-          await browserStorage.set(syncTasksKey, syncTasks);
+          // 临时修改当前页面状态，使用 tabType 作为 level
+          (window as any).pageState = { ...originalPageState, level: tabType };
+          const tempSyncTasksKey = await generateCacheKey('sync_tasks');
+          await browserStorage.set(tempSyncTasksKey, syncTasks);
+          // 恢复原始页面状态
+          (window as any).pageState = originalPageState;
           console.log('已保存同步任务:', syncTasks);
         }
         
