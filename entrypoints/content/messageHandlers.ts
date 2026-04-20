@@ -85,8 +85,12 @@ function getFilteredRows(tableBody: HTMLElement): Array<HTMLElement> {
 
 // 根据ID查找行
 function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; fixed: HTMLElement; scrollable: HTMLElement } | null {
+  console.log(`查找ID为 ${id} 的行`);
+  console.log(`  → 行数量: ${rows.length}`, rows);
+  
   for (const row of rows) {
     const children = row.children;
+    console.log(`  → 子元素数量: ${children.length}`, children);
     if (children.length === 1) {
       const firstChild = children[0] as HTMLElement;
       const grandchildren = firstChild.children;
@@ -100,7 +104,7 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
         if (scrollableCells.length > 0) {
           const idCell = scrollableCells[0];
           const idText = idCell?.textContent?.trim() || '';
-          
+          console.log(`缓存数据id:${id}  → ID单元格文本: ${idText}`);
           if (idText === id) {
             return { row, fixed, scrollable };
           }
@@ -109,6 +113,15 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
     }
   }
   return null;
+}
+
+// 找到最内层的DOM元素
+function findInnermostElement(element: Element): Element {
+  let current = element;
+  while (current.firstElementChild) {
+    current = current.firstElementChild;
+  }
+  return current;
 }
 
 // 更新行数据
@@ -129,8 +142,9 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
       const columnIndex = originalIndex - fixedColumnLength;
       if (columnIndex >= 0 && cells[columnIndex]) {
         const cell = cells[columnIndex];
-        // 只更新原始值所在DOM的值
-        cell.textContent = String(value);
+        // 找到最内层的DOM元素进行更新
+        const innermostElement = findInnermostElement(cell);
+        innermostElement.textContent = String(value);
       }
     }
   }

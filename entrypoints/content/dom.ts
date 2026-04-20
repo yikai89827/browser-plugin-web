@@ -453,6 +453,15 @@ export function getAdRowElement(adRow: any): Element | null {
 }
 
 // 使用可滚动行元素更新数据
+// 找到最内层的DOM元素
+function findInnermostElement(element: Element): Element {
+  let current = element;
+  while (current.firstElementChild) {
+    current = current.firstElementChild;
+  }
+  return current;
+}
+
 export async function updateRowDataWithScrollable(presentationRow: HTMLElement, data: Record<string, number>, columnIndices: Record<string, number>) {
   const children = presentationRow.children;
   if (children.length !== 1) return;
@@ -473,7 +482,9 @@ export async function updateRowDataWithScrollable(presentationRow: HTMLElement, 
     if (columnIndex !== undefined && cells && cells[columnIndex]) {
       const cell = cells[columnIndex];
       if (cell) {
-        cell.textContent = String(value);
+        // 找到最内层的DOM元素进行更新
+        const innermostElement = findInnermostElement(cell);
+        innermostElement.textContent = String(value);
         updatePromises.push(Promise.resolve());
       }
     }
