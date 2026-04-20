@@ -578,38 +578,92 @@ export async function updateDomRowByEntity(entity: any, data: Record<string, num
 
 // 创建遮盖层
 export function createOverlay() {
-  // 检查是否已存在遮盖层
+  // 如果遮盖层已经存在，先移除
   if (overlayElement) {
-    return;
+    overlayElement.remove();
   }
-  
-  // 创建遮盖层元素
-  overlayElement = document.createElement('div');
-  overlayElement.style.position = 'fixed';
-  overlayElement.style.top = '0';
-  overlayElement.style.left = '0';
-  overlayElement.style.width = '100%';
-  overlayElement.style.height = '100%';
-  overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)';
-  overlayElement.style.zIndex = '9999';
-  overlayElement.style.display = 'flex';
-  overlayElement.style.justifyContent = 'center';
-  overlayElement.style.alignItems = 'center';
-  
-  // 创建加载指示器
-  const loader = document.createElement('div');
-  loader.style.fontSize = '18px';
-  loader.style.color = '#333';
-  loader.textContent = '处理中...';
-  
-  overlayElement.appendChild(loader);
+
+  // 找到表格容器
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    console.log('未找到表格容器，使用全屏覆盖层');
+    // 如果找不到表格容器，使用全屏遮盖层
+    overlayElement = document.createElement('div');
+    overlayElement.style.position = 'fixed';
+    overlayElement.style.top = '0';
+    overlayElement.style.left = '0';
+    overlayElement.style.width = '100%';
+    overlayElement.style.height = '100%';
+    overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)'; // 完全不透明
+    overlayElement.style.zIndex = '999999';
+    overlayElement.style.display = 'flex';
+    overlayElement.style.justifyContent = 'center';
+    overlayElement.style.alignItems = 'center';
+  } else {
+    // 获取表格容器的位置和大小
+    const rect = tableContainer.getBoundingClientRect();
+
+    // 创建遮盖层元素
+    overlayElement = document.createElement('div');
+    overlayElement.style.position = 'fixed';
+    overlayElement.style.top = `${rect.top}px`;
+    overlayElement.style.left = `${rect.left}px`;
+    overlayElement.style.width = `${rect.width}px`;
+    overlayElement.style.height = `${rect.height}px`;
+    overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)'; // 完全不透明
+    overlayElement.style.zIndex = '999999';
+    overlayElement.style.display = 'flex';
+    overlayElement.style.justifyContent = 'center';
+    overlayElement.style.alignItems = 'center';
+  }
+
+  // 添加加载动画
+  const spinner = document.createElement('div');
+  spinner.style.border = '4px solid rgba(0, 0, 0, 0.1)';
+  spinner.style.borderLeftColor = '#3498db';
+  spinner.style.borderRadius = '50%';
+  spinner.style.width = '40px';
+  spinner.style.height = '40px';
+  spinner.style.animation = 'spin 1s linear infinite';
+
+  // 添加关闭按钮
+  const closeButton = document.createElement('button');
+  closeButton.textContent = '关闭';
+  closeButton.style.position = 'absolute';
+  closeButton.style.top = '10px';
+  closeButton.style.right = '10px';
+  closeButton.style.padding = '8px 16px';
+  closeButton.style.backgroundColor = '#3498db';
+  closeButton.style.color = 'white';
+  closeButton.style.border = 'none';
+  closeButton.style.borderRadius = '4px';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.fontSize = '14px';
+  closeButton.style.fontWeight = 'bold';
+  closeButton.style.zIndex = '1000000';
+  closeButton.onclick = () => {
+    removeOverlay();
+  };
+
+  // 添加动画样式
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  overlayElement.appendChild(spinner);
+  overlayElement.appendChild(closeButton);
   document.body.appendChild(overlayElement);
 }
 
 // 移除遮盖层
 export function removeOverlay() {
-  if (overlayElement && overlayElement.parentNode) {
-    overlayElement.parentNode.removeChild(overlayElement);
+  if (overlayElement) {
+    overlayElement.remove();
     overlayElement = null;
   }
 }
