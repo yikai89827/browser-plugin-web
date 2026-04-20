@@ -201,11 +201,17 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       
       for (const modification of modifications) {
         if (modification && modification.completeData) {
-          const id = modification.completeData.id;
-          const modifiedFields = modification.modifiedFields;
+          const { completeData, modifiedFields } = modification;
+          const id = completeData.id;
+          const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
+            if (completeData.hasOwnProperty(key)) {
+              acc[key] = completeData[key] + modifiedFields[key];
+            }
+            return acc;
+          }, {});
           
-          if (!id || !modifiedFields || Object.keys(modifiedFields).length === 0) {
-            console.warn('刷新页面数据: 修改项缺少id或modifiedFields');
+          if (!id || !saveFields || Object.keys(saveFields).length === 0) {
+            console.warn('刷新页面数据: 修改项缺少id或saveFields');
             failCount++;
             continue;
           }
@@ -219,8 +225,8 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           }
           
           // 更新行数据
-          await updateRowData(foundRow.scrollable, foundRow.fixed, modifiedFields);
-          console.log(`已刷新页面数据行: ${id}`, modifiedFields);
+          await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields);
+          console.log(`已刷新页面数据行: ${id}`, saveFields);
           successCount++;
         }
       }

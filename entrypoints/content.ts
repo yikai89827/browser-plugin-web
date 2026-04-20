@@ -219,7 +219,11 @@ async function loadCachedData(): Promise<void> {
 // 应用缓存的修改数据到页面
 async function applyCachedModifications(modifications: any[]): Promise<void> {
   try {
-    console.log('应用缓存的修改数据到页面，修改数据数量:', modifications.length);
+    console.log('应用缓存的修改数据到页面，修改数据数量:', modifications?.length || 0);
+    if(modifications?.length === 0) {
+      console.log('没有修改数据，无需应用');
+      return;
+    }
     
     // 提取当前页面的广告数据
     const { ads } = await dataExtractor.extractFromDom();
