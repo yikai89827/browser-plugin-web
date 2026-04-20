@@ -7,9 +7,9 @@ export const columnMapping = {
   impressions: 'reporting_table_column_impressions',//展示次数
   reach: 'reporting_table_column_reach',//覆盖人数
   spend: 'reporting_table_column_spend',//已花费金额
-  clicks: 'reporting_table_column_clicks',//点击量(全部)
+  clicks: 'reporting_table_column_clicks',//点击量（全部）
   registrations: 'reporting_table_column_actions:omni_complete_registration',//完成注册次数
-  purchases: 'reporting_table_column_actions:omni_purchase',//购买次数
+  purchases: 'reporting_table_column_actions:omni_purchase',//购物次数
   results: 'ads_manager_table_results_column_label_id',//成效
   costPerResult: 'reporting_table_column_cost_per_result',//单次成效费用
   campaign_id: 'reporting_table_column_campaign_id',//广告系列编号
@@ -22,13 +22,13 @@ export const columnMapping = {
 export const fieldMappingConfig = [
   { field: 'name', labels: ['campaign', '广告系列', 'ad set', '广告组', 'ad', '广告'] },
   { field: 'results', labels: ['results', '成效', '结果'] },
+  { field: 'costPerResult', labels: ['cost per result', '单次成效费用'] },
   { field: 'spend', labels: ['amount spent', '已花费金额'] },
   { field: 'impressions', labels: ['impressions', '展示次数'] },
   { field: 'reach', labels: ['reach', '覆盖人数'] },
-  { field: 'costPerResult', labels: ['cost per result', '单次成效费用'] },
   { field: 'registrations', labels: ['registrations','registrations completed', '完成注册次数'] },
-  { field: 'purchases', labels: ['purchases', '购买次数'] },
-  { field: 'clicks', labels: ['clicks', 'clicks(all)', '点击量(全部)'] },
+  { field: 'purchases', labels: ['purchases', '购物次数'] },
+  { field: 'clicks', labels: ['clicks', 'clicks(all)', '点击量（全部）'] },
   { field: 'campaign_id', labels: ['campaign id', '广告系列编号'] },
   { field: 'adset_id', labels: ['ad set id', '广告组编号'] },
   { field: 'ad_id', labels: ['ad id', '广告编号'] },

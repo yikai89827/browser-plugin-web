@@ -166,7 +166,7 @@ export async function getColumnIndices() {
 
     // 获取所有表头单元格
     const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
-    console.log('getColumnIndices: 找到表头单元格数量:', headerCells.length);
+    console.log(`[${new Date().toISOString()}] 找到表头单元格数量:`, headerCells.length, headerCells);
 
     const indices: Record<string, number> = {};
 
@@ -174,11 +174,12 @@ export async function getColumnIndices() {
       // 获取单元格的文本内容，转换为小写进行匹配
       const text = cell.textContent?.trim().toLowerCase();
       if (text) {
-        console.log(`表头列 ${index}: ${text}`);
+        console.log(`[${new Date().toISOString()}] 表头列 ${index}: ${text}`, cell,fieldMappingConfig);
 
         // 遍历映射表，查找匹配的字段
         for (const { field, labels } of fieldMappingConfig) {
-          if (labels.some(label => text.includes(label.toLowerCase()))) {
+          console.log(`  → 检查标签: ${labels.join(', ')}`, field);
+          if (labels.some(label => text===label.toLowerCase())) {
             indices[field] = index;
             console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
             break;
