@@ -87,7 +87,7 @@ export async function syncAdDataToPage(sortInfo?: { field: string | null; direct
       }
       
       // 找到对应的广告行
-      const adRow = findAdRowById(ads, modification.completeData.id);
+      const adRow = ads.find(ad => ad.id === modification.completeData.id);
       if (adRow) {
         // 计算原始值和增加值的总和
         const valuesToUpdate = calculateValuesToUpdate(modification);
@@ -95,7 +95,7 @@ export async function syncAdDataToPage(sortInfo?: { field: string | null; direct
         // 更新到页面
         await updateAdRow(adRow, valuesToUpdate);
       } else {
-        console.log('未找到匹配的广告行:', modification.completeData.id);
+        console.log('同步任务未找到匹配的广告行:', modification.completeData.id);
       }
     }
     
@@ -103,11 +103,6 @@ export async function syncAdDataToPage(sortInfo?: { field: string | null; direct
   } catch (error) {
     console.error('同步广告数据到页面错误:', error);
   }
-}
-
-// 根据ID查找广告行
-function findAdRowById(ads: any[], id: string) {
-  return ads.find(ad => ad && ad.id === id);
 }
 
 // 计算要更新的值

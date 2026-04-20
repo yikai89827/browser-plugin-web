@@ -155,7 +155,7 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   for (const [field, originalIndex] of Object.entries(columnIndices)) {
     // 计算滚动列的索引（减去固定列的长度）
     const columnIndex = originalIndex - fixedColumnLength;
-    console.log(`  → 提取到的字段索引: ${field} = ${originalIndex}, 滚动列索引: ${columnIndex}, 固定列长度: ${fixedColumnLength}`);
+    // console.log(`  → 提取到的字段索引: ${field} = ${originalIndex}, 滚动列索引: ${columnIndex}, 固定列长度: ${fixedColumnLength}`);
     if (columnIndex !== undefined && columnIndex >= 0 && cells[columnIndex]) {
       const cellText = cells[columnIndex].textContent?.trim() || '';
       values[field] = cellText;
@@ -381,6 +381,18 @@ export async function updateScrollableRow(row: Element, data: any, columnIndices
   }
 }
 
+//根据当前层级选择正确的ID列名
+export function getIdColumn() {
+  // 获取当前页面层级
+  const pageState = getCurrentPageState();
+  const currentLevel = pageState.level || 'Campaigns';
+  return {
+    Ads: 'ad_id',
+    Adsets: 'adset_id',
+    Campaigns: 'campaign_id'
+  }[currentLevel] || 'campaign_id';
+}
+
 // 获取广告行元素
 export function getAdRowElement(adRow: any): Element | null {
   // 首先尝试通过ID查找
@@ -396,16 +408,8 @@ export function getAdRowElement(adRow: any): Element | null {
           // 获取列索引
           const columnIndices = getColumnIndicesSync();
           
-          // 获取当前页面层级
-          const pageState = getCurrentPageState();
-          const currentLevel = pageState.level || 'Campaigns';
-          
           // 根据当前层级选择正确的ID列名
-          const idColumn = {
-            Ads: 'ad_id',
-            Adsets: 'adset_id',
-            Campaigns: 'campaign_id'
-          }[currentLevel] || 'campaign_id';
+          const idColumn = getIdColumn();
           
           for (const presentationRow of Array.from(presentationRows)) {
             const children = presentationRow.children;

@@ -4,7 +4,7 @@ import { browserStorage } from '../utils/storage';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom } from './content/dom';
+import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
@@ -211,7 +211,7 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
       }
       
       // 找到对应的广告行
-      const adRow = ads.find(ad => ad.id === modification.completeData.id);
+      const adRow = ads.find(ad => ad[getIdColumn()] === modification.completeData.id);
       if (adRow) {
         // 计算原始值和增加值的总和
         const valuesToUpdate = calculateValuesToUpdate(modification);
@@ -219,7 +219,7 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
         // 更新到页面
         await updateAdRowByEntity(adRow, valuesToUpdate);
       } else {
-        console.log('未找到匹配的广告行:', modification.completeData.id);
+        console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
     }
     
