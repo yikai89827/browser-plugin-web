@@ -185,7 +185,7 @@ function getColumnIndicesBase(isSync: boolean = false): Record<string, number> {
           if (!isSync) {
             console.log(`  → 检查标签: ${labels.join(', ')}`, field);
           }
-          if (labels.some(label => text.includes(label.toLowerCase()))) {
+          if (labels.some(label => text === label.toLowerCase())) {
             if (!isSync) {
               console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
             }
