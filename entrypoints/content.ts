@@ -376,8 +376,7 @@ function initPageObserver(): void {
         if (mutation.target.nodeType === Node.ELEMENT_NODE) {
           const element = mutation.target as HTMLElement;
           return element.getAttribute('role') === 'columnheader' ||
-                 element.querySelector('[role="columnheader"]') ||
-                 element.classList.contains('_3hi'); // 表格容器类
+                 element.querySelector('[role="columnheader"]')
         }
         return false;
       });
