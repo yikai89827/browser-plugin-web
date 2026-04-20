@@ -49,6 +49,93 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
   return true;
 }
 
+// 查找表格容器和表体
+function findTableBody(): HTMLElement | null {
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    console.warn('刷新页面数据: 未找到表格容器');
+    return null;
+  }
+  
+  const headerRow = tableContainer.querySelector('[role="row"]');
+  if (!headerRow) {
+    console.warn('刷新页面数据: 未找到表头行');
+    return null;
+  }
+  
+  const tableBody = headerRow.nextElementSibling;
+  if (!tableBody) {
+    console.warn('刷新页面数据: 未找到表体');
+    return null;
+  }
+  
+  return tableBody as HTMLElement;
+}
+
+// 过滤有效的表格行
+function getFilteredRows(tableBody: HTMLElement): Array<HTMLElement> {
+  const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
+  
+  return Array.from(presentationRows).filter((row) => {
+    const hasGrandchildren = row.children[0]?.children.length > 0;
+    const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
+    return hasGrandchildren && hasNonSvgchildren;
+  }) as Array<HTMLElement>;
+}
+
+// 根据ID查找行
+function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; fixed: HTMLElement; scrollable: HTMLElement } | null {
+  for (const row of rows) {
+    const children = row.children;
+    if (children.length === 1) {
+      const firstChild = children[0] as HTMLElement;
+      const grandchildren = firstChild.children;
+      
+      if (grandchildren.length >= 2) {
+        const fixed = grandchildren[0] as HTMLElement;
+        const scrollable = grandchildren[1] as HTMLElement;
+        
+        // 尝试通过ID查找行
+        const scrollableCells = scrollable.children[0]?.children || [];
+        if (scrollableCells.length > 0) {
+          const idCell = scrollableCells[0];
+          const idText = idCell?.textContent?.trim() || '';
+          
+          if (idText === id) {
+            return { row, fixed, scrollable };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// 更新行数据
+async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>): Promise<void> {
+  // 获取列索引
+  const columnIndices = await getColumnIndices();
+  
+  // 计算固定列长度
+  const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+  
+  // 更新行数据
+  const cells = scrollable.children[0]?.children || [];
+  
+  for (const [field, value] of Object.entries(fields)) {
+    const originalIndex = columnIndices[field];
+    if (originalIndex !== undefined) {
+      // 计算滚动列的索引（减去固定列的长度）
+      const columnIndex = originalIndex - fixedColumnLength;
+      if (columnIndex >= 0 && cells[columnIndex]) {
+        const cell = cells[columnIndex];
+        // 只更新原始值所在DOM的值
+        cell.textContent = String(value);
+      }
+    }
+  }
+}
+
 // 消息处理函数 - 刷新页面数据
 export function handleRefreshPageWithData(data: { id: string; fields: Record<string, number> }, sendResponse: (response: any) => void): boolean {
   (async () => {
@@ -57,96 +144,29 @@ export function handleRefreshPageWithData(data: { id: string; fields: Record<str
       
       const { id, fields } = data;
       
-      // 找到表格容器
-      const tableContainer = findTableContainer();
-      if (!tableContainer) {
-        console.warn('刷新页面数据: 未找到表格容器');
-        sendResponse({ success: false, error: '未找到表格容器' });
-        return;
-      }
-      
-      // 获取表格数据行
-      const headerRow = tableContainer.querySelector('[role="row"]');
-      if (!headerRow) {
-        console.warn('刷新页面数据: 未找到表头行');
-        sendResponse({ success: false, error: '未找到表头行' });
-        return;
-      }
-      
-      const tableBody = headerRow.nextElementSibling;
+      // 找到表体
+      const tableBody = findTableBody();
       if (!tableBody) {
-        console.warn('刷新页面数据: 未找到表体');
-        sendResponse({ success: false, error: '未找到表体' });
+        sendResponse({ success: false, error: '未找到表格结构' });
         return;
       }
-      
-      const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
       
       // 过滤有效的行
-      const filteredRows = Array.from(presentationRows).filter((row) => {
-        const hasGrandchildren = row.children[0]?.children.length > 0;
-        const hasNonSvgchildren = row.children[0]?.tagName.toLowerCase() !== 'svg';
-        return hasGrandchildren && hasNonSvgchildren;
-      });
+      const filteredRows = getFilteredRows(tableBody);
       
-      // 遍历查找匹配的行
-      let foundRow = false;
-      for (const presentationRow of filteredRows) {
-        const children = presentationRow.children;
-        if (children.length === 1) {
-          const firstChild = children[0] as HTMLElement;
-          const grandchildren = firstChild.children;
-          
-          if (grandchildren.length >= 2) {
-            const fixed = grandchildren[0] as HTMLElement;
-            const scrollable = grandchildren[1] as HTMLElement;
-            
-            // 尝试通过ID查找行
-            const scrollableCells = scrollable.children[0]?.children || [];
-            if (scrollableCells.length > 0) {
-              const idCell = scrollableCells[0];
-              const idText = idCell?.textContent?.trim() || '';
-              
-              if (idText === id) {
-                // 获取列索引
-                const columnIndices = await getColumnIndices();
-                
-                // 计算固定列长度
-                const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
-                
-                // 更新行数据
-                const cells = scrollable.children[0]?.children || [];
-                const updatePromises = [];
-                
-                for (const [field, value] of Object.entries(fields)) {
-                  const originalIndex = columnIndices[field];
-                  if (originalIndex !== undefined) {
-                    // 计算滚动列的索引（减去固定列的长度）
-                    const columnIndex = originalIndex - fixedColumnLength;
-                    if (columnIndex >= 0 && cells[columnIndex]) {
-                      const cell = cells[columnIndex];
-                      cell.textContent = String(value);
-                      updatePromises.push(Promise.resolve());
-                    }
-                  }
-                }
-                
-                await Promise.all(updatePromises);
-                console.log(`已刷新页面数据行: ${id}`, fields);
-                foundRow = true;
-                break;
-              }
-            }
-          }
-        }
-      }
-      
-      if (foundRow) {
-        sendResponse({ success: true });
-      } else {
+      // 查找匹配的行
+      const foundRow = findRowById(filteredRows, id);
+      if (!foundRow) {
         console.warn(`刷新页面数据: 未找到匹配的行: ${id}`);
         sendResponse({ success: false, error: `未找到匹配的行: ${id}` });
+        return;
       }
+      
+      // 更新行数据
+      await updateRowData(foundRow.scrollable, foundRow.fixed, fields);
+      console.log(`已刷新页面数据行: ${id}`, fields);
+      
+      sendResponse({ success: true });
     } catch (error: any) {
       console.error('刷新页面数据错误:', error);
       sendResponse({ success: false, error: error.message });
