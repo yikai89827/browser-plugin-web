@@ -172,8 +172,12 @@ class DataExtractor {
   private extractAllFields(cells: Element[], columnIndices: ColumnIndices): Record<string, any> {
     const values: Record<string, any> = {};
     
-    // 遍历所有列索引中的字段
+    // 遍历所有列索引中的字段，排除name字段（因为name已经作为AdEntity的直接属性存储）
     for (const field of Object.keys(columnIndices)) {
+      if (field === 'name') {
+        continue; // 跳过name字段，只在AdEntity对象中存储
+      }
+      
       const value = this.extractCellValue(cells, columnIndices, field);
       if (value) {
         // 检查是否为数值字段

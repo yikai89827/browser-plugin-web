@@ -76,7 +76,7 @@ async function debouncedSync(): Promise<void> {
         await getColumnIndices();
 
         // 重新提取广告数据（包括原始值）
-        const { entities, columnIndices, level } = dataExtractor.extractFromDom();
+        const { entities, columnIndices, level, sortInfo } = dataExtractor.extractFromDom();
         
         // 检测层级关系
         hierarchyManager.detectHierarchy(entities);
