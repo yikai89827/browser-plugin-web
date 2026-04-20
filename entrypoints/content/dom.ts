@@ -146,12 +146,15 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   const fixedColumnLength = rowPair.fixed.children[0]?.children?.length - 1 || 0;
   
   // 从可滚动列提取数据
-  const cells = rowPair.scrollable.querySelectorAll('div');
+  const scrollableElements = rowPair.scrollable.children[0]?.children || [];
+  const cells = Array.from(scrollableElements);
+  console.log(`  → 可滚动列单元格数量: ${cells.length}`);
   const values: Record<string, string> = {};
   
   for (const [field, originalIndex] of Object.entries(columnIndices)) {
     // 计算滚动列的索引（减去固定列的长度）
     const columnIndex = originalIndex - fixedColumnLength;
+    console.log(`  → 提取到的字段索引: ${field} = ${originalIndex}, 滚动列索引: ${columnIndex}, 固定列长度: ${fixedColumnLength}`);
     if (columnIndex !== undefined && columnIndex >= 0 && cells[columnIndex]) {
       const cellText = cells[columnIndex].textContent?.trim() || '';
       values[field] = cellText;
