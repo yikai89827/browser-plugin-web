@@ -259,7 +259,9 @@ export function handleSaveModifications(data: { date: string; modifications: any
           return { 
             ...item, 
             level: currentLevel,
-            parentId: parentId
+            parentId: parentId,
+            campaign_id: completeData?.campaign_id || '',
+            adset_id: completeData?.adset_id || ''
           };
         }
         // 如果completeData为null，跳过这个修改项
