@@ -223,15 +223,6 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
         adRow = ads.find(ad => ad[idColumn] === modification.completeData[idColumn]);
       }
       
-      // 如果没找到，尝试使用其他可能的ID列查找
-      if (!adRow) {
-        adRow = ads.find(ad => 
-          ad.ad_id === modification.completeData.id ||
-          ad.adset_id === modification.completeData.id ||
-          ad.campaign_id === modification.completeData.id
-        );
-      }
-      
       if (adRow) {
         // 计算原始值和增加值的总和
         const valuesToUpdate = calculateValuesToUpdate(modification);

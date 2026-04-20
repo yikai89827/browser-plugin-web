@@ -397,46 +397,49 @@ export function getIdColumn() {
 
 // 获取广告行元素
 export function getAdRowElement(adRow: any): Element | null {
-  // 首先尝试通过ID查找
-  if (adRow.id) {
-    let tableContainer = findTableContainer();
-    if (tableContainer) {
-      // 获取展示行
-      const presentationRows = getTablePresentationRows(tableContainer);
-      
-      // 获取列索引
-      const columnIndices = getColumnIndicesSync();
-      
-      // 根据当前层级选择正确的ID列名
-      const idColumn = getIdColumn();
-      
-      for (const presentationRow of presentationRows) {
-        const children = presentationRow.children;
-        if (children.length === 1) {
-          const firstChild = children[0] as HTMLElement;
-          const grandchildren = firstChild.children;
+  // 获取当前页面层级对应的ID列名
+  const idColumn = getIdColumn();
+  
+  // 获取要比较的ID值
+  const rowId = adRow[idColumn] || adRow.id;
+  if (!rowId) {
+    return null;
+  }
+  
+  let tableContainer = findTableContainer();
+  if (tableContainer) {
+    // 获取展示行
+    const presentationRows = getTablePresentationRows(tableContainer);
+    
+    // 获取列索引
+    const columnIndices = getColumnIndicesSync();
+    
+    for (const presentationRow of presentationRows) {
+      const children = presentationRow.children;
+      if (children.length === 1) {
+        const firstChild = children[0] as HTMLElement;
+        const grandchildren = firstChild.children;
+        
+        if (grandchildren.length >= 2) {
+          const fixed = grandchildren[0] as HTMLElement;
+          const scrollable = grandchildren[1] as HTMLElement;
           
-          if (grandchildren.length >= 2) {
-            const fixed = grandchildren[0] as HTMLElement;
-            const scrollable = grandchildren[1] as HTMLElement;
+          // 计算固定列长度
+          fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+          
+          // 查找编号列
+          const scrollableCells = scrollable.children[0]?.children || [];
+          if (scrollableCells.length > 0 && columnIndices[idColumn]) {
+            // 计算滚动列的索引（减去固定列的长度）
+            const idColumnIndex = columnIndices[idColumn];
+            const scrollableIndex = idColumnIndex - fixedColumnLength;
             
-            // 计算固定列长度
-            fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
-            
-            // 查找编号列
-            const scrollableCells = scrollable.children[0]?.children || [];
-            if (scrollableCells.length > 0 && columnIndices[idColumn]) {
-              // 计算滚动列的索引（减去固定列的长度）
-              const idColumnIndex = columnIndices[idColumn];
-              const scrollableIndex = idColumnIndex - fixedColumnLength;
+            if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
+              const idCell = scrollableCells[scrollableIndex];
+              const idText = idCell?.textContent?.trim() || '';
               
-              if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
-                const idCell = scrollableCells[scrollableIndex];
-                const idText = idCell?.textContent?.trim() || '';
-                
-                if (idText === adRow.id) {
-                  return presentationRow as Element;
-                }
+              if (idText === rowId) {
+                return presentationRow as Element;
               }
             }
           }
