@@ -217,10 +217,10 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
       // 找到对应的广告行
       let adRow: any = null;
       const idColumn = getIdColumn();
-      console.log('当前层级的ID列:', idColumn, modification.completeData);
+      console.log('当前层级的ID列:', idColumn, modification.completeData,ads);
       // 首先尝试使用当前层级的ID列查找
-      if (modification.completeData[idColumn]) {
-        console.log('尝试使用当前层级的ID列查找:',  modification.completeData[idColumn]);
+      if (modification.completeData.id) {
+        console.log('尝试使用当前层级的ID列查找:', modification.completeData.id);
         adRow = ads.find(ad => ad[idColumn] === modification.completeData.id);
       }
       // const adRowElement = getAdRowElement({ id: adRow?.id || '' });
