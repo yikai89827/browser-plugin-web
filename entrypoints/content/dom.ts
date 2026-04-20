@@ -457,7 +457,8 @@ function findInnermostElement(element: Element): Element {
   }
   return current;
 }
-
+// 更新行数据
+// 从可滚动行元素更新数据
 export async function updateRowDataWithScrollable(presentationRow: HTMLElement, data: Record<string, number>, columnIndices: Record<string, number>) {
   const children = presentationRow.children;
   if (children.length !== 1) return;
@@ -468,16 +469,18 @@ export async function updateRowDataWithScrollable(presentationRow: HTMLElement, 
   if (grandchildren.length < 2) return;
 
   const scrollable = grandchildren[1] as HTMLElement;
-  const cells = scrollable?.querySelectorAll('div');
+  const scrollableCells = scrollable.children[0]?.children || [];
   const updatePromises = [];
 
   for (const [field, value] of Object.entries(data)) {
     if (field === 'name') continue;
 
     const columnIndex = columnIndices[field];
-    if (columnIndex !== undefined && cells && cells[columnIndex]) {
-      const cell = cells[columnIndex-(fixedColumnLength-1)];
-      if (cell) {
+    if (columnIndex !== undefined && scrollableCells.length > 0) {
+      // 计算滚动列的索引（减去固定列的长度）
+      const scrollableIndex = columnIndex - fixedColumnLength;
+      if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
+        const cell = scrollableCells[scrollableIndex];
         // 找到最内层的DOM元素进行更新
         const innermostElement = findInnermostElement(cell);
         innermostElement.textContent = String(value);
@@ -498,7 +501,6 @@ export function getFilteredRows(tableBody: HTMLElement): Array<HTMLElement> {
     return hasGrandchildren && hasNonSvgchildren;
   }) as Array<HTMLElement>;
 }
-
 // 通过实体在DOM中查找并更新行
 export async function updateDomRowByEntity(entity: any, data: Record<string, number>) {
   // 找到表格容器
