@@ -4,7 +4,7 @@ import { browserStorage } from '../utils/storage';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn } from './content/dom';
+import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findChildRowInDom } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
@@ -299,11 +299,8 @@ async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, s
         const scrollableIndex = columnIndex - fixedColumnLength;
         if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
           // 找到最内层的DOM元素进行更新
-          let currentElement = scrollableCells[scrollableIndex];
-          while (currentElement.firstElementChild) {
-            currentElement = currentElement.firstElementChild;
-          }
-          currentElement.textContent = value;
+          const currentElement = findInnermostElement(scrollableCells[scrollableIndex]);
+          currentElement.textContent = String(value);
         }
       }
     });
