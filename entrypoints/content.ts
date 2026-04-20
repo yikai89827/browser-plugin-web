@@ -223,18 +223,13 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
         console.log('尝试使用当前层级的ID列查找:', modification.completeData.id);
         adRow = ads.find(ad => ad[idColumn] === modification.completeData.id);
       }
-      // const adRowElement = getAdRowElement({ id: adRow?.id || '' });
-      // if (!adRowElement) {
-      //   console.log('未找到广告行的DOM元素:', adRow?.id || '');
-      //   continue;
-      // }
       
       if (adRow) {
         // 计算原始值和增加值的总和
         const valuesToUpdate = calculateValuesToUpdate(modification);
         
         // 更新到页面
-        await updateAdRowByEntity(adRow, valuesToUpdate);
+        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate);
       } else {
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
@@ -269,12 +264,12 @@ function calculateValuesToUpdate(modification: any) {
 }
 
 // 根据实体更新广告行
-async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, string>) {
+async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, string>) {
   try {
     // 获取广告行的DOM元素
-    const adRowElement = getAdRowElement({ id: entity.id });
+    const adRowElement = getAdRowElement({ id });
     if (!adRowElement) {
-      console.log('未找到广告行的DOM元素:', entity.id);
+      console.log('未找到广告行的DOM元素:', id);
       return;
     }
     
@@ -322,7 +317,7 @@ async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, s
       }
     });
     
-    console.log('更新广告行成功:', entity.id);
+    console.log('更新广告行成功:', id);
   } catch (error) {
     console.error('更新广告行错误:', error);
   }
