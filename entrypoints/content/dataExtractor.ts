@@ -2,7 +2,7 @@
 // 负责从DOM中提取广告数据，包括编号字段
 
 import { AdEntity, AdLevel } from './hierarchy';
-import {  numericFields } from './config';
+import { numericFields, filterTexts } from './config';
 import { getTableDataRows, findTableContainer, getColumnIndicesSync, detectSortInfo } from './dom';
 
 // 列索引映射
@@ -21,10 +21,12 @@ export interface ExtractionResult {
 // 数据提取管理器
 class DataExtractor {
   // 从DOM提取数据
+  // 从DOM提取数据
   extractFromDom(): ExtractionResult {
     const level = this.detectCurrentLevel();
     // 使用dom.ts中的函数获取列索引
     const columnIndices = getColumnIndicesSync();
+    console.log(`  → 提取到的列索引: ${JSON.stringify(columnIndices)}`);
     // 检测排序信息
     const sortInfo = detectSortInfo();
     const entities = this.extractEntities(level, columnIndices);
@@ -69,12 +71,17 @@ class DataExtractor {
       return entities;
     }
     
+    
     // 使用dom.ts中的函数获取表格数据行
     const rowPairs = getTableDataRows(tableContainer);
+
+    console.log(`  → 表格数据行数量: ${rowPairs.length}`);
     
     rowPairs.forEach((rowPair, rowIndex) => {
       const entity = this.extractEntityFromRowPair(rowPair, level, columnIndices, rowIndex);
+      console.log(`  → 提取到的实体: ${JSON.stringify(entity)}`);
       if (entity) {
+        console.log(`  → 过滤后的名称: ${entity.name}`);
         entities.push(entity);
       }
     });
@@ -93,21 +100,26 @@ class DataExtractor {
     
     // 从可滚动列提取数据
     const cells = Array.from(rowPair.scrollable.querySelectorAll('div'));
+    console.log(`  → 可滚动列单元格数量: ${cells.length}`, cells);
     
     // 提取编号字段（ID）
     const id = this.extractId(cells, level, columnIndices);
+    console.log(`  → 提取到的编号: ${id}`);
     if (!id) {
       return null;
     }
     
     // 根据层级提取相应的ID字段
     const idFields = this.extractIdFields(cells, level, columnIndices);
+    console.log(`  → 提取到的ID字段: ${JSON.stringify(idFields)}`);
     
     // 提取所有字段值
-    const values = this.extractAllFields(cells, columnIndices);
+    const values = this.extractAllFields(cells, columnIndices); 
+    console.log(`  → 提取到的所有字段值: ${JSON.stringify(values)}`);
     
     // 将ID字段合并到values中
     Object.assign(values, idFields);
+    console.log(`  → 合并后的所有字段值: ${JSON.stringify(values)}`);
     
     return {
       id,
@@ -119,17 +131,7 @@ class DataExtractor {
   }
 
   // 过滤名称文本，去除多余的按钮文本
-  private filterNameText(name: string): string {
-    // 定义需要过滤的文本
-    const filterTexts = [
-      '复制',
-      '编辑',
-      '删除',
-      '查看',
-      '设置',
-      '更多'
-    ];
-    
+  private filterNameText(name: string): string {    
     let filteredName = name;
     // 过滤掉所有不需要的文本
     filterTexts.forEach(text => {
@@ -188,6 +190,7 @@ class DataExtractor {
       
       if (campaignId) idFields.campaign_id = campaignId;
     }
+    console.log(`  → 提取到的ID字段: ${JSON.stringify(idFields)}`);
     
     return idFields;
   }
@@ -203,7 +206,9 @@ class DataExtractor {
       }
       
       const value = this.extractCellValue(cells, columnIndices, field);
+      console.log(`  → 提取到的字段值1: ${field} = ${value}`);
       if (value) {
+        console.log(`  → 提取到的字段值2: ${field} = ${value}`);
         // 检查是否为数值字段
         if (numericFields.includes(field)) {
           // 清理数值，去除货币符号和逗号
@@ -220,6 +225,7 @@ class DataExtractor {
         }
       }
     }
+    console.log(`  → 提取到的所有字段值: ${JSON.stringify(values)}`);
     
     return values;
   }
@@ -227,6 +233,7 @@ class DataExtractor {
   // 提取单元格值
   private extractCellValue(cells: Element[], columnIndices: ColumnIndices, field: string): string {
     const index = columnIndices[field];
+    console.log(`  → 提取到的字段索引: ${field} = ${index}`);
     if (index !== undefined && cells[index]) {
       return cells[index].textContent?.trim() || '';
     }

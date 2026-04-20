@@ -52,3 +52,15 @@ export const appConfig = {
   // 缓存键前缀
   cacheKeyPrefix: 'browser-plugin-v3',
 };
+// 过滤名称文本，去除多余的按钮文本
+export const filterTexts = [
+  '复制',
+  '编辑',
+  '删除',
+  '查看',
+  '设置',
+  '更多',
+  '打开',
+  '下拉',
+  '菜单',
+];

@@ -54,7 +54,7 @@ export function handleRefreshPageWithData(sortInfo: any, sendResponse: (response
   (async () => {
     try {
       // 这里可以实现页面数据刷新逻辑
-      console.log('刷新页面数据:', sortInfo);
+      console.log(`[${new Date().toISOString()}] 刷新页面数据:`, sortInfo);
       
       sendResponse({ success: true });
     } catch (error: any) {
@@ -255,6 +255,7 @@ export function handleGetSortInfo(date: string, sendResponse: (response: any) =>
   (async () => {
     try {
       const sortInfoKey = await generateSortInfoKey();
+      console.log(`[${new Date().toISOString()}] 获取排序信息:`, sortInfoKey);
       
       browserStorage.get(sortInfoKey).then((sortInfo) => {
         sendResponse(sortInfo);
@@ -279,7 +280,9 @@ export function handleSyncValues(data: { entities: any[]; direction: string }, s
       hierarchyManager.detectHierarchy(entities as AdEntity[]);
       
       // 执行同步
+      console.log(`[${new Date().toISOString()}] 执行数值同步:`, entities, direction);
       const syncResult = await valueSyncManager.batchSync(entities as AdEntity[], direction as 'up' | 'down');
+      console.log(`[${new Date().toISOString()}] 执行数值同步:`, syncResult);
       
       sendResponse({ success: true, syncResult });
     } catch (error: any) {

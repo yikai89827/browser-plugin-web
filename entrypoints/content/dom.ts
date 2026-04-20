@@ -225,14 +225,16 @@ export function getColumnIndicesSync() {
       if (text) {
         // 遍历映射表，查找匹配的字段
         for (const { field, labels } of fieldMappingConfig) {
+          console.log(`  → 检查标签: ${labels.join(', ')}`);
           if (labels.some(label => text.includes(label.toLowerCase()))) {
+            console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
             indices[field] = index;
             break;
           }
         }
       }
     });
-
+    console.log('同步获取到的列索引:', indices);
     return indices;
   } catch (error) {
     console.error('同步获取列索引错误:', error);
