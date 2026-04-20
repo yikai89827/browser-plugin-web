@@ -86,7 +86,10 @@ class DataExtractor {
   private extractEntityFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTMLElement }, level: AdLevel, columnIndices: ColumnIndices, rowIndex: number): AdEntity | null {
     // 从固定列提取名称
     const nameDiv = rowPair.fixed.querySelector('div');
-    const name = nameDiv?.textContent?.trim() || '';
+    let name = nameDiv?.textContent?.trim() || '';
+    
+    // 过滤掉name中的多余文本，比如"复制"等按钮文本
+    name = this.filterNameText(name);
     
     // 从可滚动列提取数据
     const cells = Array.from(rowPair.scrollable.querySelectorAll('div'));
@@ -113,6 +116,27 @@ class DataExtractor {
       values,
       increaseValues: {}
     };
+  }
+
+  // 过滤名称文本，去除多余的按钮文本
+  private filterNameText(name: string): string {
+    // 定义需要过滤的文本
+    const filterTexts = [
+      '复制',
+      '编辑',
+      '删除',
+      '查看',
+      '设置',
+      '更多'
+    ];
+    
+    let filteredName = name;
+    // 过滤掉所有不需要的文本
+    filterTexts.forEach(text => {
+      filteredName = filteredName.replace(new RegExp(text, 'g'), '').trim();
+    });
+    
+    return filteredName;
   }
 
   // 提取编号
@@ -196,24 +220,6 @@ class DataExtractor {
         }
       }
     }
-    
-    return values;
-  }
-
-  // 提取数值字段
-  private extractValues(cells: Element[], columnIndices: ColumnIndices): Record<string, number> {// 提取数值字段
-    const values: Record<string, number> = {};
-    numericFields.forEach(field => {
-      const value = this.extractCellValue(cells, columnIndices, field);
-      if (value) {
-        // 清理数值，去除货币符号和逗号
-        const cleanedValue = value.replace(/[\$,]/g, '');
-        const numValue = parseFloat(cleanedValue);
-        if (!isNaN(numValue)) {
-          values[field] = numValue;
-        }
-      }
-    });
     
     return values;
   }
