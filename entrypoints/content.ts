@@ -440,7 +440,7 @@ function initPageObserver(): void {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
       attributes: true, // 监听属性变化
-      attributeFilter: ['class', 'style'] // 只监听特定属性变化
+      attributeFilter: ['sorting'] // 只监听特定属性变化
     });
     console.log('页面变化监听已启动');
   } else {

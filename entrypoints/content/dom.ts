@@ -144,7 +144,7 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   let name = nameDiv?.textContent?.trim() || '';
   
   // 计算固定列长度
-  const fixedColumnLength = rowPair.fixed.children[0]?.children?.length - 1 || 0;
+  fixedColumnLength = rowPair.fixed.children[0]?.children?.length - 1 || 0;
   
   // 从可滚动列提取数据
   const scrollableElements = rowPair.scrollable.children[0]?.children || [];
@@ -322,7 +322,12 @@ export function detectSortInfo() {
 export function updateElementText(element: Element, text: string) {
   return new Promise<void>((resolve) => {
     if (element) {
-      element.textContent = text;
+      // 找到最内层的DOM元素进行更新
+      let currentElement = element;
+      while (currentElement.firstElementChild) {
+        currentElement = currentElement.firstElementChild;
+      }
+      currentElement.textContent = text;
       resolve();
     } else {
       resolve();
@@ -333,49 +338,38 @@ export function updateElementText(element: Element, text: string) {
 // 更新可滚动行
 export async function updateScrollableRow(row: Element, data: any, columnIndices: Record<string, number>, fixIndex: number) {
   try {
-    // 找到所有role=presentation的元素（每一行的容器）
-    const presentationRows = document.body.querySelectorAll('div > [role="presentation"]');
+    // 直接使用传入的行元素
+    const children = row.children;
+    if (children.length === 1) {
+      const firstChild = children[0] as HTMLElement;
+      const grandchildren = firstChild.children;
 
-    // 遍历查找匹配的行
-    for (const presentationRow of Array.from(presentationRows)) {
-      const children = presentationRow.children;
-      if (children.length === 1) {
-        const firstChild = children[0] as HTMLElement;
-        const grandchildren = firstChild.children;
+      if (grandchildren.length >= 2) {
+        // const fixed = grandchildren[0] as HTMLElement;
+        const scrollable = grandchildren[1] as HTMLElement;
 
-        if (grandchildren.length >= 2) {
-          const fixed = grandchildren[0] as HTMLElement;
-          const scrollable = grandchildren[1] as HTMLElement;
+        // 获取可滚动列的单元格
+        const scrollableCells = scrollable.children[0]?.children || [];
+        const updatePromises = [];
 
-          // 检查是否是匹配的行（通过名称匹配或其他方式）
-          const nameDiv = fixed?.querySelector('div');
-          const rowName = nameDiv?.textContent?.trim() || '';
+        // 遍历需要更新的字段
+        for (const [field, value] of Object.entries(data)) {
+          if (field === 'name') continue; // 跳过名称字段
 
-          // 如果行名称匹配
-          if (rowName && data.name && rowName === data.name) {
-            const cells = scrollable?.querySelectorAll('div');
-            const updatePromises = [];
-
-            // 遍历需要更新的字段
-            for (const [field, value] of Object.entries(data)) {
-              if (field === 'name') continue; // 跳过名称字段
-
-              const columnIndex = columnIndices[field];
-              if (columnIndex !== undefined && cells && cells[columnIndex]) {
-                updatePromises.push(updateElementText(cells[columnIndex], String(value)));
-              }
-            }
-
-            // 并行更新所有元素
-            await Promise.all(updatePromises);
-            console.log(`updateScrollableRow: 已更新行 ${rowName}`);
-            return;
+          const columnIndex = columnIndices[field] - fixIndex;
+          if (columnIndex !== undefined && scrollableCells[columnIndex]) {
+            updatePromises.push(updateElementText(scrollableCells[columnIndex], String(value)));
           }
         }
+
+        // 并行更新所有元素
+        await Promise.all(updatePromises);
+        console.log(`updateScrollableRow: 已更新行 ${data?.name}`);
+        return;
       }
     }
-
-    console.warn('updateScrollableRow: 未找到匹配的行');
+    
+    console.warn('updateScrollableRow: 行元素结构不正确');
   } catch (error) {
     console.error('更新可滚动行错误:', error);
   }
@@ -422,7 +416,7 @@ export function getAdRowElement(adRow: any): Element | null {
                 const scrollable = grandchildren[1] as HTMLElement;
                 
                 // 计算固定列长度
-                const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+                fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
                 
                 // 查找编号列
                 const scrollableCells = scrollable.children[0]?.children || [];
@@ -510,7 +504,7 @@ export async function updateRowDataWithScrollable(presentationRow: HTMLElement, 
 
     const columnIndex = columnIndices[field];
     if (columnIndex !== undefined && cells && cells[columnIndex]) {
-      const cell = cells[columnIndex];
+      const cell = cells[columnIndex-(fixedColumnLength-1)];
       if (cell) {
         // 找到最内层的DOM元素进行更新
         const innermostElement = findInnermostElement(cell);
@@ -556,23 +550,15 @@ export async function updateDomRowByEntity(entity: any, data: Record<string, num
       const grandchildren = firstChild.children;
 
       if (grandchildren.length >= 2) {
-        const fixed = grandchildren[0] as HTMLElement;
-        const scrollable = grandchildren[1] as HTMLElement;
+        // const fixed = grandchildren[0] as HTMLElement;
+        // const scrollable = grandchildren[1] as HTMLElement;
 
-        // 检查是否是匹配的行（通过名称匹配）
-        const nameDiv = fixed?.querySelector('div');
-        const rowName = nameDiv?.textContent?.trim() || '';
+        const columnIndices = await getColumnIndices();
 
-        // 如果名称匹配
-        if (rowName === entity.name || rowName.includes(entity.name) || entity.name.includes(rowName)) {
-          // 获取列索引
-          const columnIndices = await getColumnIndices();
-
-          // 更新行数据
-          await updateRowDataWithScrollable(presentationRow as HTMLElement, data, columnIndices);
-          console.log(`已更新DOM行: ${entity.name}`, data);
-          return;
-        }
+        // 更新行数据
+        await updateRowDataWithScrollable(presentationRow as HTMLElement, data, columnIndices);
+        console.log(`已更新DOM行: ${entity.name}`, data);
+        return;
       }
     }
   }
