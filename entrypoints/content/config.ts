@@ -5,13 +5,13 @@
 export const columnMapping = {
   name: 'reporting_table_column_name',//广告名称
   impressions: 'reporting_table_column_impressions',//展示次数
-  reach: 'reporting_table_column_reach',//覆盖次数
-  spend: 'reporting_table_column_spend',//花费
-  clicks: 'reporting_table_column_clicks',//点击（全部）
-  registrations: 'reporting_table_column_actions:omni_complete_registration',//注册已完成
+  reach: 'reporting_table_column_reach',//覆盖人数
+  spend: 'reporting_table_column_spend',//已花费金额
+  clicks: 'reporting_table_column_clicks',//点击量(全部)
+  registrations: 'reporting_table_column_actions:omni_complete_registration',//完成注册次数
   purchases: 'reporting_table_column_actions:omni_purchase',//购买次数
   results: 'ads_manager_table_results_column_label_id',//成效
-  costPerResult: 'reporting_table_column_cost_per_result',//单次成效
+  costPerResult: 'reporting_table_column_cost_per_result',//单次成效费用
   registration_cost: 'reporting_table_column_registration_cost',//注册成本
   campaign_id: 'reporting_table_column_campaign_id',//广告系列编号
   adset_id: 'reporting_table_column_adset_id',//广告组编号
@@ -20,19 +20,19 @@ export const columnMapping = {
 
 // 字段映射配置 - 用于表头文本到字段名的映射
 export const fieldMappingConfig = [
-  { field: 'name', labels: ['campaign', '活动', 'ad set', '广告组', 'ad', '广告'] },
+  { field: 'name', labels: ['campaign', '广告系列', 'ad set', '广告组', 'ad', '广告'] },
   { field: 'results', labels: ['results', '成效', '结果'] },
-  { field: 'spend', labels: ['amount spent', '花费', '金额', '支出金额'] },
-  { field: 'impressions', labels: ['impressions', '展示', '印象'] },
-  { field: 'reach', labels: ['reach', '覆盖', '抵达'] },
-  { field: 'costPerResult', labels: ['cost per result', '单次成效', '每次结果成本'] },
-  { field: 'registrations', labels: ['registrations','registrations completed', '注册', '注册量', '注册已完成'] },
-  { field: 'registration_cost', labels: ['registration cost', '注册成本', ] },
-  { field: 'purchases', labels: ['purchases', '购买', '购买量', '购买次数'] },
-  { field: 'clicks', labels: ['clicks', 'clicks(all)', '点击', '点击量', '点击(全部)'] },
-  { field: 'campaign_id', labels: ['campaign id', '广告系列编号', '广告系列ID'] },
-  { field: 'adset_id', labels: ['ad set id', '广告组编号', '广告组ID'] },
-  { field: 'ad_id', labels: ['ad id', '广告编号', '广告ID'] },
+  { field: 'spend', labels: ['amount spent', '已花费金额'] },
+  { field: 'impressions', labels: ['impressions', '展示次数'] },
+  { field: 'reach', labels: ['reach', '覆盖人数'] },
+  { field: 'costPerResult', labels: ['cost per result', '单次成效费用'] },
+  { field: 'registrations', labels: ['registrations','registrations completed', '完成注册次数'] },
+  { field: 'registration_cost', labels: ['registration cost', '注册成本'] },
+  { field: 'purchases', labels: ['purchases', '购买次数'] },
+  { field: 'clicks', labels: ['clicks', 'clicks(all)', '点击量(全部)'] },
+  { field: 'campaign_id', labels: ['campaign id', '广告系列编号'] },
+  { field: 'adset_id', labels: ['ad set id', '广告组编号'] },
+  { field: 'ad_id', labels: ['ad id', '广告编号'] },
 ];
 
 // 非数值字段（不参与数值计算的字段）
