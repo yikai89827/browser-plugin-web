@@ -421,7 +421,10 @@ function initPageObserver(): void {
 
     // 检查是否有新的表格元素被创建（可能是页面刷新）
     let hasTableCreated = false;
+    // 检查是否有loading状态（可能是点击了刷新按钮）
+    let hasLoadingState = false;
     try {
+      // 检测表格元素创建
       hasTableCreated = mutations.some(mutation => {
         if (mutation.type === 'childList') {
           // 检查是否有新的表格元素被添加
@@ -437,8 +440,23 @@ function initPageObserver(): void {
         return false;
       });
 
-      if (hasTableCreated) {
-        console.log('检测到表格元素被创建，可能是页面刷新');
+      // 检测loading状态
+      hasLoadingState = mutations.some(mutation => {
+        if (mutation.target.nodeType === Node.ELEMENT_NODE) {
+          const element = mutation.target as HTMLElement;
+          // 检查是否有loading相关的元素或类名
+          return element.classList.contains('loading') ||
+                 element.querySelector('.loading') ||
+                 element.classList.contains('spinner') ||
+                 element.querySelector('.spinner') ||
+                 element.getAttribute('aria-busy') === 'true' ||
+                 element.querySelector('[aria-busy="true"]');
+        }
+        return false;
+      });
+
+      if (hasTableCreated || hasLoadingState) {
+        console.log('检测到表格元素被创建或loading状态，可能是页面刷新或点击了刷新按钮');
         // 显示遮盖层
         createOverlay();
         // 等待DOM更新完成后再应用修改数据
@@ -450,10 +468,10 @@ function initPageObserver(): void {
             await applyCachedModifications(modificationsArray);
           }
           removeOverlay();
-        }, 1000); // 等待1秒让表格数据加载完成
+        }, 2000); // 等待2秒让新数据加载完成
       }
     } catch (error) {
-      console.error('检测表格创建错误:', error);
+      console.error('检测表格状态错误:', error);
       removeOverlay();
     }
 
