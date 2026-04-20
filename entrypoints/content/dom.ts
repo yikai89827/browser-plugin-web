@@ -564,7 +564,7 @@ export function createOverlay() {
   overlayElement.style.left = '0';
   overlayElement.style.width = '100%';
   overlayElement.style.height = '100%';
-  overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+  overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)';
   overlayElement.style.zIndex = '9999';
   overlayElement.style.display = 'flex';
   overlayElement.style.justifyContent = 'center';
@@ -574,7 +574,7 @@ export function createOverlay() {
   const loader = document.createElement('div');
   loader.style.fontSize = '18px';
   loader.style.color = '#333';
-  loader.textContent = '正在同步数据...';
+  loader.textContent = '处理中...';
   
   overlayElement.appendChild(loader);
   document.body.appendChild(overlayElement);

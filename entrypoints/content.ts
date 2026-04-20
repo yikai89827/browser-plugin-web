@@ -4,7 +4,7 @@ import { browserStorage } from '../utils/storage';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { detectSortInfo, getColumnIndices, getColumnIndicesSync } from './content/dom';
+import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
@@ -180,117 +180,6 @@ function createOverlay() {
   
   overlayElement.appendChild(loadingText);
   document.body.appendChild(overlayElement);
-}
-
-// 移除遮盖层
-function removeOverlay() {
-  if (overlayElement && overlayElement.parentNode) {
-    overlayElement.parentNode.removeChild(overlayElement);
-    overlayElement = null;
-  }
-}
-
-// 初始化页面变化监听
-function initPageObserver(): void {
-  // 使用MutationObserver来拦截页面渲染
-  const observer = new MutationObserver((mutations) => {
-    // 检查是否有排序变化
-    let hasSortChange = false;
-    try {
-      const { sortField, sortDirection } = detectSortInfo();
-      if (sortField && sortDirection) {
-        if (sortField !== lastSortInfo.field || sortDirection !== lastSortInfo.direction) {
-          lastSortInfo = { field: sortField, direction: sortDirection };
-          hasSortChange = true;
-          console.log('检测到排序变更:', lastSortInfo);
-        }
-      }
-    } catch (error) {
-      console.error('检测排序信息错误:', error);
-    }
-
-    // 检查是否有表格列位置变化
-    let hasColumnChange = false;
-    try {
-      // 检查是否有列头相关的变化
-      const hasColumnHeaderChanges = mutations.some(mutation => {
-        if (mutation.target.nodeType === Node.ELEMENT_NODE) {
-          const element = mutation.target as HTMLElement;
-          return element.getAttribute('role') === 'columnheader' ||
-                 element.querySelector('[role="columnheader"]') ||
-                 element.classList.contains('_3hi'); // 表格容器类
-        }
-        return false;
-      });
-
-      if (hasColumnHeaderChanges) {
-        // 重新获取列索引
-        const newColumnIndices = getColumnIndicesSync();
-        if (Object.keys(newColumnIndices).length > 0) {
-          // 比较新的列索引与当前的列索引
-                const currentColumnKeys = Object.keys(lastColumnMapping || {}).sort();
-                const newColumnKeys = Object.keys(newColumnIndices).sort();
-
-                if (currentColumnKeys.length !== newColumnKeys.length) {
-                  hasColumnChange = true;
-                } else {
-                  for (let i = 0; i < currentColumnKeys.length; i++) {
-                    if (currentColumnKeys[i] !== newColumnKeys[i] ||
-                        lastColumnMapping[currentColumnKeys[i]] !== newColumnIndices[newColumnKeys[i]]) {
-                      hasColumnChange = true;
-                      break;
-                    }
-                  }
-                }
-
-          if (hasColumnChange) {
-            console.log('检测到表格列位置变化');
-          }
-        }
-      }
-    } catch (error) {
-      console.error('检测列位置变化错误:', error);
-    }
-
-    // 只在排序变化或表格列位置变化时触发同步
-    if (hasSortChange || hasColumnChange) {
-      console.log('检测到排序变更或表格列位置变化，触发同步');
-
-      // 立即显示遮盖层并应用修改数据
-      (async () => {
-        const modificationsKey = await generateCacheKey('ad_modifications');
-        const modificationsArray = await browserStorage.get(modificationsKey);
-        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
-          console.log('有缓存数据，显示遮盖层并应用修改数据');
-          createOverlay();
-          // 等待DOM更新完成后再应用修改数据
-          setTimeout(async () => {
-            await applyCachedModifications(modificationsArray);
-            removeOverlay();
-          }, 500);
-        }
-      })();
-
-      // 延迟执行同步，等待排序操作完成
-      setTimeout(() => {
-        debouncedSync();
-      }, 500); // 等待500ms让排序操作完成
-    }
-  });
-
-  // 开始观察页面变化
-  const tableElement = document.querySelector('[role="table"]');
-  if (tableElement) {
-    observer.observe(tableElement, {
-      childList: true, // 监听子节点变化
-      subtree: true, // 监听子树变化
-      attributes: true, // 监听属性变化
-      attributeFilter: ['class', 'style'] // 只监听特定属性变化
-    });
-    console.log('页面变化监听已启动');
-  } else {
-    console.warn('未找到表格元素，页面变化监听未启动');
-  }
 }
 
 // 预加载缓存数据
