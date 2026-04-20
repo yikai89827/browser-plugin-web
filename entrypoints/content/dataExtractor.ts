@@ -107,18 +107,19 @@ class DataExtractor {
     const idFields = this.extractIdFields(rawValues, level);
     
     // 处理数值字段
-    const values = this.processValues(rawValues);
+    const processedValues = this.processValues(rawValues);
     
-    // 合并ID字段到values中
-    Object.assign(values, idFields);
-    
-    return {
+    // 合并所有字段到一个对象中
+    const adData = {
       id,
       name,
       level,
-      values,
+      ...processedValues,
+      ...idFields,
       increaseValues: {}
     };
+    
+    return adData as AdEntity;
   }
 
   // 过滤名称文本，去除多余的按钮文本
