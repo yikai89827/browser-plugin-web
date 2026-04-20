@@ -10,6 +10,7 @@ export type SyncDirection = 'up' | 'down'; // up: 向上同步（子级到父级
 
 // 同步结果
 export interface SyncResult {
+  [x: string]: number;
   success: boolean;
   syncedEntities: AdEntity[];
   message: string;

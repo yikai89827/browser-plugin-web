@@ -36,9 +36,22 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
   return new Promise((resolve) => {
     browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
+        // 获取当前tab的URL，用于判断当前是哪个tab
+        const url = tabs[0].url || '';
+        let tabType = 'Campaigns'; // 默认是广告系列tab
+        
+        // 根据URL判断当前tab类型
+        if (url.includes('/campaigns')) {
+          tabType = 'Campaigns';
+        } else if (url.includes('/adsets')) {
+          tabType = 'Adsets';
+        } else if (url.includes('/ads')) {
+          tabType = 'Ads';
+        }
+        
         browser.tabs.sendMessage(
           tabs[0].id!,
-          { action, ...data },
+          { action, tabType, ...data },
           (response) => {
             console.log(`Received response for ${action}:`, response);
             resolve(response);

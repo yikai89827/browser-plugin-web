@@ -243,21 +243,95 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
 }
 
 // 消息处理函数 - 获取缓存数据
-export function handleGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
+export function handleGetCachedData(data: { date: string; tabType: string }, sendResponse: (response: any) => void): boolean {
+  const { date, tabType } = data;
   (async () => {
     try {
-      const adsKey = await generateCacheKey('ads');
-      const modificationsKey = await generateCacheKey('ad_modifications');
+      // 获取当前 tab 的缓存数据
+      const adsKey = await generateCacheKey(`ads_${tabType}`);
+      const modificationsKey = await generateCacheKey(`ad_modifications_${tabType}`);
       
       const [adsData, modifications] = await Promise.all([
         browserStorage.get(adsKey),
         browserStorage.get(modificationsKey)
       ]);
       
-      const ads = adsData?.cacheData?.ads || [];
+      let ads = adsData?.cacheData?.ads || [];
       const columnMapping = adsData?.cacheData?.columnMapping || {};
-      const level = adsData?.cacheData?.level || 'Campaigns';
+      const level = adsData?.cacheData?.level || tabType;
       const sortInfo = adsData?.sortInfo || { field: null, direction: null };
+      
+      // 检测其他 tab 的同步任务
+      const otherTabTypes = ['Ads', 'Adsets', 'Campaigns'].filter(t => t !== tabType);
+      let syncTasks: any[] = [];
+      
+      for (const otherTabType of otherTabTypes) {
+        const syncTasksKey = await generateCacheKey(`sync_tasks_${otherTabType}`);
+        const otherSyncTasks = await browserStorage.get(syncTasksKey) || [];
+        if (Array.isArray(otherSyncTasks)) {
+          syncTasks = syncTasks.concat(otherSyncTasks);
+        }
+      }
+      
+      // 处理同步任务
+      if (syncTasks.length > 0) {
+        console.log('检测到其他 tab 的同步任务:', syncTasks.length, '个');
+        
+        // 过滤与当前 tab 相关的同步任务
+        const relevantSyncTasks = syncTasks.filter(task => {
+          // 检查同步方向和层级关系
+          if (task.syncDirection === 'down' && task.sourceEntity.level === 'Campaigns' && (tabType === 'Adsets' || tabType === 'Ads')) {
+            return true; // 从广告系列同步到广告组或广告
+          } else if (task.syncDirection === 'down' && task.sourceEntity.level === 'Adsets' && tabType === 'Ads') {
+            return true; // 从广告组同步到广告
+          } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Ads' && (tabType === 'Adsets' || tabType === 'Campaigns')) {
+            return true; // 从广告同步到广告组或广告系列
+          } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Adsets' && tabType === 'Campaigns') {
+            return true; // 从广告组同步到广告系列
+          }
+          return false;
+        });
+        
+        if (relevantSyncTasks.length > 0) {
+          console.log('与当前 tab 相关的同步任务:', relevantSyncTasks.length, '个');
+          
+          // 执行同步操作
+          if (ads.length > 0) {
+            // 检测层级关系
+            hierarchyManager.detectHierarchy(ads);
+            
+            // 为当前 tab 创建实体
+            const entities: AdEntity[] = ads.map((ad: AdEntity) => ({
+              id: ad.id,
+              name: ad.name,
+              level: tabType,
+              parentId: ad.parentId || '',
+              values: ad,
+              increaseValues: {}
+            }));
+            
+            // 执行同步
+            const syncResult = await valueSyncManager.batchSync(entities, 'up');
+            console.log('同步其他 tab 数据到当前 tab 结果:', syncResult);
+            
+            // 更新当前 tab 的缓存数据
+            if (syncResult.successCount > 0) {
+              // 重新从 DOM 提取数据，确保数据是最新的
+              const { entities: updatedEntities, columnIndices: updatedColumnIndices, level: updatedLevel } = dataExtractor.extractFromDom();
+              
+              // 保存更新后的数据到缓存
+              const updatedCacheData = { ads: updatedEntities, columnMapping: updatedColumnIndices, level: updatedLevel };
+              const updatedDataToSave = { sortInfo, cacheData: updatedCacheData };
+              
+              await browserStorage.set(adsKey, updatedDataToSave);
+              
+              // 更新返回的数据
+              ads = updatedEntities;
+              console.log('已更新当前 tab 的缓存数据');
+            }
+          }
+        }
+      }
       
       // 检测层级关系
       if (ads.length > 0) {
@@ -274,11 +348,11 @@ export function handleGetCachedData(date: string, sendResponse: (response: any) 
 }
 
 // 消息处理函数 - 保存缓存数据
-export function handleSaveCachedData(data: { date: string; ads: any; columnMapping: any; sortInfo: any; level: string }, sendResponse: (response: any) => void): boolean {
-  const { ads, columnMapping, sortInfo, level } = data;
+export function handleSaveCachedData(data: { date: string; ads: any; columnMapping: any; sortInfo: any; level: string; tabType: string }, sendResponse: (response: any) => void): boolean {
+  const { ads, columnMapping, sortInfo, level, tabType } = data;
   (async () => {
     try {
-      const adsKey = await generateCacheKey('ads');
+      const adsKey = await generateCacheKey(`ads_${tabType}`);
       
       const cacheData = { ads, columnMapping, level };
       const dataToSave = { sortInfo, cacheData };
@@ -418,8 +492,8 @@ async function executeSync(modificationsWithId: any[], currentLevel: string) {
   return syncResult;
 }
 // 消息处理函数 - 保存修改数据
-export function handleSaveModifications(data: { date: string; modifications: any[] }, sendResponse: (response: any) => void): boolean {
-  const { modifications } = data;
+export function handleSaveModifications(data: { date: string; modifications: any[]; tabType: string }, sendResponse: (response: any) => void): boolean {
+  const { modifications, tabType } = data;
   (async () => {
     try {
       // 获取当前页面状态和层级
@@ -429,8 +503,8 @@ export function handleSaveModifications(data: { date: string; modifications: any
       // 处理修改数据，建立层级关系
       const modificationsWithId = processModifications(modifications, currentLevel);
       
-      const modificationsKey = await generateCacheKey('ad_modifications');
-      const syncTasksKey = await generateCacheKey('sync_tasks');
+      const modificationsKey = await generateCacheKey(`ad_modifications_${tabType}`);
+      const syncTasksKey = await generateCacheKey(`sync_tasks_${tabType}`);
       const sortInfo = detectSortInfo();
       const sortInfoKey = await generateSortInfoKey();
       
