@@ -57,16 +57,6 @@ async function getSavedAccountId() {
 // 初始化时保存账户ID
 saveAccountId();
 
-// 测试缓存key生成
-async function testCacheKeyGeneration() {
-  console.log('测试缓存key生成:');
-  console.log('当前账户ID:', getSavedAccountId());
-  console.log('测试缓存key:', await generateCacheKey('test'));
-  console.log('测试排序信息缓存key:', await generateSortInfoKey());
-}
-
-// 运行测试
-testCacheKeyGeneration();
 
 
 // 列映射配置 - 表头ID到字段名的映射

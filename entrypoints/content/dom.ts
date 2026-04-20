@@ -147,26 +147,28 @@ function extractAdDataFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTM
   }
 }
 
-// 获取列索引
-export async function getColumnIndices() {
+// 基础函数
+function getColumnIndicesBase(isSync: boolean = false): Record<string, number> {
   try {
     // 找到表格容器
     const tableContainer = findTableContainer();
     if (!tableContainer) {
-      console.log('getColumnIndices: 未找到表格容器');
+      console.log(`${isSync ? 'getColumnIndicesSync' : 'getColumnIndices'}: 未找到表格容器`);
       return {};
     }
 
     // 找到表头行
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (!headerRow) {
-      console.log('getColumnIndices: 未找到表头行');
+      console.log(`${isSync ? 'getColumnIndicesSync' : 'getColumnIndices'}: 未找到表头行`);
       return {};
     }
 
     // 获取所有表头单元格
     const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
-    console.log(`[${new Date().toISOString()}] 找到表头单元格数量:`, headerCells.length, headerCells);
+    if (!isSync) {
+      console.log(`[${new Date().toISOString()}] 找到表头单元格数量:`, headerCells.length, fieldMappingConfig);
+    }
 
     const indices: Record<string, number> = {};
 
@@ -174,73 +176,48 @@ export async function getColumnIndices() {
       // 获取单元格的文本内容，转换为小写进行匹配
       const text = cell.textContent?.trim().toLowerCase();
       if (text) {
-        console.log(`[${new Date().toISOString()}] 表头列 ${index}: ${text}`, cell,fieldMappingConfig);
+        if (!isSync) {
+          console.log(`[${new Date().toISOString()}] 表头列 ${index}: ${text}`);
+        }
 
         // 遍历映射表，查找匹配的字段
         for (const { field, labels } of fieldMappingConfig) {
-          console.log(`  → 检查标签: ${labels.join(', ')}`, field);
-          if (labels.some(label => text===label.toLowerCase())) {
+          if (!isSync) {
+            console.log(`  → 检查标签: ${labels.join(', ')}`, field);
+          }
+          if (labels.some(label => text.includes(label.toLowerCase()))) {
+            if (!isSync) {
+              console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
+            }
             indices[field] = index;
-            console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
             break;
           }
         }
       }
     });
 
-    // 更新全局列索引
-    columnIndices = indices;
-    console.log('获取到的列索引:', indices);
+    // 非同步版本更新全局列索引
+    if (!isSync) {
+      columnIndices = indices;
+      console.log('获取到的列索引:', indices);
+    } else {
+      console.log('同步获取到的列索引:', indices);
+    }
     return indices;
   } catch (error) {
-    console.error('获取列索引错误:', error);
+    console.error(`${isSync ? '同步' : ''}获取列索引错误:`, error);
     return {};
   }
 }
 
-// 同步获取列索引
+// 异步版本
+export async function getColumnIndices() {
+  return getColumnIndicesBase(false);
+}
+
+// 同步版本
 export function getColumnIndicesSync() {
-  try {
-    // 找到表格容器
-    const tableContainer = findTableContainer();
-    if (!tableContainer) {
-      console.log('getColumnIndicesSync: 未找到表格容器');
-      return {};
-    }
-
-    // 找到表头行
-    const headerRow = tableContainer.querySelector('[role="row"]');
-    if (!headerRow) {
-      console.log('getColumnIndicesSync: 未找到表头行');
-      return {};
-    }
-
-    // 获取所有表头单元格
-    const headerCells = headerRow.querySelectorAll('[role="columnheader"]');
-
-    const indices: Record<string, number> = {};
-
-    headerCells.forEach((cell, index) => {
-      // 获取单元格的文本内容，转换为小写进行匹配
-      const text = cell.textContent?.trim().toLowerCase();
-      if (text) {
-        // 遍历映射表，查找匹配的字段
-        for (const { field, labels } of fieldMappingConfig) {
-          console.log(`  → 检查标签: ${labels.join(', ')}`);
-          if (labels.some(label => text.includes(label.toLowerCase()))) {
-            console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
-            indices[field] = index;
-            break;
-          }
-        }
-      }
-    });
-    console.log('同步获取到的列索引:', indices);
-    return indices;
-  } catch (error) {
-    console.error('同步获取列索引错误:', error);
-    return {};
-  }
+  return getColumnIndicesBase(true);
 }
 
 // 检测排序信息

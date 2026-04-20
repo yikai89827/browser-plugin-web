@@ -12,9 +12,9 @@ export const columnMapping = {
   purchases: 'reporting_table_column_actions:omni_purchase',//购物次数
   results: 'ads_manager_table_results_column_label_id',//成效
   costPerResult: 'reporting_table_column_cost_per_result',//单次成效费用
-  campaign_id: 'reporting_table_column_campaign_id',//广告系列编号
-  adset_id: 'reporting_table_column_adset_id',//广告组编号
-  ad_id: 'reporting_table_column_ad_id',//广告编号
+  campaign_id: 'reporting_table_column_campaign_group_id',//广告系列编号
+  adset_id: 'reporting_table_column_campaign_id',//广告组编号
+  ad_id: 'reporting_table_column_adgroup_id',//广告编号
   // registration_cost: 'reporting_table_column_registration_cost',//注册成本
 };
 
