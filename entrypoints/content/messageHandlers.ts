@@ -6,7 +6,7 @@ import { dataExtractor } from './dataExtractor';
 import { hierarchyManager, AdEntity } from './hierarchy';
 import { valueSyncManager } from './syncValue';
 import { generateCacheKey, generateSortInfoKey } from './cache';
-import { detectSortInfo, findTableContainer, getColumnIndices } from './dom';
+import { columnIndices, detectSortInfo, findTableContainer, getColumnIndices, getColumnIndicesSync } from './dom';
 import { getCurrentPageState } from './date';
 
 // 消息处理函数 - 从DOM获取广告数据
@@ -88,6 +88,9 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
   console.log(`查找ID为 ${id} 的行`);
   console.log(`  → 行数量: ${rows.length}`, rows);
   
+  // 获取列索引
+  const columnIndices = getColumnIndicesSync();
+  
   for (const row of rows) {
     const children = row.children;
     console.log(`  → 子元素数量: ${children.length}`, children);
@@ -99,14 +102,31 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
         const fixed = grandchildren[0] as HTMLElement;
         const scrollable = grandchildren[1] as HTMLElement;
         
+        // 计算固定列长度
+        const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+        
         // 尝试通过ID查找行
         const scrollableCells = scrollable.children[0]?.children || [];
         if (scrollableCells.length > 0) {
-          const idCell = scrollableCells[0];
-          const idText = idCell?.textContent?.trim() || '';
-          console.log(`缓存数据id:${id}  → ID单元格文本: ${idText}`);
-          if (idText === id) {
-            return { row, fixed, scrollable };
+          // 尝试使用不同的ID列名
+          const idColumns = ['id', 'ad_id', 'adset_id', 'campaign_id'];
+          
+          for (const idColumn of idColumns) {
+            const idColumnIndex = columnIndices[idColumn];
+            if (idColumnIndex !== undefined) {
+              // 计算滚动列的索引（减去固定列的长度）
+              const scrollableColumnIndex = idColumnIndex - fixedColumnLength;
+              console.log(`  → 固定列长度: ${fixedColumnLength}, ${idColumn}列索引: ${idColumnIndex}, 滚动列索引: ${scrollableColumnIndex}`);
+              
+              if (scrollableColumnIndex >= 0 && scrollableCells[scrollableColumnIndex]) {
+                const idCell = scrollableCells[scrollableColumnIndex];
+                const idText = idCell?.textContent?.trim() || '';
+                console.log(`缓存数据id:${id}  → ${idColumn}单元格文本: ${idText}`);
+                if (idText === id) {
+                  return { row, fixed, scrollable };
+                }
+              }
+            }
           }
         }
       }
