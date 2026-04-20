@@ -6,7 +6,7 @@ import { dataExtractor } from './dataExtractor';
 import { hierarchyManager, AdEntity } from './hierarchy';
 import { valueSyncManager } from './syncValue';
 import { generateCacheKey, generateSortInfoKey } from './cache';
-import { detectSortInfo, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows } from './dom';
+import { detectSortInfo, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement } from './dom';
 import { getCurrentPageState } from './date';
 
 // 消息处理函数 - 从DOM获取广告数据
@@ -131,14 +131,6 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
   return null;
 }
 
-// 找到最内层的DOM元素
-function findInnermostElement(element: Element): Element {
-  let current = element;
-  while (current.firstElementChild) {
-    current = current.firstElementChild;
-  }
-  return current;
-}
 
 // 更新行数据
 async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>): Promise<void> {

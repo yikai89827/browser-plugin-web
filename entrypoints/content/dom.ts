@@ -453,7 +453,7 @@ export function getAdRowElement(adRow: any): Element | null {
 
 // 使用可滚动行元素更新数据
 // 找到最内层的DOM元素
-function findInnermostElement(element: Element): Element {
+export function findInnermostElement(element: Element): Element {
   let current = element;
   while (current.firstElementChild) {
     current = current.firstElementChild;

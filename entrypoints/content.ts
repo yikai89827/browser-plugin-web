@@ -4,7 +4,7 @@ import { browserStorage } from '../utils/storage';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findChildRowInDom } from './content/dom';
+import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
