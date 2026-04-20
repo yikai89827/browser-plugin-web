@@ -78,7 +78,7 @@ export async function syncAdDataToPage(sortInfo?: { field: string | null; direct
     
     // 提取当前页面的广告数据
     const { ads } = await extractAdsFromDom();
-    console.log('当前页面的广告数据:', ads.length);
+    console.log('当前页面的广告数据:', ads?.length || 0);
     
     // 遍历修改数据，更新到页面
     for (const modification of modifications) {

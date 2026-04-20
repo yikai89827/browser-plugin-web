@@ -4,7 +4,7 @@ import { browserStorage } from '../utils/storage';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay } from './content/dom';
+import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
@@ -226,8 +226,8 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
     }
     
     // 提取当前页面的广告数据
-    const { ads } = await dataExtractor.extractFromDom();
-    console.log('当前页面的广告数据:', ads.length);
+    const { ads } = await extractAdsFromDom();
+    console.log('当前页面的广告数据:', ads?.length || 0);
     
     // 遍历修改数据，更新到页面
     for (const modification of modifications) {

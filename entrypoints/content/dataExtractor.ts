@@ -21,7 +21,6 @@ export interface ExtractionResult {
 // 数据提取管理器
 class DataExtractor {
   // 从DOM提取数据
-  // 从DOM提取数据
   extractFromDom(): ExtractionResult {
     const level = this.detectCurrentLevel();
     // 使用dom.ts中的函数获取列索引
