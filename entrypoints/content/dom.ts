@@ -122,29 +122,47 @@ export async function extractAdsFromDom() {
 // 从行对中提取广告数据
 function extractAdDataFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTMLElement }, columnMapping: Record<string, number>) {
   try {
-    const adData: any = {};
-    
-    // 从固定列提取名称
-    const nameDiv = rowPair.fixed.querySelector('div');
-    if (nameDiv) {
-      adData.name = nameDiv.textContent?.trim() || '';
-    }
-    
-    // 从可滚动列提取数值字段
-    const cells = rowPair.scrollable.querySelectorAll('div');
-    
-    for (const [field, columnIndex] of Object.entries(columnMapping)) {
-      if (columnIndex !== undefined && cells[columnIndex]) {
-        const cellText = cells[columnIndex].textContent?.trim() || '';
-        adData[field] = cellText;
-      }
-    }
-    
+    const { name, values } = extractRowData(rowPair, columnMapping);
+    const adData: any = { name };
+    Object.assign(adData, values);
     return adData;
   } catch (error) {
     console.error('从行对提取广告数据错误:', error);
     return null;
   }
+}
+
+// 从行对中提取数据
+export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLElement }, columnIndices: Record<string, number>): {
+  name: string;
+  values: Record<string, string>;
+  fixedColumnLength: number;
+} {
+  // 从固定列提取名称
+  const nameDiv = rowPair.fixed.querySelector('div');
+  let name = nameDiv?.textContent?.trim() || '';
+  
+  // 计算固定列长度
+  const fixedColumnLength = rowPair.fixed.children[0]?.children?.length - 1 || 0;
+  
+  // 从可滚动列提取数据
+  const cells = rowPair.scrollable.querySelectorAll('div');
+  const values: Record<string, string> = {};
+  
+  for (const [field, originalIndex] of Object.entries(columnIndices)) {
+    // 计算滚动列的索引（减去固定列的长度）
+    const columnIndex = originalIndex - fixedColumnLength;
+    if (columnIndex !== undefined && columnIndex >= 0 && cells[columnIndex]) {
+      const cellText = cells[columnIndex].textContent?.trim() || '';
+      values[field] = cellText;
+    }
+  }
+  
+  return {
+    name,
+    values,
+    fixedColumnLength
+  };
 }
 
 // 基础函数

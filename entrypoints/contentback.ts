@@ -1684,14 +1684,14 @@ async function extractAdData(fixed: Element, scrollable: Element, rowIndex: numb
   const scrollableElements = scrollable.children[0]?.children || [];
 
   // 存储所有文本内容用于调试
-  const allTexts = [];
-  Array.from(scrollableElements).forEach((element, index) => {
-    const text = element.textContent?.trim();
-    if (text) {
-      allTexts.push(`${index}: ${text}`);
-    }
-  });
-  console.log(`滚动行数据长度:`, scrollableElements.length, allTexts.length);
+  // const allTexts = [];
+  // Array.from(scrollableElements).forEach((element, index) => {
+  //   const text = element.textContent?.trim();
+  //   if (text) {
+  //     allTexts.push(`${index}: ${text}`);
+  //   }
+  // });
+  // console.log(`滚动行数据长度:`, scrollableElements.length, allTexts.length);
 
   // 根据表头映射提取数据
   extractAdValues(ad, scrollableElements, fixed, DomColumnMapping);

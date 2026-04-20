@@ -57,17 +57,62 @@ async function debouncedSync(): Promise<void> {
         const modificationsKey = await generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
 
+        // 首先检查是否有缓存数据
+        const adsKey = await generateCacheKey('ads');
+        const cachedData = await browserStorage.get(adsKey);
+
+        // 检测当前页面的排序信息
+        const currentSortInfo = detectSortInfo();
+
+        // 检查缓存数据的排序信息是否与当前页面一致
+        const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
+        const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
+                              cachedSortInfo.direction === currentSortInfo.direction;
+
+        // 检查缓存数据是否有效
+        const hasValidCachedData = cachedData && 
+                                   cachedData.cacheData && 
+                                   cachedData.cacheData.ads && 
+                                   cachedData.cacheData.ads.length > 0 && 
+                                   cachedData.cacheData.columnMapping && 
+                                   Object.keys(cachedData.cacheData.columnMapping).length > 0;
+
+        let entities: any[] = [];
+        let columnIndices: any = {};
+        let level: string = 'Campaigns';
+        let sortInfo = currentSortInfo;
+
+        // 如果有缓存数据且排序信息一致，使用缓存数据
+        if (hasValidCachedData && isSortInfoSame) {
+          console.log('使用缓存数据（排序信息一致）');
+          entities = cachedData.cacheData.ads;
+          columnIndices = cachedData.cacheData.columnMapping;
+          level = cachedData.cacheData.level || 'Campaigns';
+        } else if (isSortInfoSame) {
+          console.log('排序信息一致但缓存数据不完整，从DOM提取');
+          // 从DOM提取数据
+          await getColumnIndices();
+          const extractionResult = dataExtractor.extractFromDom();
+          entities = extractionResult.entities;
+          columnIndices = extractionResult.columnIndices;
+          level = extractionResult.level;
+          sortInfo = extractionResult.sortInfo;
+        } else {
+          console.log('排序信息已变更，从DOM重新提取数据');
+          // 从DOM提取数据
+          await getColumnIndices();
+          const extractionResult = dataExtractor.extractFromDom();
+          entities = extractionResult.entities;
+          columnIndices = extractionResult.columnIndices;
+          level = extractionResult.level;
+          sortInfo = extractionResult.sortInfo;
+        }
+
         // 只有在有缓存数据时才创建遮盖层
         if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
           createOverlay();
         }
 
-        // 重新获取列索引
-        await getColumnIndices();
-
-        // 重新提取广告数据（包括原始值）
-        const { entities, columnIndices, level, sortInfo } = dataExtractor.extractFromDom();
-        
         // 检测层级关系
         hierarchyManager.detectHierarchy(entities);
 
@@ -83,6 +128,19 @@ async function debouncedSync(): Promise<void> {
           const sortInfoKey = await generateSortInfoKey();
           await browserStorage.set(sortInfoKey, sortInfo);
         }
+
+        // 保存数据到缓存（包含排序信息）
+        const cacheData = {
+          ads: entities,
+          columnMapping: columnIndices,
+          level: level
+        };
+        const dataToSave = {
+          sortInfo: sortInfo,
+          cacheData: cacheData
+        };
+        await browserStorage.set(adsKey, dataToSave);
+        console.log('已保存数据到缓存:', adsKey);
 
         // 这里可以添加页面数据同步逻辑
         console.log('页面数据同步完成:', { entities: entities.length, level, sortInfo });
