@@ -229,7 +229,7 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
       //   continue;
       // }
       
-      if (adRowElement) {
+      if (adRow) {
         // 计算原始值和增加值的总和
         const valuesToUpdate = calculateValuesToUpdate(modification);
         
