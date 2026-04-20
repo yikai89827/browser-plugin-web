@@ -382,10 +382,45 @@ export async function updateScrollableRow(row: Element, data: any, columnIndices
 
 // 获取广告行元素
 export function getAdRowElement(adRow: any): Element | null {
-  // 然后尝试通过索引查找
+  // 首先尝试通过ID查找
+  if (adRow.id) {
+    let tableContainer = findTableContainer();
+    if (tableContainer) {
+      const headerRow = tableContainer.querySelector('[role="row"]');
+      if (headerRow) {
+        const tableBody = headerRow.nextElementSibling;
+        if (tableBody) {
+          const presentationRows = tableBody.querySelectorAll('div > [role="presentation"]');
+          
+          for (const presentationRow of Array.from(presentationRows)) {
+            const children = presentationRow.children;
+            if (children.length === 1) {
+              const firstChild = children[0] as HTMLElement;
+              const grandchildren = firstChild.children;
+              
+              if (grandchildren.length >= 2) {
+                const scrollable = grandchildren[1] as HTMLElement;
+                // 查找编号列（通常是第一列）
+                const scrollableCells = scrollable.children[0]?.children || [];
+                if (scrollableCells.length > 0) {
+                  const idCell = scrollableCells[0];
+                  const idText = idCell?.textContent?.trim() || '';
+                  
+                  if (idText === adRow.id) {
+                    return presentationRow as Element;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // 然后尝试通过名称查找
   let tableContainer = findTableContainer();
 
-  // 最后尝试通过名称查找
   if (tableContainer) {
     const headerRow = tableContainer.querySelector('[role="row"]');
     if (headerRow) {

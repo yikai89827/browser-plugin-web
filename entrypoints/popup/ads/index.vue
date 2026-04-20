@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from "vue";
 import { browser } from "wxt/browser";
-import axios from "axios";
+// import axios from "axios";
 // import { browserStorage } from "../../../utils/storage";
 
 // 广告数据类型定义
@@ -467,9 +467,18 @@ const checkCacheOnMount = async () => {
       // 加载并应用修改数据
       if (cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
         console.log('从content缓存中读取修改数据:', cachedData.modifications);
-        ads.value.forEach((ad, index) => {
-          const rowData = cachedData.modifications[index];
+        // 过滤掉null值，只保留有效的修改数据
+        const validModifications = cachedData.modifications.filter((item: null | undefined) => item !== null && item !== undefined);
+        console.log('过滤后的修改数据:', validModifications);
+        
+        ads.value.forEach(ad => {
+          // 通过ID匹配修改数据，使用completeData.id
+          const rowData = validModifications.find((item: { completeData: { id: string; }; }) => 
+            item.completeData && item.completeData.id === ad.id
+          );
+          
           if (rowData && rowData.modifiedFields) {
+            console.log('匹配到修改数据:', ad.id, rowData.modifiedFields);
             // 恢复增加的值
             if (rowData.modifiedFields.impressions !== undefined) {
               ad.increase_impressions = rowData.modifiedFields.impressions;
@@ -491,6 +500,12 @@ const checkCacheOnMount = async () => {
             }
             if (rowData.modifiedFields.registration_cost !== undefined) {
               ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+            }
+            if (rowData.modifiedFields.clicks !== undefined) {
+              ad.increase_clicks = rowData.modifiedFields.clicks;
+            }
+            if (rowData.modifiedFields.purchases !== undefined) {
+              ad.increase_purchases = rowData.modifiedFields.purchases;
             }
           }
         });
@@ -626,9 +641,9 @@ onUnmounted(() => {
           <tr>
             <!-- <th>广告id</th> -->
             <!-- <th>名称</th> -->
-            <th>覆盖人数</th>
-            <th>增加</th>
             <th>展示次数</th>
+            <th>增加</th>
+            <th>覆盖人数</th>
             <th>增加</th>
             <th>花费金额</th>
             <th>增加</th>
@@ -646,17 +661,6 @@ onUnmounted(() => {
             <!-- <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
             </td> -->
-            <td class="ellipsis-cell" :title="String(ad.reach || '-')">
-              {{ ad.reach || '-' }}
-            </td>
-            <td>
-              <input 
-                type="number" 
-                v-model="ad.increase_reach" 
-                class="editable-input"
-                min="0"
-              />
-            </td>
             <td class="ellipsis-cell" :title="String(ad.impressions || '-')">
               {{ ad.impressions|| '-' }}
             </td>
@@ -664,6 +668,17 @@ onUnmounted(() => {
               <input 
                 type="number" 
                 v-model="ad.increase_impressions" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <td class="ellipsis-cell" :title="String(ad.reach || '-')">
+              {{ ad.reach || '-' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_reach" 
                 class="editable-input"
                 min="0"
               />

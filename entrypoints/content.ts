@@ -256,13 +256,18 @@ function initPageObserver(): void {
     if (hasSortChange || hasColumnChange) {
       console.log('检测到排序变更或表格列位置变化，触发同步');
 
-      // 立即显示遮盖层
+      // 立即显示遮盖层并应用修改数据
       (async () => {
         const modificationsKey = await generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
         if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
-          console.log('有缓存数据，显示遮盖层');
+          console.log('有缓存数据，显示遮盖层并应用修改数据');
           createOverlay();
+          // 等待DOM更新完成后再应用修改数据
+          setTimeout(async () => {
+            await applyCachedModifications(modificationsArray);
+            removeOverlay();
+          }, 500);
         }
       })();
 
@@ -306,10 +311,11 @@ async function loadCachedData(): Promise<void> {
 
       console.log('预加载缓存数据:', { modifications, columnMapping, pageState });
 
-      // 只有在有缓存数据时才创建遮盖层
-      if (modifications) {
+      // 只有在有缓存数据时才创建遮盖层并应用修改数据
+      if (modifications && Array.isArray(modifications) && modifications.length > 0) {
         createOverlay();
-        // 这里可以添加页面数据同步逻辑
+        // 应用缓存的修改数据到页面
+        await applyCachedModifications(modifications);
       }
     } catch (error) {
       console.error('加载缓存数据错误:', error);
@@ -318,6 +324,111 @@ async function loadCachedData(): Promise<void> {
       removeOverlay();
       (window as any).isSyncing = false;
     }
+  }
+}
+
+// 应用缓存的修改数据到页面
+async function applyCachedModifications(modifications: any[]): Promise<void> {
+  try {
+    console.log('应用缓存的修改数据到页面，修改数据数量:', modifications.length);
+    
+    // 提取当前页面的广告数据
+    const { ads } = await dataExtractor.extractFromDom();
+    console.log('当前页面的广告数据:', ads.length);
+    
+    // 遍历修改数据，更新到页面
+    for (const modification of modifications) {
+      if (!modification || !modification.completeData || !modification.completeData.id || !modification.modifiedFields) {
+        continue;
+      }
+      
+      // 找到对应的广告行
+      const adRow = ads.find(ad => ad.id === modification.completeData.id);
+      if (adRow) {
+        // 计算原始值和增加值的总和
+        const valuesToUpdate = calculateValuesToUpdate(modification);
+        
+        // 更新到页面
+        await updateAdRowByEntity(adRow, valuesToUpdate);
+      } else {
+        console.log('未找到匹配的广告行:', modification.completeData.id);
+      }
+    }
+    
+    console.log('应用缓存的修改数据到页面完成');
+  } catch (error) {
+    console.error('应用缓存的修改数据到页面错误:', error);
+  }
+}
+
+// 计算要更新的值
+function calculateValuesToUpdate(modification: any) {
+  const valuesToUpdate: Record<string, string> = {};
+  
+  if (modification.completeData && modification.modifiedFields) {
+    Object.keys(modification.modifiedFields).forEach(field => {
+      const originalValue = modification.completeData[field] || 0;
+      const increaseValue = modification.modifiedFields[field] || 0;
+      const totalValue = originalValue + increaseValue;
+      
+      // 格式化数值
+      if (typeof totalValue === 'number') {
+        valuesToUpdate[field] = totalValue.toLocaleString();
+      } else {
+        valuesToUpdate[field] = String(totalValue);
+      }
+    });
+  }
+  
+  return valuesToUpdate;
+}
+
+// 根据实体更新广告行
+async function updateAdRowByEntity(entity: any, valuesToUpdate: Record<string, string>) {
+  try {
+    // 获取广告行的DOM元素
+    const adRowElement = getAdRowElement(entity.id);
+    if (!adRowElement) {
+      console.log('未找到广告行的DOM元素:', entity.id);
+      return;
+    }
+    
+    // 获取列索引
+    const columnIndices = getColumnIndicesSync();
+    if (!columnIndices || Object.keys(columnIndices).length === 0) {
+      console.log('列索引为空，无法更新广告行');
+      return;
+    }
+    
+    // 获取固定列和可滚动列
+    const fixedElement = adRowElement.querySelector('.fixed') as HTMLElement;
+    const scrollableElement = adRowElement.querySelector('.scrollable') as HTMLElement;
+    
+    if (!fixedElement || !scrollableElement) {
+      console.log('未找到固定列或可滚动列元素');
+      return;
+    }
+    
+    // 计算固定列长度
+    const fixedColumnLength = fixedElement.children[0]?.children?.length - 1 || 0;
+    
+    // 获取可滚动列的单元格
+    const scrollableCells = scrollableElement.children[0]?.children || [];
+    
+    // 更新每个字段的值
+    Object.entries(valuesToUpdate).forEach(([field, value]) => {
+      const columnIndex = columnIndices[field];
+      if (columnIndex !== undefined) {
+        const scrollableIndex = columnIndex - fixedColumnLength;
+        if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
+          scrollableCells[scrollableIndex].textContent = value;
+        }
+      }
+    });
+    
+    console.log('更新广告行成功:', entity.id);
+  } catch (error) {
+    console.error('更新广告行错误:', error);
   }
 }
 
