@@ -63,4 +63,5 @@ export const filterTexts = [
   '打开',
   '下拉',
   '菜单',
+  '图表'
 ];

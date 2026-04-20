@@ -222,26 +222,78 @@ export function getColumnIndicesSync() {
 
 // 检测排序信息
 export function detectSortInfo() {
-  // 检查是否在浏览器环境中
-  if (typeof window === 'undefined' || !window.location) {
-    return { field: null, direction: null };
-  }
-  
-  const url = window.location.href;
-  const sortMatch = url.match(/sort=([^&]+)/);
-  
-  if (sortMatch) {
-    const sortValue = sortMatch[1];
-    const parts = sortValue.split('~');
-    if (parts.length === 2) {
-      return {
-        field: parts[0],
-        direction: parts[1] === '1' ? 'desc' : 'asc'
-      };
+  let sortField = null;
+  let sortDirection = null;
+
+  try {
+    // 检查是否在浏览器环境中
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return { field: null, direction: null };
     }
+
+    // 查找具有sorting属性且role="columnheader"的元素
+    const columnHeaderElements = document.querySelectorAll('[role="columnheader"]');
+
+    // 使用for循环而不是forEach，以便能够提前返回
+    for (let i = 0; i < columnHeaderElements.length; i++) {
+      const element = columnHeaderElements[i];
+
+      // 尝试多种方式获取排序属性
+      const sortingAttr = element.getAttribute('sorting') ||
+        element.getAttribute('aria-sort') ||
+        element.getAttribute('data-sort');
+
+
+      // 如果找到排序属性
+      if (sortingAttr) {
+        // 从元素文本中提取字段名
+        const fieldName = element.textContent?.trim().toLowerCase() || '';
+
+        // 尝试映射字段名到标准字段名
+        for (const { field, labels } of fieldMappingConfig) {
+          if (labels.some(label => fieldName.includes(label.toLowerCase()))) {
+            sortField = field;
+            break;
+          }
+        }
+
+        // 如果没有匹配到标准字段，使用标准化的字段名
+        if (!sortField) {
+          sortField = fieldName
+            .replace(/[^a-z0-9\s]/g, '') // 移除特殊字符
+            .trim()
+            .replace(/\s+/g, '_'); // 将空格替换为下划线
+        }
+
+        // 设置排序方向
+        if (sortingAttr.toLowerCase() === 'asc' || sortingAttr.includes('↑') || sortingAttr.includes('up') || sortingAttr.includes('ascending')) {
+          sortDirection = 'asc';
+        } else if (sortingAttr.toLowerCase() === 'desc' || sortingAttr.includes('↓') || sortingAttr.includes('down') || sortingAttr.includes('descending')) {
+          sortDirection = 'desc';
+        }
+
+        return { field: sortField, direction: sortDirection };
+      }
+    }
+
+    // 如果没有找到排序属性，尝试从URL中获取排序信息
+    const urlParams = new URLSearchParams(window.location.search);
+    const sortParam = urlParams.get('sort');
+    if (sortParam) {
+      console.log(`从URL获取排序信息: ${sortParam}`);
+      // 解析URL中的排序参数
+      const sortParts = sortParam.split('.');
+      if (sortParts.length === 2) {
+        sortField = sortParts[0];
+        sortDirection = sortParts[1];
+      }
+    }
+  } catch (error) {
+    console.error('Error detecting sort info:', error);
   }
-  
-  return { field: null, direction: null };
+
+  console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
+  return { field: sortField, direction: sortDirection };
 }
 
 // 更新元素文本
