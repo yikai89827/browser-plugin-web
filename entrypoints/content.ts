@@ -146,6 +146,7 @@ async function debouncedSync(): Promise<void> {
         console.log('页面数据同步完成:', { entities: entities.length, level, sortInfo });
       } catch (error) {
         console.error('刷新页面数据错误:', error);
+        removeOverlay();
       } finally {
         // 无论成功失败都关闭遮盖层
         removeOverlay();
@@ -167,14 +168,14 @@ function createOverlay() {
   overlayElement.style.left = '0';
   overlayElement.style.width = '100%';
   overlayElement.style.height = '100%';
-  overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+  overlayElement.style.backgroundColor = 'rgba(255, 255, 255, 1)';
   overlayElement.style.zIndex = '9999';
   overlayElement.style.display = 'flex';
   overlayElement.style.alignItems = 'center';
   overlayElement.style.justifyContent = 'center';
   
   const loadingText = document.createElement('div');
-  loadingText.textContent = '数据同步中...';
+  loadingText.textContent = '处理中...';
   loadingText.style.fontSize = '16px';
   loadingText.style.color = '#333';
   
@@ -208,6 +209,7 @@ async function loadCachedData(): Promise<void> {
       }
     } catch (error) {
       console.error('加载缓存数据错误:', error);
+      removeOverlay();
     } finally {
       // 无论成功失败都关闭遮盖层
       removeOverlay();
