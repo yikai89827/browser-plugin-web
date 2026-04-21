@@ -349,7 +349,7 @@ function getCurrentPageState() {
   }
 
   // 获取当前排序状态
-  const { sortField, sortDirection } = detectSortInfo();
+  const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
 
   return {
     level,
@@ -365,13 +365,13 @@ function initPageObserver(): void {
     // 检查是否有排序变化
     let hasSortChange = false;
     try {
-      const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
+      const { field: sortField, direction: sortDirection, level } = getCurrentPageState() || {};
       // console.log('当前排序字段:', sortField, '排序方向:', sortDirection, '上次排序信息:', lastSortInfo);
       if (sortField && sortDirection) {
-        if (sortField !== lastSortInfo.field || sortDirection !== lastSortInfo.direction) {
-          lastSortInfo = { field: sortField, direction: sortDirection };
+        if (sortField !== lastSortInfo.field || sortDirection !== lastSortInfo.direction || level !== lastSortInfo.level) {
+          lastSortInfo = { field: sortField, direction: sortDirection, level };
           hasSortChange = true;
-          console.log('检测到排序变更:', lastSortInfo);
+          console.log('检测到排序或者tab变更:', lastSortInfo);
         }
       }
     } catch (error) {

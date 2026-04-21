@@ -322,6 +322,7 @@ export function detectSortInfo() {
   }
 }
 
+
 // 更新元素文本
 export function updateElementText(element: Element, text: string) {
   return new Promise<void>((resolve) => {
