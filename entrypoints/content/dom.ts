@@ -265,11 +265,13 @@ export function detectSortInfo() {
     const sortParam = urlParams.get('sort');
     if (sortParam) {
       console.log(`从URL获取排序信息: ${sortParam}`);
-      // 解析URL中的排序参数
-      const sortParts = sortParam.split('.');
+      // 解析URL中的排序参数，格式如：impressions~0（升序）或 impressions~1（降序）
+      const sortParts = sortParam.split('~');
       if (sortParts.length === 2) {
         sortField = sortParts[0];
-        sortDirection = sortParts[1];
+        const sortOrder = sortParts[1];
+        // 将0映射为asc，1映射为desc
+        sortDirection = sortOrder === '0' ? 'desc' : 'asc';
         console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
         return { field: sortField, direction: sortDirection };
       }
