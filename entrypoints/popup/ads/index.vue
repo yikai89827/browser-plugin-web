@@ -22,15 +22,15 @@ interface AdData {
   registrations: number;
   increase_registrations: number;
   registration_cost: number;
-  increase_registration_cost: number;
+  calculated_registration_cost: string;
   purchases: number;
   increase_purchases: number;
   purchase_cost: number;
-  increase_purchase_cost: number;
+  calculated_purchase_cost: string;
   results: number;
   increase_results: number;
   costPerResult: number;
-  increase_costPerResult: number;
+  calculated_costPerResult: string;
   [key: string]: any;
 }
 
@@ -238,37 +238,38 @@ const fetchAds = async () => {
         
         ads.value.forEach((ad, index) => {
           const rowData = sortedModifications[index];
-          if (rowData && rowData.modifiedFields) {
+          if (rowData && rowData.completeData) {
             // 恢复增加的值
-          if (rowData.modifiedFields.impressions !== undefined) {
-            ad.increase_impressions = rowData.modifiedFields.impressions;
+          if (rowData.completeData.increase_impressions !== undefined) {
+            ad.increase_impressions = rowData.completeData.increase_impressions;
           }
-          if (rowData.modifiedFields.reach !== undefined) {
-            ad.increase_reach = rowData.modifiedFields.reach;
+          if (rowData.completeData.increase_reach !== undefined) {
+            ad.increase_reach = rowData.completeData.increase_reach;
           }
-          if (rowData.modifiedFields.spend !== undefined) {
-            ad.increase_spend = rowData.modifiedFields.spend;
+          if (rowData.completeData.increase_spend !== undefined) {
+            ad.increase_spend = rowData.completeData.increase_spend;
           }
-          if (rowData.modifiedFields.clicks !== undefined) {
-            ad.increase_clicks = rowData.modifiedFields.clicks;
+          if (rowData.completeData.increase_clicks !== undefined) {
+            ad.increase_clicks = rowData.completeData.increase_clicks;
           }
-          if (rowData.modifiedFields.registrations !== undefined) {
-            ad.increase_registrations = rowData.modifiedFields.registrations;
+          if (rowData.completeData.increase_registrations !== undefined) {
+            ad.increase_registrations = rowData.completeData.increase_registrations;
           }
-          if (rowData.modifiedFields.registration_cost !== undefined) {
-            ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+          if (rowData.completeData.increase_purchases !== undefined) {
+            ad.increase_purchases = rowData.completeData.increase_purchases;
           }
-          if (rowData.modifiedFields.purchases !== undefined) {
-            ad.increase_purchases = rowData.modifiedFields.purchases;
+          if (rowData.completeData.increase_results !== undefined) {
+            ad.increase_results = rowData.completeData.increase_results;
           }
-          if (rowData.modifiedFields.purchase_cost !== undefined) {
-            ad.increase_purchase_cost = rowData.modifiedFields.purchase_cost;
+          // 恢复计算结果
+          if (rowData.completeData.calculated_registration_cost !== undefined) {
+            ad.calculated_registration_cost = rowData.completeData.calculated_registration_cost;
           }
-          if (rowData.modifiedFields.results !== undefined) {
-            ad.increase_results = rowData.modifiedFields.results;
+          if (rowData.completeData.calculated_purchase_cost !== undefined) {
+            ad.calculated_purchase_cost = rowData.completeData.calculated_purchase_cost;
           }
-          if (rowData.modifiedFields.costPerResult !== undefined) {
-            ad.increase_costPerResult = rowData.modifiedFields.costPerResult;
+          if (rowData.completeData.calculated_costPerResult !== undefined) {
+            ad.calculated_costPerResult = rowData.completeData.calculated_costPerResult;
           }
           }
         });
@@ -334,11 +335,8 @@ const saveChanges = async () => {
               ad.increase_spend !== undefined ||
               ad.increase_clicks !== undefined ||
               ad.increase_registrations !== undefined ||
-              ad.increase_registration_cost !== undefined ||
               ad.increase_purchases !== undefined ||
-              ad.increase_purchase_cost !== undefined ||
-              ad.increase_results !== undefined ||
-              ad.increase_costPerResult !== undefined;
+              ad.increase_results !== undefined;
             
             // 获取当前行在表格中的索引
             const rowIndex = ads.value.indexOf(ad);
@@ -363,20 +361,11 @@ const saveChanges = async () => {
               if (ad.increase_registrations !== undefined) {
                 modifiedFields.registrations = ad.increase_registrations;
               }
-              if (ad.increase_registration_cost !== undefined) {
-                modifiedFields.registration_cost = ad.increase_registration_cost;
-              }
               if (ad.increase_purchases !== undefined) {
                 modifiedFields.purchases = ad.increase_purchases;
               }
-              if (ad.increase_purchase_cost !== undefined) {
-                modifiedFields.purchase_cost = ad.increase_purchase_cost;
-              }
               if (ad.increase_results !== undefined) {
                 modifiedFields.results = ad.increase_results;
-              }
-              if (ad.increase_costPerResult !== undefined) {
-                modifiedFields.costPerResult = ad.increase_costPerResult;
               }
         
         // 构建行数据对象，确保只包含可序列化的属性
@@ -394,6 +383,11 @@ const saveChanges = async () => {
           .replace('Drop-down', '')
           .replace(/\s*\-\s*\d+$/, '')
           .trim();
+        
+        // 确保计算结果已更新
+        calculateRegistrationCost(ad);
+        calculatePurchaseCost(ad);
+        calculateCostPerResult(ad);
         
         const rowData = {
           completeData: {
@@ -413,15 +407,15 @@ const saveChanges = async () => {
             registrations: ad.registrations || 0,
             increase_registrations: ad.increase_registrations || 0,
             registration_cost: ad.registration_cost || 0,
-            increase_registration_cost: ad.increase_registration_cost || 0,
+            calculated_registration_cost: ad.calculated_registration_cost || '¥0.00',
             purchases: ad.purchases || 0,
             increase_purchases: ad.increase_purchases || 0,
             purchase_cost: ad.purchase_cost || 0,
-            increase_purchase_cost: ad.increase_purchase_cost || 0,
+            calculated_purchase_cost: ad.calculated_purchase_cost || '¥0.00',
             results: ad.results || 0,
             increase_results: ad.increase_results || 0,
             costPerResult: ad.costPerResult || 0,
-            increase_costPerResult: ad.increase_costPerResult || 0,
+            calculated_costPerResult: ad.calculated_costPerResult || '¥0.00',
           },
           modifiedFields: modifiedFields
         };
@@ -498,38 +492,39 @@ const checkCacheOnMount = async () => {
             item.completeData && item.completeData.id === ad.id
           );
           
-          if (rowData && rowData.modifiedFields) {
-            console.log('匹配到修改数据:', ad.id, rowData.modifiedFields);
+          if (rowData && rowData.completeData) {
+            console.log('匹配到修改数据:', ad.id, rowData.completeData);
             // 恢复增加的值
-            if (rowData.modifiedFields.impressions !== undefined) {
-              ad.increase_impressions = rowData.modifiedFields.impressions;
+            if (rowData.completeData.increase_impressions !== undefined) {
+              ad.increase_impressions = rowData.completeData.increase_impressions;
             }
-            if (rowData.modifiedFields.reach !== undefined) {
-              ad.increase_reach = rowData.modifiedFields.reach;
+            if (rowData.completeData.increase_reach !== undefined) {
+              ad.increase_reach = rowData.completeData.increase_reach;
             }
-            if (rowData.modifiedFields.spend !== undefined) {
-              ad.increase_spend = rowData.modifiedFields.spend;
+            if (rowData.completeData.increase_spend !== undefined) {
+              ad.increase_spend = rowData.completeData.increase_spend;
             }
-            if (rowData.modifiedFields.clicks !== undefined) {
-              ad.increase_clicks = rowData.modifiedFields.clicks;
+            if (rowData.completeData.increase_clicks !== undefined) {
+              ad.increase_clicks = rowData.completeData.increase_clicks;
             }
-            if (rowData.modifiedFields.registrations !== undefined) {
-              ad.increase_registrations = rowData.modifiedFields.registrations;
+            if (rowData.completeData.increase_registrations !== undefined) {
+              ad.increase_registrations = rowData.completeData.increase_registrations;
             }
-            if (rowData.modifiedFields.registration_cost !== undefined) {
-              ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
+            if (rowData.completeData.increase_purchases !== undefined) {
+              ad.increase_purchases = rowData.completeData.increase_purchases;
             }
-            if (rowData.modifiedFields.purchases !== undefined) {
-              ad.increase_purchases = rowData.modifiedFields.purchases;
+            if (rowData.completeData.increase_results !== undefined) {
+              ad.increase_results = rowData.completeData.increase_results;
             }
-            if (rowData.modifiedFields.purchase_cost !== undefined) {
-              ad.increase_purchase_cost = rowData.modifiedFields.purchase_cost;
+            // 恢复计算结果
+            if (rowData.completeData.calculated_registration_cost !== undefined) {
+              ad.calculated_registration_cost = rowData.completeData.calculated_registration_cost;
             }
-            if (rowData.modifiedFields.results !== undefined) {
-              ad.increase_results = rowData.modifiedFields.results;
+            if (rowData.completeData.calculated_purchase_cost !== undefined) {
+              ad.calculated_purchase_cost = rowData.completeData.calculated_purchase_cost;
             }
-            if (rowData.modifiedFields.costPerResult !== undefined) {
-              ad.increase_costPerResult = rowData.modifiedFields.costPerResult;
+            if (rowData.completeData.calculated_costPerResult !== undefined) {
+              ad.calculated_costPerResult = rowData.completeData.calculated_costPerResult;
             }
           }
         });
@@ -574,12 +569,158 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 };
 
+// 从DOM中提取货币符号
+let currencySymbol = '¥'; // 默认货币符号
+
+// 从DOM获取货币符号的函数
+const getCurrencySymbol = async () => {
+  try {
+    const response = await sendMessageToContent('getCurrencySymbol');
+    if (response && response.symbol) {
+      currencySymbol = response.symbol;
+    }
+  } catch (error) {
+    console.error('获取货币符号失败:', error);
+  }
+};
+
+// 格式化货币，保留两位小数并添加货币符号
+const formatCurrency = (value: number): string => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return currencySymbol + '0.00';
+  }
+  return currencySymbol + value.toFixed(2);
+};
+
+// 计算单次注册费用
+const calculateRegistrationCost = (ad: AdData): string => {
+  const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
+  const totalRegistrations = (ad.registrations || 0) + (ad.increase_registrations || 0);
+  
+  let costStr = currencySymbol + '0.00';
+  if (totalRegistrations !== 0) {
+    const cost = totalSpend / totalRegistrations;
+    costStr = currencySymbol + cost.toFixed(2);
+  }
+  
+  // 缓存计算结果
+  ad.calculated_registration_cost = costStr;
+  return costStr;
+};
+
+// 计算单次购买费用
+const calculatePurchaseCost = (ad: AdData): string => {
+  const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
+  const totalPurchases = (ad.purchases || 0) + (ad.increase_purchases || 0);
+  
+  let costStr = currencySymbol + '0.00';
+  if (totalPurchases !== 0) {
+    const cost = totalSpend / totalPurchases;
+    costStr = currencySymbol + cost.toFixed(2);
+  }
+  
+  // 缓存计算结果
+  ad.calculated_purchase_cost = costStr;
+  return costStr;
+};
+
+// 计算单次成效费用
+const calculateCostPerResult = (ad: AdData): string => {
+  const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
+  const totalResults = (ad.results || 0) + (ad.increase_results || 0);
+  
+  let costStr = currencySymbol + '0.00';
+  if (totalResults !== 0) {
+    const cost = totalSpend / totalResults;
+    costStr = currencySymbol + cost.toFixed(2);
+  }
+  
+  // 缓存计算结果
+  ad.calculated_costPerResult = costStr;
+  return costStr;
+};
+
+// 计算合计数据
+const calculateTotals = () => {
+  const totals = {
+    impressions: 0,
+    increase_impressions: 0,
+    reach: 0,
+    increase_reach: 0,
+    spend: 0,
+    increase_spend: 0,
+    clicks: 0,
+    increase_clicks: 0,
+    registrations: 0,
+    increase_registrations: 0,
+    purchases: 0,
+    increase_purchases: 0,
+    results: 0,
+    increase_results: 0
+  };
+  
+  // 计算各字段合计
+  ads.value.forEach(ad => {
+    // 处理非数字值，将其转换为0
+    const getValue = (val: any): number => {
+      if (val === undefined || val === null || val === '-' || isNaN(val)) {
+        return 0;
+      }
+      return Number(val);
+    };
+    
+    totals.impressions += getValue(ad.impressions);
+    totals.increase_impressions += getValue(ad.increase_impressions);
+    totals.reach += getValue(ad.reach);
+    totals.increase_reach += getValue(ad.increase_reach);
+    totals.spend += getValue(ad.spend);
+    totals.increase_spend += getValue(ad.increase_spend);
+    totals.clicks += getValue(ad.clicks);
+    totals.increase_clicks += getValue(ad.increase_clicks);
+    totals.registrations += getValue(ad.registrations);
+    totals.increase_registrations += getValue(ad.increase_registrations);
+    totals.purchases += getValue(ad.purchases);
+    totals.increase_purchases += getValue(ad.increase_purchases);
+    totals.results += getValue(ad.results);
+    totals.increase_results += getValue(ad.increase_results);
+  });
+  
+  // 计算单次费用合计
+  const totalSpend = totals.spend + totals.increase_spend;
+  const totalRegistrations = totals.registrations + totals.increase_registrations;
+  const totalPurchases = totals.purchases + totals.increase_purchases;
+  const totalResults = totals.results + totals.increase_results;
+  
+  let registrationCost = currencySymbol + '0.00';
+  if (totalRegistrations !== 0) {
+    registrationCost = currencySymbol + (totalSpend / totalRegistrations).toFixed(2);
+  }
+  
+  let purchaseCost = currencySymbol + '0.00';
+  if (totalPurchases !== 0) {
+    purchaseCost = currencySymbol + (totalSpend / totalPurchases).toFixed(2);
+  }
+  
+  let costPerResult = currencySymbol + '0.00';
+  if (totalResults !== 0) {
+    costPerResult = currencySymbol + (totalSpend / totalResults).toFixed(2);
+  }
+  
+  return {
+    ...totals,
+    registrationCost,
+    purchaseCost,
+    costPerResult
+  };
+};
+
 // 初始化
 onMounted(() => {
+  // 获取货币符号
+  getCurrencySymbol();
+  
   // 执行缓存检查
   checkCacheOnMount();
-  
-
   
   // 挂载时添加事件监听器
   document.addEventListener('click', handleClickOutside);
@@ -749,15 +890,10 @@ onUnmounted(() => {
               />
             </td>
             <td class="ellipsis-cell" :title="String(ad.registration_cost || '-')">  
-              {{ ad.registration_cost || '0' }}
+              {{ formatCurrency(ad.registration_cost || 0) }}
             </td>
             <td>
-              <input 
-                type="number" 
-                v-model="ad.increase_registration_cost" 
-                class="editable-input"
-                min="0"
-              />
+              {{ ad.calculated_registration_cost || calculateRegistrationCost(ad) }}
             </td>
             <td class="ellipsis-cell" :title="String(ad.purchases || '-')">  
               {{ ad.purchases || '0' }}
@@ -771,15 +907,10 @@ onUnmounted(() => {
               />
             </td>
             <td class="ellipsis-cell" :title="String(ad.purchase_cost || '-')">  
-              {{ ad.purchase_cost || '0' }}
+              {{ formatCurrency(ad.purchase_cost || 0) }}
             </td>
             <td>
-              <input 
-                type="number" 
-                v-model="ad.increase_purchase_cost" 
-                class="editable-input"
-                min="0"
-              />
+              {{ ad.calculated_purchase_cost || calculatePurchaseCost(ad) }}
             </td>
             <td class="ellipsis-cell" :title="String(ad.results || '-')">  
               {{ ad.results || '0' }}
@@ -793,21 +924,39 @@ onUnmounted(() => {
               />
             </td>
             <td class="ellipsis-cell" :title="String(ad.costPerResult || '-')">  
-              {{ ad.costPerResult || '0' }}
+              {{ formatCurrency(ad.costPerResult || 0) }}
             </td>
             <td>
-              <input 
-                type="number" 
-                v-model="ad.increase_costPerResult" 
-                class="editable-input"
-                min="0"
-              />
+              {{ ad.calculated_costPerResult || calculateCostPerResult(ad) }}
             </td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
             <td colspan="21" class="empty-state">
               暂无广告数据，请点击"获取数据"按钮加载
             </td>
+          </tr>
+          <tr v-if="ads.length > 0" class="total-row">
+            <td colspan="1" class="total-label">合计</td>
+            <td>{{ calculateTotals().impressions }}</td>
+            <td>{{ calculateTotals().increase_impressions }}</td>
+            <td>{{ calculateTotals().reach }}</td>
+            <td>{{ calculateTotals().increase_reach }}</td>
+            <td>{{ formatCurrency(calculateTotals().spend) }}</td>
+            <td>{{ calculateTotals().increase_spend }}</td>
+            <td>{{ calculateTotals().clicks }}</td>
+            <td>{{ calculateTotals().increase_clicks }}</td>
+            <td>{{ calculateTotals().registrations }}</td>
+            <td>{{ calculateTotals().increase_registrations }}</td>
+            <td>{{ formatCurrency(0) }}</td>
+            <td>{{ calculateTotals().registrationCost }}</td>
+            <td>{{ calculateTotals().purchases }}</td>
+            <td>{{ calculateTotals().increase_purchases }}</td>
+            <td>{{ formatCurrency(0) }}</td>
+            <td>{{ calculateTotals().purchaseCost }}</td>
+            <td>{{ calculateTotals().results }}</td>
+            <td>{{ calculateTotals().increase_results }}</td>
+            <td>{{ formatCurrency(0) }}</td>
+            <td>{{ calculateTotals().costPerResult }}</td>
           </tr>
         </tbody>
       </table>
@@ -1073,6 +1222,21 @@ input:checked + .slider:before {
 .ads-table th {
   white-space: nowrap;
   min-width: 52px;
+}
+
+/* 合计行样式 */
+.total-row {
+  background-color: #f5f5f5;
+  font-weight: bold;
+}
+
+.total-label {
+  text-align: right;
+  padding-right: 10px;
+}
+
+.total-row td {
+  border-top: 2px solid #e8e8e8;
 }
 /*  */
 /* 事件下拉菜单样式 */
