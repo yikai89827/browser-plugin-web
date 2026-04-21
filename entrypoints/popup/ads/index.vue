@@ -68,16 +68,17 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
 }
 
 // 从DOM获取广告数据
-async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any }> {
+async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any, currencySymbol: string }> {
   const response = await sendMessageToContent('getAdsFromDom');
   if (response && response.ads) {
     return { 
       ads: response.ads, 
       DomColumnMapping: response.DomColumnMapping || {},
-      sortInfo: response.sortInfo || { field: null, direction: null }
+      sortInfo: response.sortInfo || { field: null, direction: null },
+      currencySymbol: response.currencySymbol || '¥'
     };
   } else {
-    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } };
+    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '¥' };
   }
 }
 
@@ -213,6 +214,12 @@ const fetchAds = async () => {
         columnMapping.value = cachedData.columnMapping;
       }
       
+      // 从缓存中加载货币符号
+      if (cachedData.currencySymbol) {
+        currencySymbol = cachedData.currencySymbol;
+        console.log('从缓存中加载货币符号:', currencySymbol);
+      }
+      
       // 加载并应用修改数据
       if (cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
         console.log('从content缓存中读取修改数据:', cachedData.modifications);
@@ -276,21 +283,28 @@ const fetchAds = async () => {
       }
     } else {
       // 从DOM获取广告数据
-      const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo } = await getAdsFromDom();
+      const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
       console.log('从DOM获取广告数据成功:', domAds);
       console.log('从DOM获取列映射成功:', receivedColumnMapping);
       console.log('从DOM获取排序信息成功:', receivedSortInfo);
+      console.log('从DOM获取货币符号成功:', domCurrencySymbol);
       
       if (domAds && domAds.length > 0) {
         ads.value = domAds;
         columnMapping.value = receivedColumnMapping;
+        
+        // 更新货币符号
+        if (domCurrencySymbol) {
+          currencySymbol = domCurrencySymbol;
+        }
         
         // 缓存数据到content script
         await sendMessageToContent('saveCachedData', {
           date: currentDate,
           ads: domAds,
           columnMapping: receivedColumnMapping,
-          sortInfo: receivedSortInfo
+          sortInfo: receivedSortInfo,
+          currencySymbol: currencySymbol
         });
         console.log('缓存广告数据到content成功');
       }
