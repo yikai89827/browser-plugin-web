@@ -419,7 +419,30 @@ function initPageObserver(): void {
     } catch (error) {
       console.error('检测列位置变化错误:', error);
     }
+    // 只在排序变化或表格列位置变化时触发同步
+    if (hasSortChange || hasColumnChange) {
+      console.log('检测到排序变更或表格列位置变化，触发同步');
 
+      // 立即显示遮盖层并应用修改数据
+      (async () => {
+        const modificationsKey = await generateCacheKey('ad_modifications');
+        const modificationsArray = await browserStorage.get(modificationsKey);
+        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+          console.log('有缓存数据，显示遮盖层并应用修改数据');
+          createOverlay();
+          // 等待DOM更新完成后再应用修改数据
+          setTimeout(async () => {
+            await applyCachedModifications(modificationsArray);
+            removeOverlay();
+          }, 100);
+        }
+      })();
+
+      // 延迟执行同步，等待排序操作完成
+      setTimeout(() => {
+        debouncedSync();
+      }, 0); // 等待500ms让排序操作完成
+    }
     // 检查是否有新的表格元素被创建（可能是页面刷新）
     let hasTableCreated = false;
     // 检查是否有loading状态（可能是点击了刷新按钮）
@@ -474,31 +497,6 @@ function initPageObserver(): void {
     } catch (error) {
       console.error('检测表格状态错误:', error);
       removeOverlay();
-    }
-
-    // 只在排序变化或表格列位置变化时触发同步
-    if (hasSortChange || hasColumnChange) {
-      console.log('检测到排序变更或表格列位置变化，触发同步');
-
-      // 立即显示遮盖层并应用修改数据
-      (async () => {
-        const modificationsKey = await generateCacheKey('ad_modifications');
-        const modificationsArray = await browserStorage.get(modificationsKey);
-        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
-          console.log('有缓存数据，显示遮盖层并应用修改数据');
-          createOverlay();
-          // 等待DOM更新完成后再应用修改数据
-          setTimeout(async () => {
-            await applyCachedModifications(modificationsArray);
-            removeOverlay();
-          }, 500);
-        }
-      })();
-
-      // 延迟执行同步，等待排序操作完成
-      setTimeout(() => {
-        debouncedSync();
-      }, 500); // 等待500ms让排序操作完成
     }
   });
 
