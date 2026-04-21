@@ -1,32 +1,10 @@
+import { detectSortInfo } from './dom';
 // 获取当前日期，格式为YYYY-MM-DD
 export function getCurrentDate() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-// 检测排序信息
-export function detectSortInfo() {
-  // 检查是否在浏览器环境中
-  if (typeof window === 'undefined' || !window.location) {
-    return { field: null, direction: null };
-  }
-  
-  const url = window.location.href;
-  const sortMatch = url.match(/sort=([^&]+)/);
-  
-  if (sortMatch) {
-    const sortValue = sortMatch[1];
-    const parts = sortValue.split('~');
-    if (parts.length === 2) {
-      return {
-        field: parts[0],
-        direction: parts[1] === '1' ? 'desc' : 'asc'
-      };
-    }
-  }
-  
-  return { field: null, direction: null };
-}
 
 // 获取当前页面状态
 export function getCurrentPageState() {
@@ -54,7 +32,7 @@ export function getCurrentPageState() {
   }
   
   // 获取当前排序状态
-  const { field: sortField, direction: sortDirection } = detectSortInfo();
+  const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
   
   return {
     level,

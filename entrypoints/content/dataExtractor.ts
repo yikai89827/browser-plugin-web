@@ -27,7 +27,7 @@ class DataExtractor {
     const columnIndices = getColumnIndicesSync();
     console.log(`  → 提取到的列索引: ${JSON.stringify(columnIndices)}`);
     // 检测排序信息
-    const sortInfo = detectSortInfo();
+    const sortInfo:any = detectSortInfo() || {};
     const entities = this.extractEntities(level, columnIndices);
     
     return {
