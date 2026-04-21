@@ -94,14 +94,6 @@ async function debouncedSync(): Promise<void> {
           console.log('使用缓存数据（排序信息一致）');
           entities = cachedData.cacheData.ads;
           columnIndices = cachedData.cacheData.columnMapping;
-        } else if (isSortInfoSame) {
-          console.log('排序信息一致但缓存数据不完整，从DOM提取');
-          // 从DOM提取数据
-          await getColumnIndices();
-          const extractionResult = dataExtractor.extractFromDom();
-          entities = extractionResult.entities;
-          columnIndices = extractionResult.columnIndices;
-          sortInfo = extractionResult.sortInfo;
         } else {
           console.log('排序信息已变更，从DOM重新提取数据');
           // 从DOM提取数据
@@ -110,6 +102,38 @@ async function debouncedSync(): Promise<void> {
           entities = extractionResult.entities;
           columnIndices = extractionResult.columnIndices;
           sortInfo = extractionResult.sortInfo;
+          
+          // 应用缓存中的修改值到新提取的数据
+          if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+            console.log('应用缓存中的修改值到新提取的数据');
+            entities = entities.map(entity => {
+              let updatedEntity = entity;
+              // 确保increaseValues对象存在
+              if (!updatedEntity.increaseValues) {
+                updatedEntity.increaseValues = {};
+              }
+              
+              // 查找对应的修改记录
+              const modification = modificationsArray.find(mod => {
+                if (currentLevel === 'Campaigns') {
+                  return mod.completeData.id === entity.id || mod.completeData.campaign_id === entity.id;
+                } else if (currentLevel === 'Adsets') {
+                  return mod.completeData.id === entity.id || mod.completeData.adset_id === entity.id || mod.completeData.adset_id === entity.adset_id;
+                } else {
+                  return mod.completeData.id === entity.id || mod.completeData.ad_id === entity.id || mod.completeData.ad_id === entity.ad_id;
+                }
+              });
+              
+              // 应用修改值
+              if (modification) {
+                for (const [field, value] of Object.entries(modification.modifiedFields)) {
+                  updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
+                }
+              }
+              
+              return updatedEntity;
+            });
+          }
         }
 
         // 检查同步任务
