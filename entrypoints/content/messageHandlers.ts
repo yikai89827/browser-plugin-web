@@ -459,24 +459,27 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
             
             // 根据层级关系查找对应的实体
             if (otherTabType === 'Campaigns') {
+              // 其他tab是广告系列，需要匹配广告系列id
               if (ad.id === completeData.campaign_id) {
-                // 广告系列tab，查找对应的广告系列
+                // 匹配到对应的广告系列
                 for (const [field, value] of Object.entries(modifiedFields)) {
                   updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
                   hasChanges = true;
                 }
               }
             } else if (otherTabType === 'Adsets') {
-              if (ad.adset_id === completeData.adset_id || ad.id === completeData.adset_id) {
-                // 广告组tab，查找对应的广告组
+              // 其他tab是广告组，需要匹配广告组id或广告系列id
+              if (ad.id === completeData.adset_id || ad.adset_id === completeData.adset_id || ad.id === completeData.campaign_id) {
+                // 匹配到对应的广告组
                 for (const [field, value] of Object.entries(modifiedFields)) {
                   updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
                   hasChanges = true;
                 }
               }
             } else if (otherTabType === 'Ads') {
-              if (ad.ad_id === completeData.ad_id || ad.id === completeData.ad_id) {
-                // 广告tab，查找对应的广告
+              // 其他tab是广告，需要匹配广告id、广告组id或广告系列id
+              if (ad.id === completeData.ad_id || ad.ad_id === completeData.ad_id || ad.id === completeData.adset_id || ad.adset_id === completeData.adset_id || ad.id === completeData.campaign_id) {
+                // 匹配到对应的广告
                 for (const [field, value] of Object.entries(modifiedFields)) {
                   updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
                   hasChanges = true;
@@ -524,12 +527,12 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
                   matchedEntity = ad;
                 }
               } else if (otherTabType === 'Adsets') {
-                if (ad.adset_id === completeData.adset_id || ad.id === completeData.adset_id) {
+                if (ad.id === completeData.adset_id || ad.adset_id === completeData.adset_id || ad.id === completeData.campaign_id) {
                   shouldAdd = true;
                   matchedEntity = ad;
                 }
               } else if (otherTabType === 'Ads') {
-                if (ad.ad_id === completeData.ad_id || ad.id === completeData.ad_id) {
+                if (ad.id === completeData.ad_id || ad.ad_id === completeData.ad_id || ad.id === completeData.adset_id || ad.adset_id === completeData.adset_id || ad.id === completeData.campaign_id) {
                   shouldAdd = true;
                   matchedEntity = ad;
                 }
@@ -541,9 +544,9 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
                   if (otherTabType === 'Campaigns') {
                     return item.completeData.id === completeData.campaign_id;
                   } else if (otherTabType === 'Adsets') {
-                    return item.completeData.adset_id === completeData.adset_id || item.completeData.id === completeData.adset_id;
+                    return item.completeData.id === completeData.adset_id || item.completeData.adset_id === completeData.adset_id || item.completeData.id === completeData.campaign_id;
                   } else {
-                    return item.completeData.ad_id === completeData.ad_id || item.completeData.id === completeData.ad_id;
+                    return item.completeData.id === completeData.ad_id || item.completeData.ad_id === completeData.ad_id || item.completeData.id === completeData.adset_id || item.completeData.adset_id === completeData.adset_id || item.completeData.id === completeData.campaign_id;
                   }
                 });
                 
@@ -584,7 +587,6 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
           grandParentId: modificationsWithId[0]?.campaign_id || ''
         },
         modifiedFields: modificationsWithId[0]?.modifiedFields || {},
-        syncDirection: currentLevel === 'Campaigns' ? 'down' : 'up',
         timestamp: Date.now(),
         status: 'pending'
       };
@@ -616,18 +618,7 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
         if (tabType === task.sourceEntity.level) {
           return false;
         }
-        
-        // 检查同步方向和层级关系
-        if (task.syncDirection === 'down' && task.sourceEntity.level === 'Campaigns' && (tabType === 'Adsets' || tabType === 'Ads')) {
-          return true; // 从广告系列同步到广告组或广告
-        } else if (task.syncDirection === 'down' && task.sourceEntity.level === 'Adsets' && tabType === 'Ads') {
-          return true; // 从广告组同步到广告
-        } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Ads' && (tabType === 'Adsets' || tabType === 'Campaigns')) {
-          return true; // 从广告同步到广告组或广告系列
-        } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Adsets' && tabType === 'Campaigns') {
-          return true; // 从广告组同步到广告系列
-        }
-        return false;
+        return true;
       });
     
     if (relevantSyncTasks.length > 0) {
@@ -650,24 +641,27 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
             
             // 根据层级关系查找对应的实体
             if (tabType === 'Campaigns') {
+              // 当前tab是广告系列，需要匹配广告系列id
               if (ad.id === task.sourceEntity.grandParentId) {
-                // 广告系列tab，查找对应的广告系列
+                // 匹配到对应的广告系列
                 for (const [field, value] of Object.entries(task.modifiedFields)) {
                   updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
                   hasChanges = true;
                 }
               }
             } else if (tabType === 'Adsets') {
-              if (ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.parentId) {
-                // 广告组tab，查找对应的广告组
+              // 当前tab是广告组，需要匹配广告组id或广告系列id
+              if (ad.id === task.sourceEntity.parentId || ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.grandParentId) {
+                // 匹配到对应的广告组
                 for (const [field, value] of Object.entries(task.modifiedFields)) {
                   updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
                   hasChanges = true;
                 }
               }
             } else if (tabType === 'Ads') {
-              if (ad.ad_id === task.sourceEntity.id || ad.id === task.sourceEntity.id) {
-                // 广告tab，查找对应的广告
+              // 当前tab是广告，需要匹配广告id、广告组id或广告系列id
+              if (ad.id === task.sourceEntity.id || ad.ad_id === task.sourceEntity.id || ad.id === task.sourceEntity.parentId || ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.grandParentId) {
+                // 匹配到对应的广告
                 for (const [field, value] of Object.entries(task.modifiedFields)) {
                   updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
                   hasChanges = true;
@@ -709,22 +703,25 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
             
             // 根据层级关系查找对应的实体
             if (tabType === 'Campaigns') {
+              // 当前tab是广告系列，需要匹配广告系列id
               if (entity.id === task.sourceEntity.grandParentId) {
-                // 广告系列tab，查找对应的广告系列
+                // 匹配到对应的广告系列
                 for (const [field, value] of Object.entries(task.modifiedFields)) {
                   updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
                 }
               }
             } else if (tabType === 'Adsets') {
-              if (entity.adset_id === task.sourceEntity.parentId || entity.id === task.sourceEntity.parentId) {
-                // 广告组tab，查找对应的广告组
+              // 当前tab是广告组，需要匹配广告组id或广告系列id
+              if (entity.id === task.sourceEntity.parentId || entity.adset_id === task.sourceEntity.parentId || entity.id === task.sourceEntity.grandParentId) {
+                // 匹配到对应的广告组
                 for (const [field, value] of Object.entries(task.modifiedFields)) {
                   updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
                 }
               }
             } else if (tabType === 'Ads') {
-              if (entity.ad_id === task.sourceEntity.id || entity.id === task.sourceEntity.id) {
-                // 广告tab，查找对应的广告
+              // 当前tab是广告，需要匹配广告id、广告组id或广告系列id
+              if (entity.id === task.sourceEntity.id || entity.ad_id === task.sourceEntity.id || entity.id === task.sourceEntity.parentId || entity.adset_id === task.sourceEntity.parentId || entity.id === task.sourceEntity.grandParentId) {
+                // 匹配到对应的广告
                 for (const [field, value] of Object.entries(task.modifiedFields)) {
                   updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
                 }
@@ -764,12 +761,12 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
               matchedEntity = ad;
             }
           } else if (tabType === 'Adsets') {
-            if (ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.parentId) {
+            if (ad.id === task.sourceEntity.parentId || ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.grandParentId) {
               shouldAdd = true;
               matchedEntity = ad;
             }
           } else if (tabType === 'Ads') {
-            if (ad.ad_id === task.sourceEntity.id || ad.id === task.sourceEntity.id) {
+            if (ad.id === task.sourceEntity.id || ad.ad_id === task.sourceEntity.id || ad.id === task.sourceEntity.parentId || ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.grandParentId) {
               shouldAdd = true;
               matchedEntity = ad;
             }
@@ -781,9 +778,9 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
               if (tabType === 'Campaigns') {
                 return item.completeData.id === task.sourceEntity.grandParentId;
               } else if (tabType === 'Adsets') {
-                return item.completeData.adset_id === task.sourceEntity.parentId || item.completeData.id === task.sourceEntity.parentId;
+                return item.completeData.id === task.sourceEntity.parentId || item.completeData.adset_id === task.sourceEntity.parentId || item.completeData.id === task.sourceEntity.grandParentId;
               } else {
-                return item.completeData.ad_id === task.sourceEntity.id || item.completeData.id === task.sourceEntity.id;
+                return item.completeData.id === task.sourceEntity.id || item.completeData.ad_id === task.sourceEntity.id || item.completeData.id === task.sourceEntity.parentId || item.completeData.adset_id === task.sourceEntity.parentId || item.completeData.id === task.sourceEntity.grandParentId;
               }
             });
             

@@ -14,7 +14,7 @@ import { valueSyncManager } from './content/syncValue';
 let syncTimeout: any = null;
 let lastSyncTime: number = 0;
 let isUpdatingDOM: boolean = false;
-let lastSortInfo = { field: null as string | null, direction: null as string | null };
+window.lastSortInfo = { field: null as string | null, direction: null as string | null, level: '' as string | null };
 let lastColumnMapping: any = {};
 
 // 遮盖层元素
@@ -385,7 +385,6 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
     console.error('更新广告行错误:', error);
   }
 }
-
 // 初始化页面变化监听
 function initPageObserver(): void {
   // 使用MutationObserver来拦截页面渲染
