@@ -4,7 +4,7 @@ import { browserStorage } from '../utils/storage';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { detectSortInfo, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
+import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
@@ -62,12 +62,13 @@ async function debouncedSync(): Promise<void> {
         const cachedData = await browserStorage.get(adsKey);
 
         // 检测当前页面的排序信息
-        const currentSortInfo = detectSortInfo();
+       const { field: sortField, direction: sortDirection, level } = getCurrentPageState();
 
         // 检查缓存数据的排序信息是否与当前页面一致
         const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
-        const isSortInfoSame = cachedSortInfo.field === currentSortInfo.field && 
-                              cachedSortInfo.direction === currentSortInfo.direction;
+        const isSortInfoSame = cachedSortInfo?.field === sortField && 
+                              cachedSortInfo?.direction === sortDirection && 
+                              cachedSortInfo?.level === level;
 
         // 检查缓存数据是否有效
         const hasValidCachedData = cachedData && 
@@ -321,41 +322,6 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
   } catch (error) {
     console.error('更新广告行错误:', error);
   }
-}
-
-// 获取当前页面状态
-function getCurrentPageState() {
-  // 检查是否在浏览器环境中
-  if (typeof window === 'undefined' || !window.location) {
-    return {
-      level: 'Campaigns',
-      sortField: null,
-      sortDirection: null
-    };
-  }
-
-  // 从URL中获取当前tab名称
-  const pathParts = window.location.href.split('/');
-  const tab = pathParts[pathParts.length - 1];
-
-  // 获取当前层级（竞选活动、广告组、广告）
-  let level = 'Campaigns';
-  if (tab.includes('campaigns')) {
-    level = 'Campaigns';
-  } else if (tab.includes('adsets')) {
-    level = 'Adsets';
-  } else if (tab.includes('ads')) {
-    level = 'Ads';
-  }
-
-  // 获取当前排序状态
-  const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
-
-  return {
-    level,
-    sortField,
-    sortDirection
-  };
 }
 
 // 初始化页面变化监听

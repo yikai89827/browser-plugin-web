@@ -6,8 +6,7 @@ import { dataExtractor } from './dataExtractor';
 import { hierarchyManager, AdEntity } from './hierarchy';
 import { valueSyncManager } from './syncValue';
 import { generateCacheKey, generateSortInfoKey } from './cache';
-import { detectSortInfo, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement } from './dom';
-import { getCurrentPageState } from './date';
+import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement } from './dom';
 
 // 消息处理函数 - 从DOM获取广告数据
 export function handleGetAdsFromDom(sendResponse: (response: any) => void): boolean {
@@ -23,7 +22,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
       const adsKey = await generateCacheKey('ads');
       
       // 保存到缓存
-      const sortInfo = detectSortInfo();
+      const sortInfo = getCurrentPageState() || {};
       const cacheData = { 
         ads: entities, 
         columnMapping: columnIndices,
@@ -500,28 +499,25 @@ export function handleSaveModifications(data: { date: string; modifications: any
   (async () => {
     try {
       // 获取当前页面状态和层级
-      const pageState = getCurrentPageState();
+      const pageState = getCurrentPageState() || {};
       const currentLevel = pageState.level || 'Campaigns';
       
       // 处理修改数据，建立层级关系
       const modificationsWithId = processModifications(modifications, currentLevel);
       
-      // 临时修改当前页面状态，使用 tabType 作为 level
-      const originalPageState = getCurrentPageState();
-      (window as any).pageState = { ...originalPageState, level: tabType };
+      (window as any).pageState = { ...pageState, level: tabType };
       
       const modificationsKey = await generateCacheKey('ad_modifications');
-      const sortInfo = detectSortInfo();
       const sortInfoKey = await generateSortInfoKey();
       
       // 保存修改数据
       await Promise.all([
         browserStorage.set(modificationsKey, modificationsWithId),
-        browserStorage.set(sortInfoKey, sortInfo)
+        browserStorage.set(sortInfoKey, pageState || {})
       ]);
       
       // 恢复原始页面状态
-      (window as any).pageState = originalPageState;
+      (window as any).pageState = pageState;
       
       console.log('保存修改成功，当前层级:', currentLevel);
       
@@ -532,11 +528,11 @@ export function handleSaveModifications(data: { date: string; modifications: any
         // 保存同步任务
         if (syncTasks.length > 0) {
           // 临时修改当前页面状态，使用 tabType 作为 level
-          (window as any).pageState = { ...originalPageState, level: tabType };
+          (window as any).pageState = { ...pageState, level: tabType };
           const tempSyncTasksKey = await generateCacheKey('sync_tasks');
           await browserStorage.set(tempSyncTasksKey, syncTasks);
           // 恢复原始页面状态
-          (window as any).pageState = originalPageState;
+          (window as any).pageState = pageState;
           console.log('已保存同步任务:', syncTasks);
         }
         

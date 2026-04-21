@@ -1,6 +1,7 @@
 import { browserStorage } from '../../utils/storage';
-import { getCurrentDate, getCurrentPageState } from './date';
+import { getCurrentDate } from './date';
 import { getSavedAccountId } from './account';
+import { getCurrentPageState } from './dom';
 
 // 生成缓存键（不包含排序信息，排序信息使用独立的key存储）
 export async function generateCacheKey(prefix: string) {

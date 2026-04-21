@@ -1514,7 +1514,7 @@ async function extractAdsFromDom() {
   const cachedData = await browserStorage.get(adsKey);
 
   // 检测当前页面的排序信息
-  const currentSortInfo = detectSortInfoSafely();
+  const currentSortInfo = getCurrentPageState() || {};
 
   // 检查缓存数据的排序信息是否与当前页面一致
   const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
@@ -1537,19 +1537,6 @@ async function extractAdsFromDom() {
 
   // 没有缓存数据，从DOM提取并缓存
   return await extractDataFromDomAndCache(adsKey, currentSortInfo);
-}
-
-// 安全检测排序信息
-function detectSortInfoSafely() {
-  try {
-    const { sortField, sortDirection } = detectSortInfo();
-    if (sortField && sortDirection) {
-      return { field: sortField, direction: sortDirection };
-    }
-  } catch (error) {
-    console.error('检测排序信息错误:', error);
-  }
-  return { field: null, direction: null };
 }
 
 // 检查排序信息是否相同

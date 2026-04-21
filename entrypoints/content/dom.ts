@@ -1,5 +1,4 @@
 import { fieldMappingConfig } from './config';
-import { getCurrentPageState } from './date';
 // 全局遮盖层元素
 let overlayElement: HTMLElement | null = null;
 
@@ -101,7 +100,7 @@ export async function extractAdsFromDom() {
   try {
     const ads = [];
     const DomColumnMapping = await getColumnIndices();
-    const sortInfo = detectSortInfo();
+    const sortInfo = getCurrentPageState() || {};
     
     // 找到表格容器
     const tableContainer = findTableContainer();
@@ -322,6 +321,40 @@ export function detectSortInfo() {
   }
 }
 
+// 获取当前页面状态
+export function getCurrentPageState() {
+  // 检查是否在浏览器环境中
+  if (typeof window === 'undefined' || !window.location) {
+    return {
+      level: 'Campaigns',
+      sortField: null,
+      sortDirection: null
+    };
+  }
+
+  // 从URL中获取当前tab名称
+  const pathParts = window.location.href.split('/');
+  const tab = pathParts[pathParts.length - 1];
+
+  // 获取当前层级（竞选活动、广告组、广告）
+  let level = 'Campaigns';
+  if (tab.includes('campaigns')) {
+    level = 'Campaigns';
+  } else if (tab.includes('adsets')) {
+    level = 'Adsets';
+  } else if (tab.includes('ads')) {
+    level = 'Ads';
+  }
+
+  // 获取当前排序状态
+  const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
+
+  return {
+    level,
+    sortField,
+    sortDirection
+  };
+}
 
 // 更新元素文本
 export function updateElementText(element: Element, text: string) {

@@ -3,7 +3,7 @@
 
 import { AdEntity, AdLevel } from './hierarchy';
 import { numericFields, filterTexts } from './config';
-import { getTableDataRows, findTableContainer, getColumnIndicesSync, detectSortInfo, extractRowData } from './dom';
+import { getTableDataRows, findTableContainer, getColumnIndicesSync, getCurrentPageState, extractRowData } from './dom';
 
 // 列索引映射
 export interface ColumnIndices {
@@ -22,18 +22,17 @@ export interface ExtractionResult {
 class DataExtractor {
   // 从DOM提取数据
   extractFromDom(): ExtractionResult {
-    const level = this.detectCurrentLevel();
     // 使用dom.ts中的函数获取列索引
     const columnIndices = getColumnIndicesSync();
     console.log(`  → 提取到的列索引: ${JSON.stringify(columnIndices)}`);
     // 检测排序信息
-    const sortInfo:any = detectSortInfo() || {};
-    const entities = this.extractEntities(level, columnIndices);
+    const sortInfo:any = getCurrentPageState() || {};
+    const entities = this.extractEntities(sortInfo?.level, columnIndices);
     
     return {
       entities,
       columnIndices,
-      level,
+      level: sortInfo?.level || 'Campaigns',
       sortInfo
     };
   }
