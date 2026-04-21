@@ -252,8 +252,6 @@ export function getColumnIndicesSync() {
 
 // 检测排序信息
 export function detectSortInfo() {
-  let sortField = null;
-  let sortDirection = null;
 
   try {
     // 检查是否在浏览器环境中
@@ -265,15 +263,12 @@ export function detectSortInfo() {
     const sortParam = urlParams.get('sort');
     if (sortParam) {
       console.log(`从URL获取排序信息: ${sortParam}`);
-      // 解析URL中的排序参数，格式如：impressions~0（升序）或 impressions~1（降序）
+      // 解析URL中的排序参数，格式如：impressions~0（降序）或 impressions~1（升序）
       const sortParts = sortParam.split('~');
+      console.log('排序参数:', sortParts);
       if (sortParts.length === 2) {
-        sortField = sortParts[0];
-        const sortOrder = sortParts[1];
-        // 将0映射为asc，1映射为desc
-        sortDirection = sortOrder === '0' ? 'desc' : 'asc';
-        // console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
-        return { field: sortField, direction: sortDirection };
+        console.log(`检测到排序信息: field=${sortParts[0]}, direction=${sortParts[1]}`);
+        return { field: sortParts[0], direction: sortParts[1] === '0' ? 'desc' : 'asc' };
       }
     }
     // 查找具有sorting属性且role="columnheader"的元素
@@ -288,7 +283,8 @@ export function detectSortInfo() {
         element.getAttribute('aria-sort') ||
         element.getAttribute('data-sort');
 
-
+      let sortField = null;
+      let sortDirection = null;
       // 如果找到排序属性
       if (sortingAttr) {
         // 从元素文本中提取字段名
