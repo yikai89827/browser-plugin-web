@@ -7,8 +7,8 @@ import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
-import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, handleSyncValues } from './content/messageHandlers';
-import { valueSyncManager } from './content/syncValue';
+import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
+
 
 // 全局同步状态变量
 let syncTimeout: any = null;
@@ -136,67 +136,10 @@ async function debouncedSync(): Promise<void> {
           }
         }
 
-        // 检查同步任务
-        const syncTasksKey = await generateCacheKey('sync_tasks');
-        const syncTasks = await browserStorage.get(syncTasksKey) || [];
 
-        // 处理同步任务
-        if (syncTasks.length > 0) {
-          console.log('处理同步任务:', syncTasks.length);
-          
-          // 显示遮盖层
-          createOverlay();
-          
-          // 应用同步任务中的修改值
-          for (const task of syncTasks) {
-            // 查找对应的实体
-            const entityIndex = entities.findIndex(e => {
-              if (currentLevel === 'Campaigns') {
-                return e.campaign_id === task.sourceEntity.grandParentId || e.id === task.sourceEntity.grandParentId;
-              } else if (currentLevel === 'Adsets') {
-                return e.adset_id === task.sourceEntity.parentId || e.id === task.sourceEntity.parentId;
-              } else {
-                return e.ad_id === task.sourceEntity.id || e.id === task.sourceEntity.id;
-              }
-            });
-            
-            if (entityIndex !== -1) {
-              // 确保increaseValues对象存在
-              if (!entities[entityIndex].increaseValues) {
-                entities[entityIndex].increaseValues = {};
-              }
-              
-              // 应用修改值
-              const entity = entities[entityIndex];
-              for (const [field, value] of Object.entries(task.modifiedFields)) {
-                entity.increaseValues[field] = (entity.increaseValues[field] || 0) + value;
-              }
-              
-              // 标记任务为已完成
-              task.status = 'completed';
-              task.processedBy = currentLevel;
-            }
-          }
-          
-          // 检查是否所有任务都已完成
-          const allCompleted = syncTasks.every((task: any) => task.status === 'completed');
-          
-          if (allCompleted) {
-            // 所有任务都已完成，删除缓存
-            await browserStorage.remove(syncTasksKey);
-            console.log('所有同步任务已完成，删除缓存:', syncTasksKey);
-          } else {
-            // 更新缓存
-            await browserStorage.set(syncTasksKey, syncTasks);
-            console.log('更新同步任务缓存:', syncTasksKey);
-          }
-          
-          // 重新渲染页面数据
-          await applyCachedModifications(modificationsArray || []);
-        }
 
         // 只有在有缓存数据时才创建遮盖层
-        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0 && syncTasks.length === 0) {
+        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
           createOverlay();
         }
 
@@ -313,10 +256,10 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
       
       if (adRow) {
         // 计算原始值和增加值的总和
-        const valuesToUpdate = calculateValuesToUpdate(modification);
+        const { valuesToUpdate, increaseValues } = calculateValuesToUpdate(modification);
         
         // 更新到页面
-        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate);
+        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues);
       } else {
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
@@ -331,6 +274,7 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
 // 计算要更新的值
 function calculateValuesToUpdate(modification: any) {
   const valuesToUpdate: Record<string, string> = {};
+  const increaseValues: Record<string, number> = {};
   
   if (modification.completeData && modification.modifiedFields) {
     Object.keys(modification.modifiedFields).forEach(field => {
@@ -344,14 +288,16 @@ function calculateValuesToUpdate(modification: any) {
       } else {
         valuesToUpdate[field] = String(totalValue);
       }
+      
+      increaseValues[field] = increaseValue;
     });
   }
   
-  return valuesToUpdate;
+  return { valuesToUpdate, increaseValues };
 }
 
 // 根据实体更新广告行
-async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, string>) {
+async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, string>, increaseValues: Record<string, number>) {
   try {
     // 获取广告行的DOM元素
     const adRowElement = getAdRowElement({ id });
@@ -400,6 +346,10 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
           // 找到最内层的DOM元素进行更新
           const currentElement = findInnermostElement(scrollableCells[scrollableIndex]);
           currentElement.textContent = String(value);
+          
+          // 添加 data-ad-value 属性，存储增加值
+          const increaseValue = increaseValues[field] || 0;
+          currentElement.setAttribute('data-ad-value', String(increaseValue));
         }
       }
     });
@@ -595,8 +545,7 @@ export default {
         return handleSaveModifications(message, sendResponse);
       } else if (message.action === 'getSortInfo') {
         return handleGetSortInfo(message.date, sendResponse);
-      } else if (message.action === 'syncValues') {
-        return handleSyncValues(message, sendResponse);
+
       }
     });
 

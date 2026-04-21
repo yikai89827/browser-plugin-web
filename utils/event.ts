@@ -1,19 +1,24 @@
 import { browser } from 'wxt/browser';
 
 export const initEvent = ()=>{
-    browser.action?.onClicked?.addListener(() => {//点击插件打开插件窗口时触发
-        console.log("插件窗口被打开!");
-    });
-    browser.runtime?.onInstalled?.addListener((details) => {
-        if (details.reason === "install") {
-            console.log("窗口被安装!");
-        } else if (details.reason === "update") {
-            console.log("窗口被更新!");
+    try {
+        if (browser.runtime && browser.runtime.onInstalled) {
+            browser.runtime.onInstalled.addListener((details) => {
+                if (details.reason === "install") {
+                    console.log("窗口被安装!");
+                } else if (details.reason === "update") {
+                    console.log("窗口被更新!");
+                }
+            });
         }
-    });
-    browser.runtime?.onStartup?.addListener(() => {
-        console.log("浏览器启动时!");
-    });
+        if (browser.runtime && browser.runtime.onStartup) {
+            browser.runtime.onStartup.addListener(() => {
+                console.log("浏览器启动时!");
+            });
+        }
+    } catch (error) {
+        console.error('初始化事件失败:', error);
+    }
 }
 
 // 显示通知红点

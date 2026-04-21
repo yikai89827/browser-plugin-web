@@ -9,11 +9,6 @@ export async function generateCacheKey(prefix: string) {
   const {level} = getCurrentPageState();
   const accountId = await getSavedAccountId();
   
-  // 同步任务缓存key不包含日期和level
-  if (prefix === 'sync_tasks') {
-    return `${prefix}_${accountId}`;
-  }
-  
   return `${prefix}_${accountId}_${date}_${level}`;
 }
 

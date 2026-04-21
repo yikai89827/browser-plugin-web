@@ -100,7 +100,7 @@ export async function extractAdsFromDom() {
   try {
     const ads = [];
     const DomColumnMapping = await getColumnIndices();
-    const sortInfo = getCurrentPageState() || {};
+    const sortInfo: any = getCurrentPageState() || {};
     
     // 找到表格容器
     const tableContainer = findTableContainer();
@@ -164,7 +164,26 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
     const columnIndex = originalIndex - fixedColumnLength;
     // console.log(`  → 提取到的字段索引: ${field} = ${originalIndex}, 滚动列索引: ${columnIndex}, 固定列长度: ${fixedColumnLength}`);
     if (columnIndex !== undefined && columnIndex >= 0 && cells[columnIndex]) {
-      const cellText = cells[columnIndex].textContent?.trim() || '';
+      // 找到最内层的DOM元素
+      const innermostElement = findInnermostElement(cells[columnIndex]);
+      let cellText = innermostElement.textContent?.trim() || '';
+      
+      // 检查是否有 data-ad-value 属性
+      const dataAdValue = innermostElement.getAttribute('data-ad-value');
+      if (dataAdValue) {
+        // 如果有，使用当前值减去增加值，得到原始值
+        try {
+          const currentValue = parseFloat(cellText.replace(/[\$,]/g, ''));
+          const increaseValue = parseFloat(dataAdValue);
+          if (!isNaN(currentValue) && !isNaN(increaseValue)) {
+            const originalValue = currentValue - increaseValue;
+            cellText = originalValue.toLocaleString();
+          }
+        } catch (error) {
+          console.error('解析 data-ad-value 属性错误:', error);
+        }
+      }
+      
       values[field] = cellText;
     }
   }
