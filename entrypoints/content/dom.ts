@@ -175,6 +175,7 @@ function extractAdDataFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTM
     const { name, values } = extractRowData(rowPair, columnMapping);
     const adData: any = { name };
     Object.assign(adData, values);
+    console.log(`  → 提取到的广告数据: ${JSON.stringify(adData)}`);
     return adData;
   } catch (error) {
     console.error('从行对提取广告数据错误:', error);
@@ -199,7 +200,7 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   const scrollableElements = rowPair.scrollable.children[0]?.children || [];
   const cells = Array.from(scrollableElements);
   const values: Record<string, string> = {};
-  
+  console.log(`  → 提取到的字段索引: ${JSON.stringify(columnIndices)}`,cells);
   for (const [field, originalIndex] of Object.entries(columnIndices)) {
     // 计算滚动列的索引（减去固定列的长度）
     const columnIndex = originalIndex - fixedColumnLength;
@@ -208,9 +209,10 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
       // 找到最内层的DOM元素
       const innermostElement = findInnermostElement(cells[columnIndex]);
       let cellText = innermostElement.textContent?.trim() || '';
-      
-      // 检查是否有 data-ad-value 属性
-      const dataAdValue = innermostElement.getAttribute('data-ad-value');
+
+      console.log(`  → 提取到的原始文本: ${cellText}`, field, columnIndex);
+      // 检查是否有 data-add-value 属性
+      const dataAdValue = innermostElement.getAttribute('data-add-value');
       if (dataAdValue) {
         // 如果有，使用当前值减去增加值，得到原始值
         try {
@@ -225,7 +227,7 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
             cellText = currencySymbol + originalValue.toLocaleString();
           }
         } catch (error) {
-          console.error('解析 data-ad-value 属性错误:', error);
+          console.error('解析 data-add-value 属性错误:', error);
         }
       }
       

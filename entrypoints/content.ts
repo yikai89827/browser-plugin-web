@@ -347,9 +347,9 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
           const currentElement = findInnermostElement(scrollableCells[scrollableIndex]);
           currentElement.textContent = String(value);
           
-          // 添加 data-ad-value 属性，存储增加值
+          // 添加 data-add-value 属性，存储增加值
           const increaseValue = increaseValues[field] || 0;
-          currentElement.setAttribute('data-ad-value', String(increaseValue));
+          currentElement.setAttribute('data-add-value', String(increaseValue));
         }
       }
     });

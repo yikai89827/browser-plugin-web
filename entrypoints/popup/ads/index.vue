@@ -284,7 +284,7 @@ const fetchAds = async () => {
       }
     } else {
       // 从DOM获取广告数据
-      const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo, level: receivedLevel, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
+      const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
       console.log('从DOM获取广告数据成功:', domAds);
       console.log('从DOM获取列映射成功:', receivedColumnMapping);
       console.log('从DOM获取排序信息成功:', receivedSortInfo);
@@ -305,8 +305,8 @@ const fetchAds = async () => {
           ads: domAds,
           columnMapping: receivedColumnMapping,
           sortInfo: receivedSortInfo,
-          level: receivedLevel,
-          currencySymbol: currencySymbol
+          currencySymbol: currencySymbol,
+          level: receivedSortInfo?.level,
         });
         console.log('缓存广告数据到content成功');
       }
@@ -717,10 +717,16 @@ const calculateTotals = () => {
   ads.value.forEach(ad => {
     // 处理非数字值，将其转换为0
     const getValue = (val: any): number => {
-      if (val === undefined || val === null || val === '-' || isNaN(val)) {
+      if (val === undefined || val === null || val === '-') {
         return 0;
       }
-      return Number(val);
+      // 清理字符串，去除货币符号和逗号
+      const cleanedVal = String(val).replace(/[^\d.-]/g, '');
+      const numVal = parseFloat(cleanedVal);
+      if (isNaN(numVal)) {
+        return 0;
+      }
+      return numVal;
     };
     
     calculatedTotals.impressions += getValue(ad.impressions);
