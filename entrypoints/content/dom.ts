@@ -272,7 +272,7 @@ export function detectSortInfo() {
         const sortOrder = sortParts[1];
         // 将0映射为asc，1映射为desc
         sortDirection = sortOrder === '0' ? 'desc' : 'asc';
-        console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
+        // console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
         return { field: sortField, direction: sortDirection };
       }
     }
