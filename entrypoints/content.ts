@@ -53,6 +53,10 @@ async function debouncedSync(): Promise<void> {
       (window as any).isSyncing = true;
       lastSyncTime = now;
       try {
+        // 获取当前页面状态
+        const pageState = getCurrentPageState();
+        const currentLevel = pageState.level || 'Campaigns';
+        
         // 检查是否有缓存数据
         const modificationsKey = await generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
@@ -62,13 +66,12 @@ async function debouncedSync(): Promise<void> {
         const cachedData = await browserStorage.get(adsKey);
 
         // 检测当前页面的排序信息
-       const { field: sortField, direction: sortDirection, level } = getCurrentPageState();
+        const { field: sortField, direction: sortDirection } = pageState;
 
         // 检查缓存数据的排序信息是否与当前页面一致
         const cachedSortInfo = cachedData?.sortInfo || { field: null, direction: null };
         const isSortInfoSame = cachedSortInfo?.field === sortField && 
-                              cachedSortInfo?.direction === sortDirection && 
-                              cachedSortInfo?.level === level;
+                              cachedSortInfo?.direction === sortDirection;
 
         // 检查缓存数据是否有效
         const hasValidCachedData = cachedData && 
@@ -80,15 +83,17 @@ async function debouncedSync(): Promise<void> {
 
         let entities: any[] = [];
         let columnIndices: any = {};
-        let level: string = 'Campaigns';
-        let sortInfo = currentSortInfo;
+        let sortInfo = {
+          field: sortField,
+          direction: sortDirection,
+          level: currentLevel
+        };
 
         // 如果有缓存数据且排序信息一致，使用缓存数据
         if (hasValidCachedData && isSortInfoSame) {
           console.log('使用缓存数据（排序信息一致）');
           entities = cachedData.cacheData.ads;
           columnIndices = cachedData.cacheData.columnMapping;
-          level = cachedData.cacheData.level || 'Campaigns';
         } else if (isSortInfoSame) {
           console.log('排序信息一致但缓存数据不完整，从DOM提取');
           // 从DOM提取数据
@@ -96,7 +101,6 @@ async function debouncedSync(): Promise<void> {
           const extractionResult = dataExtractor.extractFromDom();
           entities = extractionResult.entities;
           columnIndices = extractionResult.columnIndices;
-          level = extractionResult.level;
           sortInfo = extractionResult.sortInfo;
         } else {
           console.log('排序信息已变更，从DOM重新提取数据');
@@ -105,12 +109,70 @@ async function debouncedSync(): Promise<void> {
           const extractionResult = dataExtractor.extractFromDom();
           entities = extractionResult.entities;
           columnIndices = extractionResult.columnIndices;
-          level = extractionResult.level;
           sortInfo = extractionResult.sortInfo;
         }
 
+        // 检查同步任务
+        const syncTasksKey = await generateCacheKey('sync_tasks');
+        const syncTasks = await browserStorage.get(syncTasksKey) || [];
+
+        // 处理同步任务
+        if (syncTasks.length > 0) {
+          console.log('处理同步任务:', syncTasks.length);
+          
+          // 显示遮盖层
+          createOverlay();
+          
+          // 应用同步任务中的修改值
+          for (const task of syncTasks) {
+            // 查找对应的实体
+            const entityIndex = entities.findIndex(e => {
+              if (currentLevel === 'Campaigns') {
+                return e.campaign_id === task.sourceEntity.grandParentId || e.id === task.sourceEntity.grandParentId;
+              } else if (currentLevel === 'Adsets') {
+                return e.adset_id === task.sourceEntity.parentId || e.id === task.sourceEntity.parentId;
+              } else {
+                return e.ad_id === task.sourceEntity.id || e.id === task.sourceEntity.id;
+              }
+            });
+            
+            if (entityIndex !== -1) {
+              // 确保increaseValues对象存在
+              if (!entities[entityIndex].increaseValues) {
+                entities[entityIndex].increaseValues = {};
+              }
+              
+              // 应用修改值
+              const entity = entities[entityIndex];
+              for (const [field, value] of Object.entries(task.modifiedFields)) {
+                entity.increaseValues[field] = (entity.increaseValues[field] || 0) + value;
+              }
+              
+              // 标记任务为已完成
+              task.status = 'completed';
+              task.processedBy = currentLevel;
+            }
+          }
+          
+          // 检查是否所有任务都已完成
+          const allCompleted = syncTasks.every((task: any) => task.status === 'completed');
+          
+          if (allCompleted) {
+            // 所有任务都已完成，删除缓存
+            await browserStorage.remove(syncTasksKey);
+            console.log('所有同步任务已完成，删除缓存:', syncTasksKey);
+          } else {
+            // 更新缓存
+            await browserStorage.set(syncTasksKey, syncTasks);
+            console.log('更新同步任务缓存:', syncTasksKey);
+          }
+          
+          // 重新渲染页面数据
+          await applyCachedModifications(modificationsArray || []);
+        }
+
         // 只有在有缓存数据时才创建遮盖层
-        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0 && syncTasks.length === 0) {
           createOverlay();
         }
 
@@ -134,17 +196,17 @@ async function debouncedSync(): Promise<void> {
         const cacheData = {
           ads: entities,
           columnMapping: columnIndices,
-          level: level
+          level: currentLevel
         };
         const dataToSave = {
-          sortInfo: sortInfo,
+          sortInfo,
           cacheData: cacheData
         };
         await browserStorage.set(adsKey, dataToSave);
         console.log('已保存数据到缓存:', adsKey);
 
         // 这里可以添加页面数据同步逻辑
-        console.log('页面数据同步完成:', { entities: entities.length, level, sortInfo });
+        console.log('页面数据同步完成:', { entities: entities.length, level: currentLevel, sortInfo, syncTasks: syncTasks.length });
       } catch (error) {
         console.error('刷新页面数据错误:', error);
         removeOverlay();

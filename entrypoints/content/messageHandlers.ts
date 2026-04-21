@@ -227,10 +227,6 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
   const { date, tabType } = data;
   (async () => {
     try {
-      // 临时修改当前页面状态，使用 tabType 作为 level
-      const originalPageState = getCurrentPageState();
-      (window as any).pageState = { ...originalPageState, level: tabType };
-      
       // 获取当前 tab 的缓存数据
       const adsKey = await generateCacheKey('ads');
       const modificationsKey = await generateCacheKey('ad_modifications');
@@ -246,87 +242,7 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       const sortInfo = adsData?.sortInfo || { field: null, direction: null };
       
       // 检测其他 tab 的同步任务
-      const otherTabTypes = ['Ads', 'Adsets', 'Campaigns'].filter(t => t !== tabType);
-      let syncTasks: any[] = [];
-      
-      for (const otherTabType of otherTabTypes) {
-        // 临时修改当前页面状态，生成其他 tab 的缓存键
-        (window as any).pageState = { ...originalPageState, level: otherTabType };
-        
-        const syncTasksKey = await generateCacheKey('sync_tasks');
-        const otherSyncTasks = await browserStorage.get(syncTasksKey) || [];
-        if (Array.isArray(otherSyncTasks)) {
-          syncTasks = syncTasks.concat(otherSyncTasks);
-        }
-      }
-      
-      // 恢复原始页面状态
-      (window as any).pageState = originalPageState;
-      
-      // 处理同步任务
-      if (syncTasks.length > 0) {
-        console.log('检测到其他 tab 的同步任务:', syncTasks.length, '个');
-        
-        // 过滤与当前 tab 相关的同步任务
-        const relevantSyncTasks = syncTasks.filter(task => {
-          // 检查同步方向和层级关系
-          if (task.syncDirection === 'down' && task.sourceEntity.level === 'Campaigns' && (tabType === 'Adsets' || tabType === 'Ads')) {
-            return true; // 从广告系列同步到广告组或广告
-          } else if (task.syncDirection === 'down' && task.sourceEntity.level === 'Adsets' && tabType === 'Ads') {
-            return true; // 从广告组同步到广告
-          } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Ads' && (tabType === 'Adsets' || tabType === 'Campaigns')) {
-            return true; // 从广告同步到广告组或广告系列
-          } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Adsets' && tabType === 'Campaigns') {
-            return true; // 从广告组同步到广告系列
-          }
-          return false;
-        });
-        
-        if (relevantSyncTasks.length > 0) {
-          console.log('与当前 tab 相关的同步任务:', relevantSyncTasks.length, '个');
-          
-          // 执行同步操作
-          if (ads.length > 0) {
-            // 检测层级关系
-            hierarchyManager.detectHierarchy(ads);
-            
-            // 为当前 tab 创建实体
-            const entities: AdEntity[] = ads.map((ad: AdEntity) => ({
-              id: ad.id,
-              name: ad.name,
-              level: tabType,
-              parentId: ad.parentId || '',
-              values: ad,
-              increaseValues: {}
-            }));
-            
-            // 执行同步
-            const syncResult = await valueSyncManager.batchSync(entities, 'up');
-            console.log('同步其他 tab 数据到当前 tab 结果:', syncResult);
-            
-            // 更新当前 tab 的缓存数据
-            if (syncResult.successCount > 0) {
-              // 重新从 DOM 提取数据，确保数据是最新的
-              const { entities: updatedEntities, columnIndices: updatedColumnIndices, level: updatedLevel } = dataExtractor.extractFromDom();
-              
-              // 保存更新后的数据到缓存
-              (window as any).pageState = { ...originalPageState, level: tabType };
-              const updatedAdsKey = await generateCacheKey('ads');
-              const updatedCacheData = { ads: updatedEntities, columnMapping: updatedColumnIndices, level: updatedLevel };
-              const updatedDataToSave = { sortInfo, cacheData: updatedCacheData };
-              
-              await browserStorage.set(updatedAdsKey, updatedDataToSave);
-              
-              // 恢复原始页面状态
-              (window as any).pageState = originalPageState;
-              
-              // 更新返回的数据
-              ads = updatedEntities;
-              console.log('已更新当前 tab 的缓存数据');
-            }
-          }
-        }
-      }
+      ads = await processSyncTasks(tabType, ads, sortInfo);
       
       // 检测层级关系
       if (ads.length > 0) {
@@ -347,19 +263,12 @@ export function handleSaveCachedData(data: { date: string; ads: any; columnMappi
   const { ads, columnMapping, sortInfo, level, tabType } = data;
   (async () => {
     try {
-      // 临时修改当前页面状态，使用 tabType 作为 level
-      const originalPageState = getCurrentPageState();
-      (window as any).pageState = { ...originalPageState, level: tabType };
-      
       const adsKey = await generateCacheKey('ads');
       
       const cacheData = { ads, columnMapping, level };
       const dataToSave = { sortInfo, cacheData };
       
       await browserStorage.set(adsKey, dataToSave);
-      
-      // 恢复原始页面状态
-      (window as any).pageState = originalPageState;
       
       // 检测层级关系
       if (ads.length > 0) {
@@ -404,71 +313,6 @@ function processModifications(modifications: any[], currentLevel: string) {
   }).filter(item => item !== null);
 }
 
-// 生成同步任务
-function generateSyncTasks(modificationsWithId: any[], currentLevel: string) {
-  const syncTasks: Array<{
-    sourceEntity: {
-      id: string;
-      name: string;
-      level: string;
-      parentId?: string;
-      grandParentId?: string;
-    };
-    modifiedFields: Record<string, number>;
-    syncDirection: 'down' | 'up';
-    timestamp: number;
-  }> = [];
-  
-  modificationsWithId.forEach(item => {
-    if (item && item.completeData && item.modifiedFields && Object.keys(item.modifiedFields).length > 0) {
-      // 向下同步：父级修改同步到子级
-      if (currentLevel === 'Campaigns') {
-        syncTasks.push({
-          sourceEntity: {
-            id: item.completeData.id,
-            name: item.completeData.name || 'Unknown',
-            level: currentLevel
-          },
-          modifiedFields: item.modifiedFields,
-          syncDirection: 'down',
-          timestamp: Date.now()
-        });
-      }
-      // 向上同步：子级修改同步到父级
-      else if (currentLevel === 'Adsets') {
-        syncTasks.push({
-          sourceEntity: {
-            id: item.completeData.id,
-            name: item.completeData.name || 'Unknown',
-            level: currentLevel,
-            parentId: item.parentId,
-            grandParentId: item.campaign_id
-          },
-          modifiedFields: item.modifiedFields,
-          syncDirection: 'up',
-          timestamp: Date.now()
-        });
-      }
-      else if (currentLevel === 'Ads') {
-        syncTasks.push({
-          sourceEntity: {
-            id: item.completeData.id,
-            name: item.completeData.name || 'Unknown',
-            level: currentLevel,
-            parentId: item.parentId,
-            grandParentId: item.campaign_id
-          },
-          modifiedFields: item.modifiedFields,
-          syncDirection: 'up',
-          timestamp: Date.now()
-        });
-      }
-    }
-  });
-  
-  return syncTasks;
-}
-
 // 执行同步
 async function executeSync(modificationsWithId: any[], currentLevel: string) {
   // 在当前tab直接执行数值更新（因为当前tab的数据已经在DOM中）
@@ -505,8 +349,6 @@ export function handleSaveModifications(data: { date: string; modifications: any
       // 处理修改数据，建立层级关系
       const modificationsWithId = processModifications(modifications, currentLevel);
       
-      (window as any).pageState = { ...pageState, level: tabType };
-      
       const modificationsKey = await generateCacheKey('ad_modifications');
       const sortInfoKey = await generateSortInfoKey();
       
@@ -516,28 +358,15 @@ export function handleSaveModifications(data: { date: string; modifications: any
         browserStorage.set(sortInfoKey, pageState || {})
       ]);
       
-      // 恢复原始页面状态
-      (window as any).pageState = pageState;
-      
       console.log('保存修改成功，当前层级:', currentLevel);
       
       // 生成同步任务
       if (modificationsWithId.length > 0) {
-        const syncTasks = generateSyncTasks(modificationsWithId, currentLevel);
-        
-        // 保存同步任务
-        if (syncTasks.length > 0) {
-          // 临时修改当前页面状态，使用 tabType 作为 level
-          (window as any).pageState = { ...pageState, level: tabType };
-          const tempSyncTasksKey = await generateCacheKey('sync_tasks');
-          await browserStorage.set(tempSyncTasksKey, syncTasks);
-          // 恢复原始页面状态
-          (window as any).pageState = pageState;
-          console.log('已保存同步任务:', syncTasks);
-        }
-        
         // 执行同步
         await executeSync(modificationsWithId, currentLevel);
+        
+        // 同步到其他tab的缓存
+        await syncToOtherTabs(modificationsWithId, currentLevel);
       }
       
       sendResponse({ success: true, isFirstSave: true });
@@ -590,4 +419,239 @@ export function handleSyncValues(data: { entities: any[]; direction: string }, s
     }
   })();
   return true;
+}
+
+// 同步到其他tab的缓存
+async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string): Promise<void> {
+  // 同步到其他tab的缓存
+  const otherTabTypes = ['Ads', 'Adsets', 'Campaigns'].filter(t => t !== currentLevel);
+  let syncTasks: any[] = [];
+  
+  for (const otherTabType of otherTabTypes) {
+    // 生成其他tab的缓存键
+    const otherAdsKey = await generateCacheKey('ads');
+    const otherAdsData = await browserStorage.get(otherAdsKey);
+    
+    if (otherAdsData && otherAdsData.cacheData && otherAdsData.cacheData.ads && otherAdsData.cacheData.ads.length > 0) {
+      // 其他tab有缓存，直接同步增加值
+      console.log('其他tab有缓存，直接同步增加值:', otherTabType);
+      
+      let otherAds = otherAdsData.cacheData.ads;
+      let hasChanges = false;
+      
+      // 应用修改值到其他tab的缓存数据
+      for (const modification of modificationsWithId) {
+        if (modification && modification.completeData && modification.modifiedFields) {
+          const { completeData, modifiedFields } = modification;
+          
+          // 查找其他tab中对应的实体
+          otherAds = otherAds.map((ad: any) => {
+            let updatedAd = ad;
+            
+            // 确保increaseValues对象存在
+            if (!updatedAd.increaseValues) {
+              updatedAd.increaseValues = {};
+            }
+            
+            // 根据层级关系查找对应的实体
+            if (otherTabType === 'Campaigns') {
+              if (ad.campaign_id === completeData.campaign_id || ad.id === completeData.campaign_id) {
+                // 广告系列tab，查找对应的广告系列
+                for (const [field, value] of Object.entries(modifiedFields)) {
+                  updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+                  hasChanges = true;
+                }
+              }
+            } else if (otherTabType === 'Adsets') {
+              if (ad.adset_id === completeData.adset_id || ad.id === completeData.adset_id) {
+                // 广告组tab，查找对应的广告组
+                for (const [field, value] of Object.entries(modifiedFields)) {
+                  updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+                  hasChanges = true;
+                }
+              }
+            } else if (otherTabType === 'Ads') {
+              if (ad.ad_id === completeData.ad_id || ad.id === completeData.ad_id) {
+                // 广告tab，查找对应的广告
+                for (const [field, value] of Object.entries(modifiedFields)) {
+                  updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+                  hasChanges = true;
+                }
+              }
+            }
+            
+            return updatedAd;
+          });
+        }
+      }
+      
+      // 如果有修改，保存到其他tab的缓存
+      if (hasChanges) {
+        const updatedCacheData = {
+          ads: otherAds,
+          columnMapping: otherAdsData.cacheData.columnMapping || {},
+          level: otherTabType
+        };
+        const updatedDataToSave = {
+          sortInfo: otherAdsData.sortInfo || { field: null, direction: null },
+          cacheData: updatedCacheData
+        };
+        
+        await browserStorage.set(otherAdsKey, updatedDataToSave);
+        console.log('已同步增加值到其他tab的缓存:', otherTabType);
+      }
+    } else {
+      // 其他tab没有缓存，保存同步任务
+      console.log('其他tab没有缓存，保存同步任务:', otherTabType);
+      const task = {
+        sourceEntity: {
+          id: modificationsWithId[0]?.completeData?.id || '',
+          name: modificationsWithId[0]?.completeData?.name || 'Unknown',
+          level: currentLevel,
+          parentId: modificationsWithId[0]?.parentId || '',
+          grandParentId: modificationsWithId[0]?.campaign_id || ''
+        },
+        modifiedFields: modificationsWithId[0]?.modifiedFields || {},
+        syncDirection: currentLevel === 'Campaigns' ? 'down' : 'up',
+        timestamp: Date.now(),
+        status: 'pending'
+      };
+      syncTasks.push(task);
+    }
+  }
+  
+  // 保存同步任务
+  if (syncTasks.length > 0) {
+    const syncTasksKey = await generateCacheKey('sync_tasks');
+    await browserStorage.set(syncTasksKey, syncTasks);
+    console.log('已保存同步任务:', syncTasks);
+  }
+}
+
+// 处理同步任务
+async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Promise<any[]> {
+  // 检测其他 tab 的同步任务
+  const syncTasksKey = await generateCacheKey('sync_tasks');
+  const syncTasks = await browserStorage.get(syncTasksKey) || [];
+  
+  // 处理同步任务
+  if (syncTasks.length > 0) {
+    console.log('检测到同步任务:', syncTasks.length, '个');
+    
+    // 过滤与当前 tab 相关的同步任务
+    const relevantSyncTasks = syncTasks.filter((task: any) => {
+      // 检查同步方向和层级关系
+      if (task.syncDirection === 'down' && task.sourceEntity.level === 'Campaigns' && (tabType === 'Adsets' || tabType === 'Ads')) {
+        return true; // 从广告系列同步到广告组或广告
+      } else if (task.syncDirection === 'down' && task.sourceEntity.level === 'Adsets' && tabType === 'Ads') {
+        return true; // 从广告组同步到广告
+      } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Ads' && (tabType === 'Adsets' || tabType === 'Campaigns')) {
+        return true; // 从广告同步到广告组或广告系列
+      } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Adsets' && tabType === 'Campaigns') {
+        return true; // 从广告组同步到广告系列
+      }
+      return false;
+    });
+    
+    if (relevantSyncTasks.length > 0) {
+      console.log('与当前 tab 相关的同步任务:', relevantSyncTasks.length, '个');
+      
+      // 执行同步操作
+      if (ads.length > 0) {
+        // 检测层级关系
+        hierarchyManager.detectHierarchy(ads);
+        
+        // 为当前 tab 创建实体
+        const entities: any[] = ads.map((ad: AdEntity) => ({
+          id: ad.id,
+          name: ad.name,
+          level: tabType,
+          parentId: ad.parentId || '',
+          values: ad,
+          increaseValues: {}
+        }));
+        
+        // 执行同步
+        const syncResult = await valueSyncManager.batchSync(entities, 'up');
+        console.log('同步其他 tab 数据到当前 tab 结果:', syncResult);
+        
+        // 更新当前 tab 的缓存数据
+        if (syncResult.successCount > 0) {
+          // 重新从 DOM 提取数据，确保数据是最新的
+          const { entities: updatedEntities, columnIndices: updatedColumnIndices, level: updatedLevel } = dataExtractor.extractFromDom();
+          
+          // 保存更新后的数据到缓存
+          const updatedAdsKey = await generateCacheKey('ads');
+          const updatedCacheData = { ads: updatedEntities, columnMapping: updatedColumnIndices, level: updatedLevel };
+          const updatedDataToSave = { sortInfo, cacheData: updatedCacheData };
+          
+          await browserStorage.set(updatedAdsKey, updatedDataToSave);
+          
+          // 更新返回的数据
+          ads = updatedEntities;
+          console.log('已更新当前 tab 的缓存数据');
+        }
+      } else {
+        // 没有缓存数据，从 DOM 提取
+        console.log('没有缓存数据，从 DOM 提取');
+        const { entities: extractedEntities, columnIndices: extractedColumnIndices, level: extractedLevel } = dataExtractor.extractFromDom();
+        
+        // 应用同步任务中的修改值
+        let updatedEntities = extractedEntities;
+        for (const task of relevantSyncTasks) {
+          updatedEntities = updatedEntities.map((entity: any) => {
+            let updatedEntity = entity;
+            
+            // 确保increaseValues对象存在
+            if (!updatedEntity.increaseValues) {
+              updatedEntity.increaseValues = {};
+            }
+            
+            // 根据层级关系查找对应的实体
+            if (tabType === 'Campaigns') {
+              if (entity.campaign_id === task.sourceEntity.grandParentId || entity.id === task.sourceEntity.grandParentId) {
+                // 广告系列tab，查找对应的广告系列
+                for (const [field, value] of Object.entries(task.modifiedFields)) {
+                  updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
+                }
+              }
+            } else if (tabType === 'Adsets') {
+              if (entity.adset_id === task.sourceEntity.parentId || entity.id === task.sourceEntity.parentId) {
+                // 广告组tab，查找对应的广告组
+                for (const [field, value] of Object.entries(task.modifiedFields)) {
+                  updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
+                }
+              }
+            } else if (tabType === 'Ads') {
+              if (entity.ad_id === task.sourceEntity.id || entity.id === task.sourceEntity.id) {
+                // 广告tab，查找对应的广告
+                for (const [field, value] of Object.entries(task.modifiedFields)) {
+                  updatedEntity.increaseValues[field] = (updatedEntity.increaseValues[field] || 0) + value;
+                }
+              }
+            }
+            
+            return updatedEntity;
+          });
+        }
+        
+        // 保存更新后的数据到缓存
+        const updatedAdsKey = await generateCacheKey('ads');
+        const updatedCacheData = { ads: updatedEntities, columnMapping: extractedColumnIndices, level: extractedLevel };
+        const updatedDataToSave = { sortInfo, cacheData: updatedCacheData };
+        
+        await browserStorage.set(updatedAdsKey, updatedDataToSave);
+        
+        // 更新返回的数据
+        ads = updatedEntities;
+        console.log('已从 DOM 提取数据并应用同步任务');
+      }
+      
+      // 删除同步任务
+      await browserStorage.remove(syncTasksKey);
+      console.log('已删除同步任务');
+    }
+  }
+  
+  return ads;
 }
