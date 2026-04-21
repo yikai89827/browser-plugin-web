@@ -251,6 +251,88 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
         hierarchyManager.detectHierarchy(ads);
       }
       
+      // 检查其他 tab 的 ad_modifications 缓存，如果当前 tab 没有 ad_modifications 缓存，就同步
+      if (!modifications || modifications.length === 0) {
+        const accountId = await getSavedAccountId();
+        const otherTabTypes = ['Ads', 'Adsets', 'Campaigns'].filter(t => t !== tabType);
+        let hasOtherModifications = false;
+        
+        for (const otherTabType of otherTabTypes) {
+          const otherModificationsKey = `ad_modifications_${accountId}_${date}_${otherTabType}`;
+          const otherModifications = await browserStorage.get(otherModificationsKey);
+          
+          if (otherModifications && otherModifications.length > 0) {
+            // 为当前 tab 创建修改记录
+            for (const modification of otherModifications) {
+              if (modification && modification.completeData && modification.modifiedFields) {
+                const { completeData, modifiedFields } = modification;
+                
+                // 查找当前 tab 中对应的实体
+                for (const ad of ads) {
+                  let shouldAdd = false;
+                  let matchedEntity = null;
+                  
+                  if (tabType === 'Campaigns') {
+                    if (ad.id === completeData.campaign_id) {
+                      shouldAdd = true;
+                      matchedEntity = ad;
+                    }
+                  } else if (tabType === 'Adsets') {
+                    if (ad.id === completeData.adset_id || ad.adset_id === completeData.adset_id || ad.id === completeData.campaign_id) {
+                      shouldAdd = true;
+                      matchedEntity = ad;
+                    }
+                  } else if (tabType === 'Ads') {
+                    if (ad.id === completeData.ad_id || ad.ad_id === completeData.ad_id || ad.id === completeData.adset_id || ad.adset_id === completeData.adset_id || ad.id === completeData.campaign_id) {
+                      shouldAdd = true;
+                      matchedEntity = ad;
+                    }
+                  }
+                  
+                  if (shouldAdd && matchedEntity) {
+                    // 检查是否已经存在相同的修改记录
+                    const existingIndex = modifications.findIndex((item: any) => {
+                      if (tabType === 'Campaigns') {
+                        return item.completeData.id === completeData.campaign_id;
+                      } else if (tabType === 'Adsets') {
+                        return item.completeData.id === completeData.adset_id || item.completeData.adset_id === completeData.adset_id || item.completeData.id === completeData.campaign_id;
+                      } else {
+                        return item.completeData.id === completeData.ad_id || item.completeData.ad_id === completeData.ad_id || item.completeData.id === completeData.adset_id || item.completeData.adset_id === completeData.adset_id || item.completeData.id === completeData.campaign_id;
+                      }
+                    });
+                    
+                    if (existingIndex >= 0) {
+                      // 更新现有记录
+                      for (const [field, value] of Object.entries(modifiedFields)) {
+                        modifications[existingIndex].modifiedFields[field] = (modifications[existingIndex].modifiedFields[field] || 0) + value;
+                      }
+                    } else {
+                      // 添加新记录
+                      const newModification = {
+                        completeData: matchedEntity,
+                        modifiedFields: { ...modifiedFields },
+                        level: tabType,
+                        parentId: modification.parentId || '',
+                        campaign_id: modification.campaign_id || ''
+                      };
+                      modifications.push(newModification);
+                    }
+                    
+                    hasOtherModifications = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // 保存更新后的 ad_modifications 缓存
+        if (hasOtherModifications) {
+          await browserStorage.set(modificationsKey, modifications);
+          console.log('已从其他 tab 同步 ad_modifications 缓存到当前 tab:', tabType);
+        }
+      }
+      
       sendResponse({ ads, columnMapping, level, sortInfo, modifications });
     } catch (error) {
       console.error('获取缓存数据错误:', error);
