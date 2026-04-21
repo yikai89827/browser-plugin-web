@@ -260,7 +260,20 @@ export function detectSortInfo() {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
       return { field: null, direction: null };
     }
-
+    // 如果没有找到排序属性，尝试从URL中获取排序信息
+    const urlParams = new URLSearchParams(window.location.search);
+    const sortParam = urlParams.get('sort');
+    if (sortParam) {
+      console.log(`从URL获取排序信息: ${sortParam}`);
+      // 解析URL中的排序参数
+      const sortParts = sortParam.split('.');
+      if (sortParts.length === 2) {
+        sortField = sortParts[0];
+        sortDirection = sortParts[1];
+        console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
+        return { field: sortField, direction: sortDirection };
+      }
+    }
     // 查找具有sorting属性且role="columnheader"的元素
     const columnHeaderElements = document.querySelectorAll('[role="columnheader"]');
 
@@ -306,24 +319,9 @@ export function detectSortInfo() {
       }
     }
 
-    // 如果没有找到排序属性，尝试从URL中获取排序信息
-    const urlParams = new URLSearchParams(window.location.search);
-    const sortParam = urlParams.get('sort');
-    if (sortParam) {
-      console.log(`从URL获取排序信息: ${sortParam}`);
-      // 解析URL中的排序参数
-      const sortParts = sortParam.split('.');
-      if (sortParts.length === 2) {
-        sortField = sortParts[0];
-        sortDirection = sortParts[1];
-      }
-    }
   } catch (error) {
     console.error('Error detecting sort info:', error);
   }
-
-  console.log(`检测到排序信息: field=${sortField}, direction=${sortDirection}`);
-  return { field: sortField, direction: sortDirection };
 }
 
 // 更新元素文本
