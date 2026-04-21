@@ -100,9 +100,16 @@ function extractCurrencySymbolFromText(text: string): string {
   try {
     if (text) {
       // 尝试从文本中提取货币符号
+      // 匹配开头的非数字、非逗号字符
       const currencyMatch = text.match(/^([^\d,]+)/);
       if (currencyMatch && currencyMatch[1].trim()) {
         return currencyMatch[1].trim();
+      }
+      
+      // 特殊处理美元符号（可能在数字前面）
+      const dollarMatch = text.match(/(\$)/);
+      if (dollarMatch) {
+        return '$';
       }
     }
     return '¥'; // 默认货币符号
@@ -207,11 +214,15 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
       if (dataAdValue) {
         // 如果有，使用当前值减去增加值，得到原始值
         try {
-          const currentValue = parseFloat(cellText.replace(/[\$,]/g, ''));
+          // 提取货币符号
+          const currencySymbol = extractCurrencySymbolFromText(cellText);
+          // 提取数值
+          const currentValue = parseFloat(cellText.replace(/[^\d.-]/g, ''));
           const increaseValue = parseFloat(dataAdValue);
           if (!isNaN(currentValue) && !isNaN(increaseValue)) {
             const originalValue = currentValue - increaseValue;
-            cellText = originalValue.toLocaleString();
+            // 保留货币符号
+            cellText = currencySymbol + originalValue.toLocaleString();
           }
         } catch (error) {
           console.error('解析 data-ad-value 属性错误:', error);

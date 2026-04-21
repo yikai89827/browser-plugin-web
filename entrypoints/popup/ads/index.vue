@@ -830,15 +830,15 @@ onUnmounted(() => {
             <th>增加</th>
             <th>注册次数</th>
             <th>增加</th>
-            <th>单次注册费用</th>
+            <th>单次注册</th>
             <th>增加</th>
             <th>购买次数</th>
             <th>增加</th>
-            <th>单次购买费用</th>
+            <th>单次购买</th>
             <th>增加</th>
             <th>成效</th>
             <th>增加</th>
-            <th>单次成效费用</th>
+            <th>单次成效</th>
             <th>增加</th>
           </tr>
         </thead>
