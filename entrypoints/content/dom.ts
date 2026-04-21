@@ -155,6 +155,7 @@ export async function extractAdsFromDom() {
     }
     
     for (const rowPair of rowPairs) {
+      console.log(`  → 处理行对: `,rowPair);
       const adData = extractAdDataFromRowPair(rowPair, DomColumnMapping);
       if (adData) {
         ads.push(adData);
@@ -278,11 +279,11 @@ function getColumnIndicesBase(isSync: boolean = false): Record<string, number> {
         // 遍历映射表，查找匹配的字段
         for (const { field, labels } of fieldMappingConfig) {
           if (!isSync) {
-            console.log(`  → 检查标签: ${labels.join(', ')}`, field);
+            // console.log(`  → 检查标签: ${labels.join(', ')}`, field);
           }
           if (labels.some(label => text === label.toLowerCase())) {
             if (!isSync) {
-              console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
+              // console.log(`  → 匹配字段: ${field}, 标签: ${labels.join(', ')}`);
             }
             indices[field] = index;
             break;
