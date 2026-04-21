@@ -7,39 +7,45 @@ import { hierarchyManager, AdEntity } from './hierarchy';
 import { generateCacheKey, generateSortInfoKey } from './cache';
 import { getCurrentDate } from './date';
 import { getSavedAccountId } from './account';
-import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement } from './dom';
+import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom } from './dom';
 
 // 消息处理函数 - 从DOM获取广告数据
 export function handleGetAdsFromDom(sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       // 从DOM提取数据
-      const { entities, columnIndices, level } = dataExtractor.extractFromDom();
+      const { ads, DomColumnMapping, sortInfo, currencySymbol } = await extractAdsFromDom();
       
       // 检测层级关系
-      hierarchyManager.detectHierarchy(entities);
+      if (ads.length > 0) {
+        hierarchyManager.detectHierarchy(ads);
+      }
       
       // 生成缓存键
       const adsKey = await generateCacheKey('ads');
       
       // 保存到缓存
-      const sortInfo = getCurrentPageState() || {};
+      const pageState = getCurrentPageState() || {};
+      const level = pageState.level || 'Campaigns';
       const cacheData = { 
-        ads: entities, 
-        columnMapping: columnIndices,
-        level
+        ads: ads, 
+        columnMapping: DomColumnMapping,
+        level,
+        currencySymbol
       };
       const dataToSave = { sortInfo, cacheData };
       
       await browserStorage.set(adsKey, dataToSave);
       
-      console.log('已从DOM提取数据并缓存:', { entities: entities.length, level });
+      console.log('已从DOM提取数据并缓存:', { ads: ads.length, level, currencySymbol });
       
       sendResponse({ 
         success: true, 
-        ads: entities, 
-        columnMapping: columnIndices, 
-        level 
+        ads: ads, 
+        DomColumnMapping: DomColumnMapping, 
+        sortInfo: sortInfo,
+        level: level,
+        currencySymbol: currencySymbol
       });
     } catch (error: any) {
       console.error('从DOM获取数据错误:', error);
@@ -241,29 +247,30 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       const columnMapping = adsData?.cacheData?.columnMapping || {};
       const level = adsData?.cacheData?.level || tabType;
       const sortInfo = adsData?.sortInfo || { field: null, direction: null };
+      const currencySymbol = adsData?.cacheData?.currencySymbol || '¥';
       
       // 检测层级关系
       if (ads.length > 0) {
         hierarchyManager.detectHierarchy(ads);
       }
       
-      sendResponse({ ads, columnMapping, level, sortInfo, modifications });
+      sendResponse({ ads, columnMapping, level, sortInfo, currencySymbol, modifications });
     } catch (error) {
       console.error('获取缓存数据错误:', error);
-      sendResponse({ ads: [], columnMapping: {}, level: 'Campaigns', sortInfo: { field: null, direction: null }, modifications: [] });
+      sendResponse({ ads: [], columnMapping: {}, level: 'Campaigns', sortInfo: { field: null, direction: null }, currencySymbol: '¥', modifications: [] });
     }
   })();
   return true;
 }
 
 // 消息处理函数 - 保存缓存数据
-export function handleSaveCachedData(data: { date: string; ads: any; columnMapping: any; sortInfo: any; level: string; tabType: string }, sendResponse: (response: any) => void): boolean {
-  const { ads, columnMapping, sortInfo, level, tabType } = data;
+export function handleSaveCachedData(data: { date: string; ads: any; columnMapping: any; sortInfo: any; level: string; currencySymbol: string; tabType: string }, sendResponse: (response: any) => void): boolean {
+  const { ads, columnMapping, sortInfo, level, currencySymbol, tabType } = data;
   (async () => {
     try {
       const adsKey = await generateCacheKey('ads');
       
-      const cacheData = { ads, columnMapping, level };
+      const cacheData = { ads, columnMapping, level, currencySymbol };
       const dataToSave = { sortInfo, cacheData };
       
       await browserStorage.set(adsKey, dataToSave);
