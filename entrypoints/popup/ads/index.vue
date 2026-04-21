@@ -1246,7 +1246,8 @@ input:checked + .slider:before {
 
 /* 合计行样式 */
 .total-row {
-  background-color: #f5f5f5;
+  background-color: #000;
+  color: #fff;
   font-weight: bold;
 }
 
