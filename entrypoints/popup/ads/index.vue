@@ -17,17 +17,20 @@ interface AdData {
   increase_reach: number;
   spend: number;
   increase_spend: number;
-  results: number;
-  increase_results: number;
-  costPerResult: number;
   clicks: number;
   increase_clicks: number;
-  purchases: number;
-  increase_purchases: number;
   registrations: number;
   increase_registrations: number;
   registration_cost: number;
   increase_registration_cost: number;
+  purchases: number;
+  increase_purchases: number;
+  purchase_cost: number;
+  increase_purchase_cost: number;
+  results: number;
+  increase_results: number;
+  costPerResult: number;
+  increase_costPerResult: number;
   [key: string]: any;
 }
 
@@ -246,8 +249,11 @@ const fetchAds = async () => {
           if (rowData.modifiedFields.spend !== undefined) {
             ad.increase_spend = rowData.modifiedFields.spend;
           }
-          if (rowData.modifiedFields.results !== undefined) {
-            ad.increase_results = rowData.modifiedFields.results;
+          if (rowData.modifiedFields.clicks !== undefined) {
+            ad.increase_clicks = rowData.modifiedFields.clicks;
+          }
+          if (rowData.modifiedFields.registrations !== undefined) {
+            ad.increase_registrations = rowData.modifiedFields.registrations;
           }
           if (rowData.modifiedFields.registration_cost !== undefined) {
             ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
@@ -255,11 +261,14 @@ const fetchAds = async () => {
           if (rowData.modifiedFields.purchases !== undefined) {
             ad.increase_purchases = rowData.modifiedFields.purchases;
           }
-          if (rowData.modifiedFields.clicks !== undefined) {
-            ad.increase_clicks = rowData.modifiedFields.clicks;
+          if (rowData.modifiedFields.purchase_cost !== undefined) {
+            ad.increase_purchase_cost = rowData.modifiedFields.purchase_cost;
           }
-          if (rowData.modifiedFields.registrations !== undefined) {
-            ad.increase_registrations = rowData.modifiedFields.registrations;
+          if (rowData.modifiedFields.results !== undefined) {
+            ad.increase_results = rowData.modifiedFields.results;
+          }
+          if (rowData.modifiedFields.costPerResult !== undefined) {
+            ad.increase_costPerResult = rowData.modifiedFields.costPerResult;
           }
           }
         });
@@ -323,13 +332,13 @@ const saveChanges = async () => {
               ad.increase_impressions !== undefined ||
               ad.increase_reach !== undefined ||
               ad.increase_spend !== undefined ||
-              ad.increase_results !== undefined ||
-              ad.increase_website_clicks !== undefined ||
+              ad.increase_clicks !== undefined ||
               ad.increase_registrations !== undefined ||
               ad.increase_registration_cost !== undefined ||
               ad.increase_purchases !== undefined ||
-              ad.increase_clicks !== undefined ||
-              ad.increase_registrations !== undefined;
+              ad.increase_purchase_cost !== undefined ||
+              ad.increase_results !== undefined ||
+              ad.increase_costPerResult !== undefined;
             
             // 获取当前行在表格中的索引
             const rowIndex = ads.value.indexOf(ad);
@@ -348,11 +357,8 @@ const saveChanges = async () => {
               if (ad.increase_spend !== undefined) {
                 modifiedFields.spend = ad.increase_spend;
               }
-              if (ad.increase_results !== undefined) {
-                modifiedFields.results = ad.increase_results;
-              }
-              if (ad.increase_website_clicks !== undefined) {
-                modifiedFields.website_clicks = ad.increase_website_clicks;
+              if (ad.increase_clicks !== undefined) {
+                modifiedFields.clicks = ad.increase_clicks;
               }
               if (ad.increase_registrations !== undefined) {
                 modifiedFields.registrations = ad.increase_registrations;
@@ -363,14 +369,14 @@ const saveChanges = async () => {
               if (ad.increase_purchases !== undefined) {
                 modifiedFields.purchases = ad.increase_purchases;
               }
-              if (ad.increase_clicks !== undefined) {
-                modifiedFields.clicks = ad.increase_clicks;
+              if (ad.increase_purchase_cost !== undefined) {
+                modifiedFields.purchase_cost = ad.increase_purchase_cost;
               }
-              if (ad.increase_registrations !== undefined) {
-                modifiedFields.registrations = ad.increase_registrations;
+              if (ad.increase_results !== undefined) {
+                modifiedFields.results = ad.increase_results;
               }
-              if (ad.increase_registration_cost !== undefined) {
-                modifiedFields.registration_cost = ad.increase_registration_cost;
+              if (ad.increase_costPerResult !== undefined) {
+                modifiedFields.costPerResult = ad.increase_costPerResult;
               }
         
         // 构建行数据对象，确保只包含可序列化的属性
@@ -402,11 +408,7 @@ const saveChanges = async () => {
             increase_reach: ad.increase_reach,
             spend: ad.spend,
             increase_spend: ad.increase_spend,
-            results: ad.results,
-            increase_results: ad.increase_results,
-            costPerResult: ad.costPerResult,
             clicks: ad.clicks || 0,
-            website_clicks: ad.website_clicks || 0,
             increase_clicks: ad.increase_clicks || 0,
             registrations: ad.registrations || 0,
             increase_registrations: ad.increase_registrations || 0,
@@ -414,6 +416,12 @@ const saveChanges = async () => {
             increase_registration_cost: ad.increase_registration_cost || 0,
             purchases: ad.purchases || 0,
             increase_purchases: ad.increase_purchases || 0,
+            purchase_cost: ad.purchase_cost || 0,
+            increase_purchase_cost: ad.increase_purchase_cost || 0,
+            results: ad.results || 0,
+            increase_results: ad.increase_results || 0,
+            costPerResult: ad.costPerResult || 0,
+            increase_costPerResult: ad.increase_costPerResult || 0,
           },
           modifiedFields: modifiedFields
         };
@@ -502,8 +510,8 @@ const checkCacheOnMount = async () => {
             if (rowData.modifiedFields.spend !== undefined) {
               ad.increase_spend = rowData.modifiedFields.spend;
             }
-            if (rowData.modifiedFields.results !== undefined) {
-              ad.increase_results = rowData.modifiedFields.results;
+            if (rowData.modifiedFields.clicks !== undefined) {
+              ad.increase_clicks = rowData.modifiedFields.clicks;
             }
             if (rowData.modifiedFields.registrations !== undefined) {
               ad.increase_registrations = rowData.modifiedFields.registrations;
@@ -511,11 +519,17 @@ const checkCacheOnMount = async () => {
             if (rowData.modifiedFields.registration_cost !== undefined) {
               ad.increase_registration_cost = rowData.modifiedFields.registration_cost;
             }
-            if (rowData.modifiedFields.clicks !== undefined) {
-              ad.increase_clicks = rowData.modifiedFields.clicks;
-            }
             if (rowData.modifiedFields.purchases !== undefined) {
               ad.increase_purchases = rowData.modifiedFields.purchases;
+            }
+            if (rowData.modifiedFields.purchase_cost !== undefined) {
+              ad.increase_purchase_cost = rowData.modifiedFields.purchase_cost;
+            }
+            if (rowData.modifiedFields.results !== undefined) {
+              ad.increase_results = rowData.modifiedFields.results;
+            }
+            if (rowData.modifiedFields.costPerResult !== undefined) {
+              ad.increase_costPerResult = rowData.modifiedFields.costPerResult;
             }
           }
         });
@@ -650,7 +664,7 @@ onUnmounted(() => {
         <thead>
           <tr>
             <!-- <th>广告id</th> -->
-            <!-- <th>名称</th> -->
+            <th>名称</th>
             <th>展示次数</th>
             <th>增加</th>
             <th>覆盖人数</th>
@@ -661,16 +675,24 @@ onUnmounted(() => {
             <th>增加</th>
             <th>注册次数</th>
             <th>增加</th>
+            <th>单次注册费用</th>
+            <th>增加</th>
             <th>购买次数</th>
+            <th>增加</th>
+            <th>单次购买费用</th>
+            <th>增加</th>
+            <th>成效</th>
+            <th>增加</th>
+            <th>单次成效费用</th>
             <th>增加</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="ad in ads" :key="ad.id">
             <!-- <td>{{ ad.id }}</td> -->
-            <!-- <td class="ellipsis-cell" :title="ad.name">
+            <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
-            </td> -->
+            </td>
             <td class="ellipsis-cell" :title="String(ad.impressions || '-')">
               {{ ad.impressions|| '-' }}
             </td>
@@ -721,7 +743,18 @@ onUnmounted(() => {
             <td>
               <input 
                 type="number" 
-                v-model="ad.increase_results" 
+                v-model="ad.increase_registrations" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <td class="ellipsis-cell" :title="String(ad.registration_cost || '-')">  
+              {{ ad.registration_cost || '0' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_registration_cost" 
                 class="editable-input"
                 min="0"
               />
@@ -737,50 +770,42 @@ onUnmounted(() => {
                 min="0"
               />
             </td>
-            <!-- <td class="ellipsis-cell" :title="ad.costPerResult || '-' ">
-              {{ ad.costPerResult || '-' }}
-            </td> -->
-            <!-- <td class="event-dropdown-cell">
-              <div class="event-dropdown" :ref="el => setDropdownRef(el, ad.id)">
-                <button 
-                  class="event-dropdown-btn" 
-                  @click="toggleDropdown(ad.id, $event)"
-                >
-                  <span class="event-icon">›</span>
-                </button>
-                <div 
-                  v-if="dropdownOpen[ad.id]" 
-                  class="event-dropdown-menu"
-                  :style="getDropdownStyle(ad.id)"
-                >
-                  <div 
-                    v-for="event in events" 
-                    :key="event.id"
-                    class="event-dropdown-item"
-                  >
-                    <div class="event-item-container">
-                      <div class="event-item-label">
-                        {{ event.name }}: 
-                        <span class="event-item-original">{{ getOriginalValue(ad, event.id) }}</span>
-                      </div>
-                      <div class="event-item-input">
-                        增加:
-                        <input 
-                          type="number" 
-                          v-model.number="ad[`increase_${event.id}`]" 
-                          class="event-item-input-field"
-                          min="0"
-                          step="1"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </td> -->
+            <td class="ellipsis-cell" :title="String(ad.purchase_cost || '-')">  
+              {{ ad.purchase_cost || '0' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_purchase_cost" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <td class="ellipsis-cell" :title="String(ad.results || '-')">  
+              {{ ad.results || '0' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_results" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <td class="ellipsis-cell" :title="String(ad.costPerResult || '-')">  
+              {{ ad.costPerResult || '0' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_costPerResult" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
-            <td colspan="12" class="empty-state">
+            <td colspan="21" class="empty-state">
               暂无广告数据，请点击"获取数据"按钮加载
             </td>
           </tr>

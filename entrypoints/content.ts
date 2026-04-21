@@ -173,7 +173,7 @@ async function debouncedSync(): Promise<void> {
         console.log('已保存数据到缓存:', adsKey);
 
         // 这里可以添加页面数据同步逻辑
-        console.log('页面数据同步完成:', { entities: entities.length, level: currentLevel, sortInfo, syncTasks: syncTasks.length });
+        console.log('页面数据同步完成:', { entities: entities.length, level: currentLevel, sortInfo });
       } catch (error) {
         console.error('刷新页面数据错误:', error);
         removeOverlay();
