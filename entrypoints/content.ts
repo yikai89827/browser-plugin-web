@@ -372,10 +372,12 @@ function initPageObserver(): void {
           lastSortInfo = { field: sortField, direction: sortDirection, level };
           hasSortChange = true;
           console.log('检测到排序或者tab变更:', lastSortInfo);
+          createOverlay();
         }
       }
     } catch (error) {
       console.error('检测排序信息错误:', error);
+      removeOverlay();
     }
 
     // 检查是否有表格列位置变化
@@ -413,11 +415,13 @@ function initPageObserver(): void {
 
           if (hasColumnChange) {
             console.log('检测到表格列位置变化');
+            createOverlay();
           }
         }
       }
     } catch (error) {
       console.error('检测列位置变化错误:', error);
+      removeOverlay();
     }
     // 只在排序变化或表格列位置变化时触发同步
     if (hasSortChange || hasColumnChange) {
@@ -428,13 +432,13 @@ function initPageObserver(): void {
         const modificationsKey = await generateCacheKey('ad_modifications');
         const modificationsArray = await browserStorage.get(modificationsKey);
         if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
-          console.log('有缓存数据，显示遮盖层并应用修改数据');
-          createOverlay();
           // 等待DOM更新完成后再应用修改数据
           setTimeout(async () => {
             await applyCachedModifications(modificationsArray);
             removeOverlay();
           }, 100);
+        } else {
+          removeOverlay();
         }
       })();
 
