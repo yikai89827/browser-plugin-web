@@ -614,7 +614,9 @@ const calculateRegistrationCost = (ad: AdData): string => {
   let costStr = currencySymbol + '0.00';
   if (totalRegistrations !== 0) {
     const cost = totalSpend / totalRegistrations;
-    costStr = currencySymbol + cost.toFixed(2);
+    if (!isNaN(cost)) {
+      costStr = currencySymbol + cost.toFixed(2);
+    }
   }
   
   // 缓存计算结果
@@ -630,7 +632,9 @@ const calculatePurchaseCost = (ad: AdData): string => {
   let costStr = currencySymbol + '0.00';
   if (totalPurchases !== 0) {
     const cost = totalSpend / totalPurchases;
-    costStr = currencySymbol + cost.toFixed(2);
+    if (!isNaN(cost)) {
+      costStr = currencySymbol + cost.toFixed(2);
+    }
   }
   
   // 缓存计算结果
@@ -646,7 +650,9 @@ const calculateCostPerResult = (ad: AdData): string => {
   let costStr = currencySymbol + '0.00';
   if (totalResults !== 0) {
     const cost = totalSpend / totalResults;
-    costStr = currencySymbol + cost.toFixed(2);
+    if (!isNaN(cost)) {
+      costStr = currencySymbol + cost.toFixed(2);
+    }
   }
   
   // 缓存计算结果
