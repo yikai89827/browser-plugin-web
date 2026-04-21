@@ -262,12 +262,12 @@ export function detectSortInfo() {
     const urlParams = new URLSearchParams(window.location.search);
     const sortParam = urlParams.get('sort');
     if (sortParam) {
-      console.log(`从URL获取排序信息: ${sortParam}`);
+      // console.log(`从URL获取排序信息: ${sortParam}`);
       // 解析URL中的排序参数，格式如：impressions~0（降序）或 impressions~1（升序）
       const sortParts = sortParam.split('~');
-      console.log('排序参数:', sortParts);
+      // console.log('排序参数:', sortParts);
       if (sortParts.length === 2) {
-        console.log(`检测到排序信息: field=${sortParts[0]}, direction=${sortParts[1]}`);
+        // console.log(`检测到排序信息: field=${sortParts[0]}, direction=${sortParts[1]}`);
         return { field: sortParts[0], direction: sortParts[1] === '0' ? 'desc' : 'asc' };
       }
     }

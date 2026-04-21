@@ -366,7 +366,7 @@ function initPageObserver(): void {
     let hasSortChange = false;
     try {
       const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
-      console.log('当前排序字段:', sortField, '排序方向:', sortDirection, '上次排序信息:', lastSortInfo);
+      // console.log('当前排序字段:', sortField, '排序方向:', sortDirection, '上次排序信息:', lastSortInfo);
       if (sortField && sortDirection) {
         if (sortField !== lastSortInfo.field || sortDirection !== lastSortInfo.direction) {
           lastSortInfo = { field: sortField, direction: sortDirection };
