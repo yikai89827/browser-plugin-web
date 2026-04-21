@@ -91,6 +91,7 @@ const selectedDate = ref(new Date().toISOString().split('T')[0]);
 // const dataProtectionEnabled = ref(true);
 const dropdownOpen = ref<Record<string, boolean>>({});
 const dropdownRefs = ref<Record<string, HTMLElement>>({});
+const totals = ref<any>(null);
 
 // 获取日期，优先使用选择的日期，无选择时使用当天日期
 const getCurrentDate = () => {
@@ -444,11 +445,15 @@ const saveChanges = async () => {
       }
     }
     
+    // 计算并保存合计数据
+    const totals = calculateTotals();
+    
     // 保存更新后的数组到content script
     
      await sendMessageToContent('saveModifications', {
       date: currentDate,
-      modifications: modificationsArray
+      modifications: modificationsArray,
+      totals: totals
     });
     
     // 获取当前排序信息
@@ -545,6 +550,13 @@ const checkCacheOnMount = async () => {
       }
     } else {
       console.log('没有缓存数据，跳过加载');
+    }
+    
+    // 加载合计数据
+    if (cachedData && cachedData.totals) {
+      console.log('从缓存中加载合计数据:', cachedData.totals);
+      // 存储合计数据到响应式变量中
+      totals.value = cachedData.totals;
     }
   } catch (error) {
     console.error('检查缓存数据错误:', error);
@@ -683,7 +695,7 @@ const calculateCostPerResult = (ad: AdData): string => {
 
 // 计算合计数据
 const calculateTotals = () => {
-  const totals = {
+  const calculatedTotals = {
     impressions: 0,
     increase_impressions: 0,
     reach: 0,
@@ -710,27 +722,27 @@ const calculateTotals = () => {
       return Number(val);
     };
     
-    totals.impressions += getValue(ad.impressions);
-    totals.increase_impressions += getValue(ad.increase_impressions);
-    totals.reach += getValue(ad.reach);
-    totals.increase_reach += getValue(ad.increase_reach);
-    totals.spend += getValue(ad.spend);
-    totals.increase_spend += getValue(ad.increase_spend);
-    totals.clicks += getValue(ad.clicks);
-    totals.increase_clicks += getValue(ad.increase_clicks);
-    totals.registrations += getValue(ad.registrations);
-    totals.increase_registrations += getValue(ad.increase_registrations);
-    totals.purchases += getValue(ad.purchases);
-    totals.increase_purchases += getValue(ad.increase_purchases);
-    totals.results += getValue(ad.results);
-    totals.increase_results += getValue(ad.increase_results);
+    calculatedTotals.impressions += getValue(ad.impressions);
+    calculatedTotals.increase_impressions += getValue(ad.increase_impressions);
+    calculatedTotals.reach += getValue(ad.reach);
+    calculatedTotals.increase_reach += getValue(ad.increase_reach);
+    calculatedTotals.spend += getValue(ad.spend);
+    calculatedTotals.increase_spend += getValue(ad.increase_spend);
+    calculatedTotals.clicks += getValue(ad.clicks);
+    calculatedTotals.increase_clicks += getValue(ad.increase_clicks);
+    calculatedTotals.registrations += getValue(ad.registrations);
+    calculatedTotals.increase_registrations += getValue(ad.increase_registrations);
+    calculatedTotals.purchases += getValue(ad.purchases);
+    calculatedTotals.increase_purchases += getValue(ad.increase_purchases);
+    calculatedTotals.results += getValue(ad.results);
+    calculatedTotals.increase_results += getValue(ad.increase_results);
   });
   
   // 计算单次费用合计
-  const totalSpend = totals.spend + totals.increase_spend;
-  const totalRegistrations = totals.registrations + totals.increase_registrations;
-  const totalPurchases = totals.purchases + totals.increase_purchases;
-  const totalResults = totals.results + totals.increase_results;
+  const totalSpend = calculatedTotals.spend + calculatedTotals.increase_spend;
+  const totalRegistrations = calculatedTotals.registrations + calculatedTotals.increase_registrations;
+  const totalPurchases = calculatedTotals.purchases + calculatedTotals.increase_purchases;
+  const totalResults = calculatedTotals.results + calculatedTotals.increase_results;
   
   let registrationCost = currencySymbol + '0.00';
   if (totalRegistrations !== 0) {
@@ -747,12 +759,16 @@ const calculateTotals = () => {
     costPerResult = currencySymbol + (totalSpend / totalResults).toFixed(2);
   }
   
-  return {
-    ...totals,
+  const result = {
+    ...calculatedTotals,
     registrationCost,
     purchaseCost,
     costPerResult
   };
+  
+  // 存储到响应式变量中
+  totals.value = result;
+  return result;
 };
 
 // 初始化
