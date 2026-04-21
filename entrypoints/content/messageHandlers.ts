@@ -535,7 +535,7 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
                 // 检查是否已经存在相同的修改记录
                 const existingIndex = otherModifications.findIndex((item: any) => {
                   if (otherTabType === 'Campaigns') {
-                    return item.completeData.campaign_id === completeData.campaign_id || item.completeData.id === completeData.campaign_id;
+                    return item.completeData.id === completeData.campaign_id;
                   } else if (otherTabType === 'Adsets') {
                     return item.completeData.adset_id === completeData.adset_id || item.completeData.id === completeData.adset_id;
                   } else {
@@ -626,37 +626,60 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
       
       // 执行同步操作
       if (ads.length > 0) {
-        // 检测层级关系
-        hierarchyManager.detectHierarchy(ads);
+        // 应用同步任务中的修改值
+        let updatedAds = [...ads];
+        let hasChanges = false;
         
-        // 为当前 tab 创建实体
-        const entities: any[] = ads.map((ad: AdEntity) => ({
-          id: ad.id,
-          name: ad.name,
-          level: tabType,
-          parentId: ad.parentId || '',
-          values: ad,
-          increaseValues: {}
-        }));
+        for (const task of relevantSyncTasks) {
+          updatedAds = updatedAds.map((ad: any) => {
+            let updatedAd = ad;
+            
+            // 确保increaseValues对象存在
+            if (!updatedAd.increaseValues) {
+              updatedAd.increaseValues = {};
+            }
+            
+            // 根据层级关系查找对应的实体
+            if (tabType === 'Campaigns') {
+              if (ad.id === task.sourceEntity.grandParentId) {
+                // 广告系列tab，查找对应的广告系列
+                for (const [field, value] of Object.entries(task.modifiedFields)) {
+                  updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+                  hasChanges = true;
+                }
+              }
+            } else if (tabType === 'Adsets') {
+              if (ad.adset_id === task.sourceEntity.parentId || ad.id === task.sourceEntity.parentId) {
+                // 广告组tab，查找对应的广告组
+                for (const [field, value] of Object.entries(task.modifiedFields)) {
+                  updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+                  hasChanges = true;
+                }
+              }
+            } else if (tabType === 'Ads') {
+              if (ad.ad_id === task.sourceEntity.id || ad.id === task.sourceEntity.id) {
+                // 广告tab，查找对应的广告
+                for (const [field, value] of Object.entries(task.modifiedFields)) {
+                  updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+                  hasChanges = true;
+                }
+              }
+            }
+            
+            return updatedAd;
+          });
+        }
         
-        // 执行同步
-        const syncResult = await valueSyncManager.batchSync(entities, 'up');
-        console.log('同步其他 tab 数据到当前 tab 结果:', syncResult);
-        
-        // 更新当前 tab 的缓存数据
-        if (syncResult.successCount > 0) {
-          // 重新从 DOM 提取数据，确保数据是最新的
-          const { entities: updatedEntities, columnIndices: updatedColumnIndices, level: updatedLevel } = dataExtractor.extractFromDom();
-          
+        if (hasChanges) {
           // 保存更新后的数据到缓存
           const updatedAdsKey = await generateCacheKey('ads');
-          const updatedCacheData = { ads: updatedEntities, columnMapping: updatedColumnIndices, level: updatedLevel };
+          const updatedCacheData = { ads: updatedAds, columnMapping: {}, level: tabType };
           const updatedDataToSave = { sortInfo, cacheData: updatedCacheData };
           
           await browserStorage.set(updatedAdsKey, updatedDataToSave);
           
           // 更新返回的数据
-          ads = updatedEntities;
+          ads = updatedAds;
           console.log('已更新当前 tab 的缓存数据');
         }
       } else {
