@@ -607,19 +607,24 @@ async function processSyncTasks(tabType: string, ads: any[], sortInfo: any): Pro
     console.log('检测到同步任务:', syncTasks.length, '个');
     
     // 过滤与当前 tab 相关的同步任务
-    const relevantSyncTasks = syncTasks.filter((task: any) => {
-      // 检查同步方向和层级关系
-      if (task.syncDirection === 'down' && task.sourceEntity.level === 'Campaigns' && (tabType === 'Adsets' || tabType === 'Ads')) {
-        return true; // 从广告系列同步到广告组或广告
-      } else if (task.syncDirection === 'down' && task.sourceEntity.level === 'Adsets' && tabType === 'Ads') {
-        return true; // 从广告组同步到广告
-      } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Ads' && (tabType === 'Adsets' || tabType === 'Campaigns')) {
-        return true; // 从广告同步到广告组或广告系列
-      } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Adsets' && tabType === 'Campaigns') {
-        return true; // 从广告组同步到广告系列
-      }
-      return false;
-    });
+      const relevantSyncTasks = syncTasks.filter((task: any) => {
+        // 排除当前 tab 与任务源 level 相同的情况
+        if (tabType === task.sourceEntity.level) {
+          return false;
+        }
+        
+        // 检查同步方向和层级关系
+        if (task.syncDirection === 'down' && task.sourceEntity.level === 'Campaigns' && (tabType === 'Adsets' || tabType === 'Ads')) {
+          return true; // 从广告系列同步到广告组或广告
+        } else if (task.syncDirection === 'down' && task.sourceEntity.level === 'Adsets' && tabType === 'Ads') {
+          return true; // 从广告组同步到广告
+        } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Ads' && (tabType === 'Adsets' || tabType === 'Campaigns')) {
+          return true; // 从广告同步到广告组或广告系列
+        } else if (task.syncDirection === 'up' && task.sourceEntity.level === 'Adsets' && tabType === 'Campaigns') {
+          return true; // 从广告组同步到广告系列
+        }
+        return false;
+      });
     
     if (relevantSyncTasks.length > 0) {
       console.log('与当前 tab 相关的同步任务:', relevantSyncTasks.length, '个');
