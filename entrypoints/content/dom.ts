@@ -144,7 +144,7 @@ export async function extractAdsFromDom() {
       const { values } = extractRowData(firstRow, DomColumnMapping);
       
       // 检查费用相关字段
-      const costFields = ['spend', 'costPerResult', 'registration_cost', 'purchase_cost'];
+      const costFields = ['spend', 'costPerResult', 'registration_cost', 'purchase_cost', 'cost_per_result', 'registration_cost', 'purchase_cost'];
       for (const field of costFields) {
         if (values[field]) {
           currencySymbol = extractCurrencySymbolFromText(values[field]);

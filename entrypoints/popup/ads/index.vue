@@ -608,6 +608,13 @@ const formatCurrency = (value: number): string => {
 
 // 计算单次注册费用
 const calculateRegistrationCost = (ad: AdData): string => {
+  // 检查是否有增加值
+  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_registrations || 0) > 0;
+  
+  if (!hasIncrease) {
+    return currencySymbol + '0.00';
+  }
+  
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
   const totalRegistrations = (ad.registrations || 0) + (ad.increase_registrations || 0);
   
@@ -626,6 +633,13 @@ const calculateRegistrationCost = (ad: AdData): string => {
 
 // 计算单次购买费用
 const calculatePurchaseCost = (ad: AdData): string => {
+  // 检查是否有增加值
+  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_purchases || 0) > 0;
+  
+  if (!hasIncrease) {
+    return currencySymbol + '0.00';
+  }
+  
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
   const totalPurchases = (ad.purchases || 0) + (ad.increase_purchases || 0);
   
@@ -644,6 +658,13 @@ const calculatePurchaseCost = (ad: AdData): string => {
 
 // 计算单次成效费用
 const calculateCostPerResult = (ad: AdData): string => {
+  // 检查是否有增加值
+  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_results || 0) > 0;
+  
+  if (!hasIncrease) {
+    return currencySymbol + '0.00';
+  }
+  
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
   const totalResults = (ad.results || 0) + (ad.increase_results || 0);
   
