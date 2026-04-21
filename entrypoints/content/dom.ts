@@ -95,23 +95,57 @@ export function getTableDataRows(tableContainer: HTMLElement): Array<{ fixed: HT
   return rowPairs;
 }
 
+// 从文本中提取货币符号
+function extractCurrencySymbolFromText(text: string): string {
+  try {
+    if (text) {
+      // 尝试从文本中提取货币符号
+      const currencyMatch = text.match(/^([^\d,]+)/);
+      if (currencyMatch && currencyMatch[1].trim()) {
+        return currencyMatch[1].trim();
+      }
+    }
+    return '¥'; // 默认货币符号
+  } catch (error) {
+    console.error('从文本提取货币符号错误:', error);
+    return '¥'; // 默认货币符号
+  }
+}
+
 // 从DOM中提取广告数据
 export async function extractAdsFromDom() {
   try {
     const ads = [];
     const DomColumnMapping = await getColumnIndices();
     const sortInfo: any = getCurrentPageState() || {};
+    let currencySymbol = '¥'; // 默认货币符号
     
     // 找到表格容器
     const tableContainer = findTableContainer();
     if (!tableContainer) {
       console.log('extractAdsFromDom: 未找到表格容器');
-      return { ads: [], DomColumnMapping: {}, sortInfo };
+      return { ads: [], DomColumnMapping: {}, sortInfo, currencySymbol };
     }
     
     // 获取表格数据行
     const rowPairs = getTableDataRows(tableContainer);
     console.log('找到的广告行数:', rowPairs.length);
+    
+    // 提取第一行数据以获取货币符号
+    if (rowPairs.length > 0) {
+      const firstRow = rowPairs[0];
+      const { values } = extractRowData(firstRow, DomColumnMapping);
+      
+      // 检查费用相关字段
+      const costFields = ['spend', 'costPerResult', 'registration_cost', 'purchase_cost'];
+      for (const field of costFields) {
+        if (values[field]) {
+          currencySymbol = extractCurrencySymbolFromText(values[field]);
+          console.log('从字段', field, '提取的货币符号:', currencySymbol);
+          break;
+        }
+      }
+    }
     
     for (const rowPair of rowPairs) {
       const adData = extractAdDataFromRowPair(rowPair, DomColumnMapping);
@@ -121,10 +155,10 @@ export async function extractAdsFromDom() {
     }
     
     console.log('提取的广告数据:', ads);
-    return { ads, DomColumnMapping, sortInfo };
+    return { ads, DomColumnMapping, sortInfo, currencySymbol };
   } catch (error) {
     console.error('提取广告数据错误:', error);
-    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null } };
+    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '¥' };
   }
 }
 

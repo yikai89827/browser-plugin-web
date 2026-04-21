@@ -184,7 +184,7 @@ class DataExtractor {
         // 检查是否为数值字段
         if (numericFields.includes(field)) {
           // 清理数值，去除货币符号和逗号
-          const cleanedValue = value.replace(/[\$,]/g, '');
+          const cleanedValue = value.replace(/[^\d.-]/g, '');
           const numValue = parseFloat(cleanedValue);
           if (!isNaN(numValue)) {
             processedValues[field] = numValue;
