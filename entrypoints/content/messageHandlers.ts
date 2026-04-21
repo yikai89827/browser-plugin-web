@@ -6,6 +6,8 @@ import { dataExtractor } from './dataExtractor';
 import { hierarchyManager, AdEntity } from './hierarchy';
 import { valueSyncManager } from './syncValue';
 import { generateCacheKey, generateSortInfoKey } from './cache';
+import { getCurrentDate } from './date';
+import { getSavedAccountId } from './account';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement } from './dom';
 
 // 消息处理函数 - 从DOM获取广告数据
@@ -429,7 +431,9 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
   
   for (const otherTabType of otherTabTypes) {
     // 生成其他tab的缓存键
-    const otherAdsKey = await generateCacheKey('ads');
+    const date = getCurrentDate();
+    const accountId = await getSavedAccountId();
+    const otherAdsKey = `ads_${accountId}_${date}_${otherTabType}`;
     const otherAdsData = await browserStorage.get(otherAdsKey);
     
     if (otherAdsData && otherAdsData.cacheData && otherAdsData.cacheData.ads && otherAdsData.cacheData.ads.length > 0) {
@@ -501,7 +505,7 @@ async function syncToOtherTabs(modificationsWithId: any[], currentLevel: string)
         console.log('已同步增加值到其他tab的缓存:', otherTabType);
         
         // 同步更新其他tab的 ad_modifications 缓存
-        const otherModificationsKey = await generateCacheKey('ad_modifications');
+        const otherModificationsKey = `ad_modifications_${accountId}_${date}_${otherTabType}`;
         const otherModifications = await browserStorage.get(otherModificationsKey) || [];
         
         // 为其他tab创建修改记录
