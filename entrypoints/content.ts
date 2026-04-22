@@ -339,7 +339,8 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
     
     // 获取可滚动列的单元格
     const scrollableCells = scrollableElement.children[0]?.children || [];
-    
+    // 定义金额字段列表
+    const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
     // 更新每个字段的值
     Object.entries(valuesToUpdate).forEach(([field, value]) => {
       const columnIndex = columnIndices[field];
@@ -348,7 +349,12 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
         if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
           // 找到最内层的DOM元素进行更新
           const currentElement = findInnermostElement(scrollableCells[scrollableIndex]);
-          currentElement.textContent = String(value);
+          // 如果是金额字段，保留货币符号
+          if (currencyFields.includes(field)) {
+            currentElement.textContent = currencySymbol + value.toFixed(2);
+          } else {
+            currentElement.textContent = String(value);
+          }
           
           // 添加 data-add-value 属性，存储增加值
           const increaseValue = increaseValues[field] || 0;

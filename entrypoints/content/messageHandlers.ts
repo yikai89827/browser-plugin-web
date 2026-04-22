@@ -139,7 +139,7 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
 
 
 // 更新行数据
-async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
+async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>, increaseFields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
   // 获取列索引
   const columnIndices = await getColumnIndices();
   
@@ -168,6 +168,9 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
         } else {
           innermostElement.textContent = String(value);
         }
+        // 添加 data-add-value 属性，存储增加值
+        const increaseValue = increaseFields[field] || 0;
+        innermostElement.setAttribute('data-add-value', String(increaseValue));
       }
     }
   }
@@ -224,9 +227,15 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
             continue;
           }
           
-          // 更新行数据，传递货币符号
+          // 构建增加值字段
+          const increaseFields: Record<string, number> = {};
+          Object.keys(modifiedFields).forEach(key => {
+            increaseFields[key] = parseFloat(String(modifiedFields[key]).replace(/,/g, '')) || 0;
+          });
+          
+          // 更新行数据，传递货币符号和增加值字段
           const currencySymbol = completeData.currencySymbol || '$';
-          await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields, currencySymbol);
+          await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields, increaseFields, currencySymbol);
           console.log(`已刷新页面数据行: ${id}`, saveFields);
           successCount++;
         }
