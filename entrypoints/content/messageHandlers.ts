@@ -163,9 +163,9 @@ function updateCell(cell: Element, field: string, value: number, increaseValue: 
   
   // 如果是金额字段，保留货币符号
   if (currencyFields.includes(field)) {
-    innermostElement.textContent = currencySymbol + value.toFixed(2);
+    innermostElement.textContent = currencySymbol + (value.toFixed(2)?.toLocaleString() || '');
   } else {
-    innermostElement.textContent = String(value);
+    innermostElement.textContent = value?.toLocaleString() || '';
   }
   // 添加 data-add-value 属性，存储增加值
   innermostElement.setAttribute('data-add-value', String(increaseValue));
