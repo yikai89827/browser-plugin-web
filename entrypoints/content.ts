@@ -1,5 +1,8 @@
 // @ts-nocheck
 import { browserStorage } from '../utils/storage';
+import { interceptFetch } from './content/fetch';
+
+``
 
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
@@ -173,7 +176,7 @@ async function debouncedSync(): Promise<void> {
         console.log('已保存数据到缓存:', adsKey);
 
         // 这里可以添加页面数据同步逻辑
-        console.log('页面数据同步完成:', { entities: entities.length, level: currentLevel, sortInfo });
+        console.log('页面数据同步完成:', { entities: entities?.length || 0, level: currentLevel, sortInfo });
       } catch (error) {
         console.error('刷新页面数据错误:', error);
         removeOverlay();
@@ -530,6 +533,8 @@ export default {
   matches: ['*://*.facebook.com/adsmanager/*'],
   main() {
     console.log('Facebook Ads Manager 内容脚本已加载');
+
+    interceptFetch();
 
     // 监听来自popup的消息
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {

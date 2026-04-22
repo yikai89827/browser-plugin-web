@@ -116,10 +116,14 @@ class HierarchyManager {
 
   // 检测层级关系
   detectHierarchy(entities: AdEntity[]) {
+    if (!entities || entities.length === 0) {
+      return;
+    }
+
     this.clear();
     
     // 首先添加所有实体
-    entities.forEach(entity => this.addEntity(entity));
+    entities?.forEach(entity => this.addEntity(entity));
 
     // 然后建立父子关系
     Object.values(this.hierarchy.adsets).forEach(adset => {

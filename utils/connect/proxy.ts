@@ -1,5 +1,58 @@
 import { browser } from 'wxt/browser';
 import { browserStorage } from "../../utils/storage";
+
+// 存储自定义排序的id数组
+let customSortIds: string[] | null = null;
+
+// 设置自定义排序的id数组
+export const setCustomSortIds = (ids: string[]) => {
+    customSortIds = ids;
+    console.log('Custom sort ids set:', customSortIds);
+    
+    // 将排序信息存储到localStorage，以便内容脚本可以访问
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('customSortIds', JSON.stringify(ids));
+    }
+    
+    // 通知所有标签页更新排序
+    browser.tabs.query({}, (tabs) => {
+        tabs.forEach(tab => {
+            if (tab.id) {
+                browser.tabs.sendMessage(tab.id, { action: 'updateSortIds', ids }).catch(() => {
+                    // 忽略无法发送消息的标签页
+                });
+            }
+        });
+    });
+};
+
+// 获取自定义排序的id数组
+export const getCustomSortIds = (): string[] | null => {
+    return customSortIds;
+};
+
+// 清除自定义排序
+export const clearCustomSortIds = () => {
+    customSortIds = null;
+    console.log('Custom sort ids cleared');
+    
+    // 从localStorage中清除排序信息
+    if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('customSortIds');
+    }
+    
+    // 通知所有标签页清除排序
+    browser.tabs.query({}, (tabs) => {
+        tabs.forEach(tab => {
+            if (tab.id) {
+                browser.tabs.sendMessage(tab.id, { action: 'clearSortIds' }).catch(() => {
+                    // 忽略无法发送消息的标签页
+                });
+            }
+        });
+    });
+};
+
 // 监听网络请求
 export const getWebRequestHeaders = () => {
     // 确保browser对象存在
@@ -108,6 +161,155 @@ export const getWebResponseHeaders = () => {
     
     console.log('Web response listener added successfully');
 }
+// 处理API响应的排序
+export const processApiResponse = (response: any): any => {
+    // 检查是否有自定义排序ID
+    let sortIds = customSortIds;
+    
+    // 如果没有，尝试从localStorage获取
+    if (!sortIds && typeof localStorage !== 'undefined') {
+        const storedIds = localStorage.getItem('customSortIds');
+        if (storedIds) {
+            try {
+                sortIds = JSON.parse(storedIds);
+            } catch (error) {
+                console.error('Error parsing stored sort ids:', error);
+            }
+        }
+    }
+    
+    // 如果有自定义排序ID，且响应格式正确
+    if (sortIds && response && Array.isArray(response.data)) {
+        console.log('Processing API response with custom sort:', sortIds,response.data);
+        
+        // 根据customSortIds重新排序
+        const sortedData = sortIds
+            .map(id => response.data.find((item: any) => item.id === id))
+            .filter(Boolean); // 过滤掉未找到的项
+        
+        console.log('Original data length:', response.data.length);
+        console.log('Sorted data length:', sortedData.length);
+        
+        // 创建修改后的响应
+        return {
+            ...response,
+            data: sortedData
+        };
+    }
+    
+    // 如果没有自定义排序，返回原始响应
+    return response;
+};
+
+// 处理API请求并返回修改后的响应
+async function handleApiRequest(url: string): Promise<{ redirectUrl?: string } | undefined> {
+    try {
+        console.log('Intercepting API request:', url);
+        
+        // 检查是否有自定义排序ID
+        let sortIds = customSortIds;
+        
+        // 如果没有，尝试从localStorage获取
+        if (!sortIds && typeof localStorage !== 'undefined') {
+            const storedIds = localStorage.getItem('customSortIds');
+            if (storedIds) {
+                try {
+                    sortIds = JSON.parse(storedIds);
+                } catch (error) {
+                    console.error('Error parsing stored sort ids:', error);
+                }
+            }
+        }
+        
+        // 如果有自定义排序ID，才拦截请求
+        if (sortIds && sortIds.length > 0) {
+            console.log('Custom sort ids found, processing response:', sortIds.length);
+            
+            // 发送请求获取原始响应
+            const response = await fetch(url);
+            const originalData = await response.json();
+            
+            // 检查响应格式
+            if (originalData && Array.isArray(originalData.data)) {
+                console.log('Original response data:', originalData.data);
+                
+                // 根据customSortIds重新排序
+                const sortedData = sortIds
+                    .map(id => originalData.data.find((item: any) => item.id === id))
+                    .filter(Boolean); // 过滤掉未找到的项
+                
+                console.log('Sorted response data:', sortedData);
+                
+                // 创建修改后的响应
+                const modifiedData = {
+                    ...originalData,
+                    data: sortedData
+                };
+                
+                // 将修改后的数据转换为字符串
+                const modifiedDataStr = JSON.stringify(modifiedData);
+                
+                // 创建一个Blob对象
+                const blob = new Blob([modifiedDataStr], { type: 'application/json' });
+                
+                // 创建一个URL对象
+                const blobUrl = URL.createObjectURL(blob);
+                
+                // 返回修改后的请求
+                return {
+                    redirectUrl: blobUrl
+                };
+            }
+        }
+    } catch (error) {
+        console.error('Error intercepting API response:', error);
+    }
+    
+    // 如果没有修改，返回undefined
+    return undefined;
+}
+
+// 拦截并修改API响应
+export const interceptApiRequests = () => {
+    // 确保browser对象存在
+    if (!browser || !browser.webRequest) {
+        console.error('browser.webRequest is not available');
+        return;
+    }
+    
+    // 要拦截的API路径
+    const apiPaths = [
+        '/lightads?access_token',
+        '/light_adsets?access_token',
+        '/light_campaigns?access_token'
+    ];
+    
+    // 添加请求拦截器
+    browser.webRequest.onBeforeRequest.addListener(
+        (details) => {
+            try {
+                const { url, method } = details;
+                
+                // 检查是否是要拦截的API
+                const isTargetApi = apiPaths.some(api => url.includes(api));
+                
+                if (isTargetApi && method === 'GET') {
+                    return handleApiRequest(url);
+                }
+            } catch (error) {
+                console.error('Error in API request interceptor:', error);
+            }
+            
+            // 如果没有修改，返回原始请求
+            return {};
+        },
+        { urls: ['<all_urls>'] },
+        ['blocking']
+    );
+    
+    console.log('API request interceptor added successfully');
+};
+
 //设置网络代理
 export const setProxy = () => {
     // location.origin + '/coupons/api/getCouponPromotions?paginationSize=25&paginationSkip=0'
