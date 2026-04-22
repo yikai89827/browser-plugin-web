@@ -1,13 +1,12 @@
 // @ts-nocheck
 import { browserStorage } from '../utils/storage';
 import { interceptFetch } from './content/fetch';
-
-``
+import { footerMapping } from './content/config';
 
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
+import { findFooterRow, getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
 import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
@@ -261,8 +260,10 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
         // 计算原始值和增加值的总和
         const { valuesToUpdate, increaseValues } = calculateValuesToUpdate(modification);
         
-        // 更新到页面
+        // 更新数据到页面
         await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues);
+        //更新合计到页面
+        await updateFooterRowByEntity(valuesToUpdate, increaseValues);
       } else {
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
@@ -355,7 +356,7 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
           const currentElement = findInnermostElement(scrollableCells[scrollableIndex]);
           // 如果是金额字段，保留货币符号
           if (currencyFields.includes(field)) {
-            currentElement.textContent = currencySymbol + value.toFixed(2);
+            currentElement.textContent = currencySymbol + value;
           } else {
             currentElement.textContent = String(value);
           }
@@ -372,6 +373,69 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
     console.error('更新广告行错误:', error);
   }
 }
+
+// 更新合计行数据
+async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, increaseValues: Record<string, number>) {
+  try {
+    // 查找合计行
+    const footerRow = findFooterRow();
+    if (!footerRow) {
+      console.warn('更新合计行数据: 未找到合计行');
+      return;
+    }
+    
+    // 找到可滚动列部分
+    const scrollableElement = footerRow.querySelector('[data-surface=""]');
+    if (!scrollableElement) {
+      console.warn('更新合计行数据: 未找到可滚动列部分');
+      return;
+    }
+    
+    // 获取所有带有data-surface-wrapper属性的单元格
+    const cells = scrollableElement.querySelectorAll('[data-surface-wrapper="1"]');
+    
+    // 定义金额字段列表
+    const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
+    
+    for (const [field, value] of Object.entries(valuesToUpdate)) {
+      // 获取当前字段对应的data-surface值
+      if (!footerMapping[field]) {
+        console.warn(`更新合计行数据: 字段 ${field} 没有对应的data-surface映射`);
+        continue;
+      }
+      
+      // 查找包含对应data-surface值的单元格
+      const cellnode = Array.from(cells).find(cell => {
+        const surfaceAttr = cell.getAttribute('data-surface');
+        return surfaceAttr && surfaceAttr.includes(footerMapping[field]);
+      });
+      
+      if (!cellnode) {
+        console.warn(`更新合计行数据: 未找到字段 ${field} 对应的单元格`);
+        continue;
+      }
+      
+      // 找到最内层的DOM元素进行更新
+      const innermostElement = findInnermostElement(cellnode);
+      
+      // 如果是金额字段，保留货币符号
+      if (currencyFields.includes(field)) {
+        innermostElement.textContent = currencySymbol + value;
+      } else {
+        innermostElement.textContent = String(value);
+      }
+      
+      // 添加 data-add-value 属性，存储增加值
+      const increaseValue = increaseValues[field] || 0;
+      innermostElement.setAttribute('data-add-value', String(increaseValue));
+    }
+    
+    console.log('更新合计行数据成功');
+  } catch (error) {
+    console.error('更新合计行数据错误:', error);
+  }
+}
+
 // 初始化页面变化监听
 function initPageObserver(): void {
   // 使用MutationObserver来拦截页面渲染
@@ -540,8 +604,13 @@ function initPageObserver(): void {
 }
 
 export default {
-  matches: ['*://*.facebook.com/adsmanager/*'],
+  matches: ['*://*.facebook.com/adsmanager/manage/*','*://*.facebook.com/adsmanager/reporting/*'],
   main() {
+    if (window.location.href.includes('adsmanager/reporting')) {
+      console.log('Facebook Ads reporting 报告页面已加载');
+      // 处理报告页面的逻辑
+      return;
+    }
     console.log('Facebook Ads Manager 内容脚本已加载');
 
     interceptFetch();

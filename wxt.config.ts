@@ -38,14 +38,11 @@ export default defineConfig({
   manifest: () => {
     return {
       version: '3',
-      name: '广告助手',
+      name: '浏览器助手',
       host_permissions: [
-        "*://*.baidu.com/*",
         "*://*.facebook.com/*",
         "http://localhost/*",
         "http://127.0.0.1/*",
-        "http://192.168.110.106/*",
-        ...hostPermissions
       ],
       permissions: [
         "scripting",
@@ -80,12 +77,9 @@ export default defineConfig({
       web_accessible_resources: [{
         resources: ['*.js', "*.csv", "*.xlsx"],
         matches: [
-          '*://*.baidu.com/*',
           "*://*.facebook.com/*",
           "http://localhost/*",
           "http://127.0.0.1/*",
-          "http://192.168.110.106/*",
-          ...hostPermissions
         ],
         "use_dynamic_url": true  // 动态URL防止指纹追踪
       }],

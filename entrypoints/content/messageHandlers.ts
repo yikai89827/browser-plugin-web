@@ -77,7 +77,7 @@ function findTableBody(): HTMLElement | null {
 }
 
 // 查找合计行
-function findFooterRow(): HTMLElement | null {
+export function findFooterRow(): HTMLElement | null {
   const tableContainer = findTableContainer();
   if (!tableContainer) {
     console.warn('刷新页面数据: 未找到表格容器');
