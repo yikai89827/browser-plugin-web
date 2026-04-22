@@ -7,20 +7,52 @@ export function findTableContainer(): HTMLElement | null {
   return document.querySelector('[role="table"]') || null;
 }
 
+export function getReportingTableHeader(): HTMLElement | null {
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    return null;
+  }
+  // 报告页面的表格标题查找逻辑
+  const element = tableContainer?.children[0]?.children[1];
+  return element instanceof HTMLElement ? element : null;
+}
+
+export function getReportingTableDataRows(): HTMLElement[] {
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    return [];
+  }
+  const element = tableContainer?.children[0]?.children[2];
+  if (!element) {
+    return [];
+  }
+  // 报告页面的表格数据行查找逻辑
+  return Array.from(element?.children || []).filter((child) => child instanceof HTMLElement) || [];
+}
+
+export function getReportingTableFooter(): HTMLElement | null {
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    return null;
+  }
+  // 报告页面的表格底部查找逻辑
+  const element = tableContainer?.children[0]?.children[3];
+  return element instanceof HTMLElement ? element : null;
+}
+
 // 获取当前页面状态
 export function getCurrentPageState(): any {
-  // 新页面的状态获取逻辑
+  // 报告页面的状态获取逻辑
   return {
-    tab: '',
     sortField: null,
     sortDirection: null,
-    level: 'NewPage'
+    level: 'Reporting'
   };
 }
 
 // 从DOM提取数据
 export async function extractDataFromDom(): Promise<{ data: any[], columnMapping: any, sortInfo: any, currencySymbol: string }> {
-  // 新页面的数据提取逻辑
+  // 报告页面的数据提取逻辑
   return {
     data: [],
     columnMapping: {},
@@ -31,19 +63,19 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
 
 // 获取列索引
 export async function getColumnIndices(): Promise<any> {
-  // 新页面的列索引获取逻辑
+  // 报告页面的列索引获取逻辑
   return {};
 }
 
 // 同步获取列索引
 export function getColumnIndicesSync(): any {
-  // 新页面的同步列索引获取逻辑
+  // 报告页面的同步列索引获取逻辑
   return {};
 }
 
 // 查找数据行
 export function getRowElement(id: string): HTMLElement | null {
-  // 新页面的数据行查找逻辑
+  // 报告页面的数据行查找逻辑
   return null;
 }
 

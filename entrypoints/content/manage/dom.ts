@@ -12,7 +12,6 @@ export let columnIndices: Record<string, number> = {};
 export function findTableContainer(): HTMLElement | null {
   const selectors = [
     'div[role="table"]',
-    'div._3hi._1mie[role="table"]',
     'div[data-surface="//int/table"]',
     'div[class*="table"]',
     'div[style*="table"]'
