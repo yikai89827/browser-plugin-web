@@ -119,6 +119,8 @@ function extractCurrencySymbolFromText(text: string): string {
   }
 }
 
+// 尝试从页面的JavaScript变量中获取表格数据
+
 // 从DOM中提取广告数据
 export async function extractAdsFromDom() {
   try {
@@ -128,14 +130,23 @@ export async function extractAdsFromDom() {
     let currencySymbol = '¥'; // 默认货币符号
     
     // 找到表格容器
-    const tableContainer = findTableContainer();
+    const tableContainer = await findTableContainer();
     if (!tableContainer) {
       console.log('extractAdsFromDom: 未找到表格容器');
       return { ads: [], DomColumnMapping: {}, sortInfo, currencySymbol };
     }
     
-    // 获取表格数据行
-    const rowPairs = getTableDataRows(tableContainer);
+    // 等待表格数据完全渲染，最多等待5秒
+    let rowPairs: Array<{ fixed: HTMLElement; scrollable: HTMLElement }> = [];
+    for (let i = 0; i < 10; i++) {
+      rowPairs = getTableDataRows(tableContainer);
+      if (rowPairs.length > 0) {
+        break;
+      }
+      // 等待500ms后重试
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     console.log('找到的广告行数:', rowPairs.length);
     
     // 提取第一行数据以获取货币符号

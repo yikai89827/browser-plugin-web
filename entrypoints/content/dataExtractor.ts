@@ -21,13 +21,13 @@ export interface ExtractionResult {
 // 数据提取管理器
 class DataExtractor {
   // 从DOM提取数据
-  extractFromDom(): ExtractionResult {
+  async extractFromDom(): Promise<ExtractionResult> {
     // 使用dom.ts中的函数获取列索引
-    const columnIndices = getColumnIndicesSync();
+    const columnIndices = await getColumnIndicesSync();
     console.log(`  → 提取到的列索引: ${JSON.stringify(columnIndices)}`);
     // 检测排序信息
     const sortInfo:any = getCurrentPageState() || {};
-    const entities = this.extractEntities(sortInfo?.level, columnIndices);
+    const entities = await this.extractEntities(sortInfo?.level, columnIndices);
     
     return {
       entities,
@@ -59,19 +59,26 @@ class DataExtractor {
   }
 
   // 提取广告实体
-  private extractEntities(level: AdLevel, columnIndices: ColumnIndices): AdEntity[] {
+  private async extractEntities(level: AdLevel, columnIndices: ColumnIndices): Promise<AdEntity[]> {
     const entities: AdEntity[] = [];
     
     // 使用dom.ts中的函数找到表格容器
-    const tableContainer = findTableContainer();
+    const tableContainer = await findTableContainer();
     if (!tableContainer) {
       console.warn('extractEntities: 未找到表格容器');
       return entities;
     }
     
-    
-    // 使用dom.ts中的函数获取表格数据行
-    const rowPairs = getTableDataRows(tableContainer);
+    // 等待表格数据完全渲染，最多等待5秒
+    let rowPairs = [];
+    for (let i = 0; i < 10; i++) {
+      rowPairs = getTableDataRows(tableContainer);
+      if (rowPairs.length > 0) {
+        break;
+      }
+      // 等待500ms后重试
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
 
     console.log(`  → 表格数据行数量: ${rowPairs.length}`);
     
