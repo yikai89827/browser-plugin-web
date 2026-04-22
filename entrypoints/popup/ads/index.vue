@@ -600,8 +600,8 @@ const calculateRegistrationCost = (ad: AdData): string => {
   const hasIncrease = ad.increase_spend > 0 || ad.increase_registrations > 0;
   
   if (!hasIncrease) {
-    // 如果没有增加值，显示原始的单次注册费    
-    return currencySymbol + ad.registration_cost.toFixed(2);
+    // 如果没有增加值，显示0
+    return currencySymbol + '0.00';
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
@@ -626,7 +626,8 @@ const calculatePurchaseCost = (ad: AdData): string => {
   const hasIncrease = ad.increase_spend > 0 || ad.increase_purchases > 0;
   
   if (!hasIncrease) {
-    return currencySymbol + ad.purchase_cost.toFixed(2);
+    // 如果没有增加值，显示0
+    return currencySymbol + '0.00';
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
@@ -646,12 +647,13 @@ const calculatePurchaseCost = (ad: AdData): string => {
 };
 
 // 计算单次成效费用
-const calculateCostPerResult = (ad: AdData): any => {
+const calculateCostPerResult = (ad: AdData): string => {
   // 检查是否有增加值
   const hasIncrease = ad.increase_spend > 0 || ad.increase_results > 0;
   
   if (!hasIncrease) {
-    return currencySymbol + ad.costPerResult.toFixed(2);
+    // 如果没有增加值，显示0
+    return currencySymbol + '0.00';
   } 
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
   const totalResults = (ad.results || 0) + (ad.increase_results || 0);
@@ -1182,7 +1184,7 @@ input:checked + .slider:before {
 
 .ads-table th,
 .ads-table td {
-  padding: 12px 1px;
+  padding: 12px 6px;
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
   border-right: 1px solid #e8e8e8;
