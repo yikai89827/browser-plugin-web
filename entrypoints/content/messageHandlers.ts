@@ -211,14 +211,12 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
   const columnIndices = await getColumnIndices();
   
   // 找到可滚动列部分
-  const scrollableElement = footerRow.children?.[1]?.querySelector('div');
-  if (!scrollableElement) {
+  const cells = footerRow.children?.[1]?.children[0]?.children || [];
+  if (!cells) {
     console.warn('更新合计行数据: 未找到可滚动列部分');
     return;
   }
-  console.log('可滚动列部分:', scrollableElement, fields, increaseFields);
-  // 获取可滚动列的单元格
-  const cells = scrollableElement.querySelectorAll('[data-surface-wrapper="1"]');
+  console.log('可滚动列部分:', cells, fields, increaseFields);
   
   for (const [field, value] of Object.entries(fields)) {
     const originalIndex = columnIndices[field];
