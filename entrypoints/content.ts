@@ -306,7 +306,7 @@ function calculateValuesToUpdate(modification: any) {
 }
 
 // 根据实体更新广告行
-async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, string>, increaseValues: Record<string, number>) {
+async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, string>, increaseValues: Record<string, number>,currencySymbol: string) {
   try {
     // 获取广告行的DOM元素
     const adRowElement = getAdRowElement({ id });
@@ -376,7 +376,7 @@ async function updateAdRowByEntity(id: any, valuesToUpdate: Record<string, strin
 }
 
 // 更新合计行数据
-async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, increaseValues: Record<string, number>) {
+async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, increaseValues: Record<string, number>,currencySymbol: string) {
   try {
     // 查找合计行
     const footerRow = findFooterRow();
