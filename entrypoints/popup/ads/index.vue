@@ -1186,7 +1186,7 @@ input:checked + .slider:before {
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
   border-right: 1px solid #e8e8e8;
-  max-width: 64px!important;
+  max-width: 100px!important;
 }
 
 .ads-table th {
@@ -1249,14 +1249,14 @@ input:checked + .slider:before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 64px;
+  max-width: 100px!important;
 }
 
 .ads-table td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 64px;
+  max-width: 100px!important;
 }
 
 .ads-table th {
@@ -1377,7 +1377,7 @@ input:checked + .slider:before {
 }
 
 .event-item-input-field {
-  width: 64px;
+  width: 100px;
   padding: 4px;
   border: 1px solid #ddd;
   border-radius: 4px;
