@@ -205,8 +205,6 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
     return;
   }
   
-  // 获取列索引
-  const columnIndices = await getColumnIndices();
   
   // 找到可滚动列部分
   const cells = footerRow.children?.[1]?.children[0]?.children || [];
@@ -224,7 +222,8 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
     }
     if (cellnode) {
       const increaseValue = increaseFields[field] || 0;
-      updateCell(cellnode, field, value, increaseValue, currencySymbol);  
+      const currentValue = Number((Number(value) + Number(increaseValue)).toFixed(2));
+      updateCell(cellnode, field, currentValue, increaseValue, currencySymbol);  
     }
   }
   console.log('已更新合计行数据');
