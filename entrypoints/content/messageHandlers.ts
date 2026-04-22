@@ -155,6 +155,23 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
   return null;
 }
 
+// 更新单元格数据
+function updateCell(cell: Element, field: string, value: number, increaseValue: number, currencySymbol: string = '$'): void {
+  // 找到最内层的DOM元素进行更新
+  const innermostElement = findInnermostElement(cell);
+  
+  // 定义金额字段列表
+  const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
+  
+  // 如果是金额字段，保留货币符号
+  if (currencyFields.includes(field)) {
+    innermostElement.textContent = currencySymbol + value.toFixed(2);
+  } else {
+    innermostElement.textContent = String(value);
+  }
+  // 添加 data-add-value 属性，存储增加值
+  innermostElement.setAttribute('data-add-value', String(increaseValue));
+}
 
 // 更新行数据
 async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>, increaseFields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
@@ -167,9 +184,6 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
   // 更新行数据
   const cells = scrollable.children[0]?.children || [];
   
-  // 定义金额字段列表
-  const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
-  
   for (const [field, value] of Object.entries(fields)) {
     const originalIndex = columnIndices[field];
     if (originalIndex !== undefined) {
@@ -177,18 +191,8 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
       const columnIndex = originalIndex - fixedColumnLength;
       if (columnIndex >= 0 && cells[columnIndex]) {
         const cell = cells[columnIndex];
-        // 找到最内层的DOM元素进行更新
-        const innermostElement = findInnermostElement(cell);
-        
-        // 如果是金额字段，保留货币符号
-        if (currencyFields.includes(field)) {
-          innermostElement.textContent = currencySymbol + value.toFixed(2);
-        } else {
-          innermostElement.textContent = String(value);
-        }
-        // 添加 data-add-value 属性，存储增加值
         const increaseValue = increaseFields[field] || 0;
-        innermostElement.setAttribute('data-add-value', String(increaseValue));
+        updateCell(cell, field, value, increaseValue, currencySymbol);
       }
     }
   }
@@ -216,25 +220,12 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
   // 获取可滚动列的单元格
   const cells = scrollableElement.querySelectorAll('[data-surface-wrapper="1"]');
   
-  // 定义金额字段列表
-  const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
-  
   for (const [field, value] of Object.entries(fields)) {
     const originalIndex = columnIndices[field];
     if (originalIndex !== undefined && cells[originalIndex]) {
       const cell = cells[originalIndex];
-      // 找到最内层的DOM元素进行更新
-      const innermostElement = findInnermostElement(cell);
-      
-      // 如果是金额字段，保留货币符号
-      if (currencyFields.includes(field)) {
-        innermostElement.textContent = currencySymbol + value.toFixed(2);
-      } else {
-        innermostElement.textContent = String(value);
-      }
-      // 添加 data-add-value 属性，存储增加值
       const increaseValue = increaseFields[field] || 0;
-      innermostElement.setAttribute('data-add-value', String(increaseValue));
+      updateCell(cell, field, value, increaseValue, currencySymbol);
     }
   }
 }
@@ -274,7 +265,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
               // 将字符串转换为数字，去除逗号等分隔符
               const originalValue = parseFloat(String(completeData[key]).replace(/,/g, '')) || 0;
               const increaseValue = parseFloat(String(modifiedFields[key]).replace(/,/g, '')) || 0;
-              acc[key] = Number((originalValue + increaseValue).toFixed(2));
+              acc[key] = Number((Number(originalValue) + Number(increaseValue)).toFixed(2));
             }
             return acc;
           }, {});
@@ -305,17 +296,16 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           successCount++;
         }
       }
-      
+      console.log(`更新合计行数据`,modifications, totals);
       // 更新合计行数据
       if (totals) {
-        console.log('更新合计行数据:', totals);
-        
+
         // 构建合计行的字段
         const footerFields: Record<string, number> = {};
         const footerIncreaseFields: Record<string, number> = {};
         
         // 处理数值字段
-        const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases', 'results'];
+        const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
         numericFields.forEach(field => {
           if (totals[field] !== undefined) {
             footerFields[field] = totals[field];

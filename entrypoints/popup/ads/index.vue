@@ -438,7 +438,7 @@ const saveChanges = async () => {
     console.log('当前排序信息:', sortInfo);
     
     // 向content script发送消息，通知页面刷新
-    await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray });
+    await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray, totals: totals });
     
     // 保存完成后重新渲染页面
     // await fetchAds();
