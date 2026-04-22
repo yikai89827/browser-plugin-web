@@ -2,11 +2,9 @@
 // 负责处理来自popup的消息
 
 import { browserStorage } from '../../utils/storage';
-import { dataExtractor } from './dataExtractor';
-import { hierarchyManager, AdEntity } from './hierarchy';
+import { hierarchyManager } from './hierarchy';
 import { generateCacheKey, generateSortInfoKey } from './cache';
-import { getCurrentDate } from './date';
-import { getSavedAccountId } from './account';
+import { footerMapping } from './config';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom } from './dom';
 
 // 消息处理函数 - 从DOM获取广告数据
@@ -219,11 +217,14 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
   console.log('可滚动列部分:', cells, fields, increaseFields);
   
   for (const [field, value] of Object.entries(fields)) {
-    const originalIndex = columnIndices[field];
-    if (originalIndex !== undefined && cells[originalIndex]) {
-      const cell = cells[originalIndex];
+    const cellnode = Array.from(cells).find(cell => (cell as HTMLElement)?.dataset?.surface?.trim()?.includes(footerMapping[field]));
+    if (!cellnode) {
+      console.warn(`更新合计行数据: 未找到字段 ${field} 对应的单元格`);
+      continue;
+    }
+    if (cellnode) {
       const increaseValue = increaseFields[field] || 0;
-      updateCell(cell, field, value, increaseValue, currencySymbol);
+      updateCell(cellnode, field, value, increaseValue, currencySymbol);  
     }
   }
   console.log('已更新合计行数据');

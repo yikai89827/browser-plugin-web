@@ -37,6 +37,19 @@ export const fieldMappingConfig = [
   { field: 'registration_cost', labels: ['registration cost', '单次完成注册费用'] },
 ];
 
+export const footerMapping: Record<string, string> = {
+  impressions: 'impressions',//展示次数
+  reach: 'reach',//覆盖人数
+  spend: 'spend',//已花费金额
+  clicks: 'clicks',//点击量（全部）
+  purchases: 'actions:omni_purchase',//购物次数
+  purchase_cost: 'cost_per_action_type:omni_purchase',//单次购物费用
+  results: 'results',//成效
+  costPerResult: 'cost_per_result',//单次成效费用
+  registrations: 'actions:omni_complete_registration',//完成注册次数
+  registration_cost: 'cost_per_action_type:omni_complete_registration',//单次完成注册费用
+};
+
 // 非数值字段（不参与数值计算的字段）
 export const nonNumericFields = ['name', 'campaign_id', 'adset_id', 'ad_id'];
 
