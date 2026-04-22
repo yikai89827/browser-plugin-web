@@ -400,9 +400,7 @@ async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, i
         continue;
       }
       if (cellnode) {
-        const increaseValue = increaseValues[field] || 0;
-        const currentValue = Number((Number(value) + Number(increaseValue)).toFixed(2));
-        updateCell(cellnode, field, currentValue, increaseValue, currencySymbol);  
+        updateCell(cellnode, field, value, increaseValues[field] || 0, currencySymbol);  
       }
     }
     console.log('已更新合计行数据');
