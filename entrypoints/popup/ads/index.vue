@@ -1172,6 +1172,7 @@ input:checked + .slider:before {
   padding: 12px 1px;
   text-align: left;
   border-bottom: 1px solid #e8e8e8;
+  border-right: 1px solid #e8e8e8;
   max-width: 64px!important;
 }
 
