@@ -139,47 +139,6 @@ const fetchAds = async () => {
   loading.value = true;
   error.value = '';
 
-    // const apis = [
-    //     `/lightads`,
-    //     `/adsets`,
-    //     `/campaigns`,
-    // ];
-  // ads.value = [
-  //   {
-  //     id: '123456789',
-  //     name: '测试广告1',
-  //     status: 'ACTIVE',
-  //     campaign_id: '987654321',
-  //     adset_id: '112233445',
-  //     impressions: 1000,
-  //     increase_impressions: 10,
-  //     reach: 800,
-  //     increase_reach: 5,
-  //     spend: 100,
-  //     increase_spend: 2,
-  //     results: 50,
-  //     increase_results: 15,
-  //     costPerResult: 2,
-  //     other_events: 10
-  //   },
-  //   {
-  //     id: '987654321',
-  //     name: '测试广告2',
-  //     status: 'PAUSED',
-  //     campaign_id: '123456789',
-  //     adset_id: '554433221',
-  //     impressions: 2000,
-  //     increase_impressions: 15,
-  //     reach: 1500,
-  //     increase_reach: 8,
-  //     spend: 200,
-  //     increase_spend: 5,
-  //     results: 100,
-  //     increase_results: 20,
-  //     costPerResult: 2,
-  //     other_events: 20
-  //   }
-  // ];
   try {
     // 先从content script获取当前排序信息
     const currentDate = getCurrentDate();
@@ -620,12 +579,13 @@ const formatCurrency = (value: number): string => {
 };
 
 // 计算单次注册费用
-const calculateRegistrationCost = (ad: AdData): string => {
+const calculateRegistrationCost = (ad: AdData): string | number => {
   // 检查是否有增加值
   const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_registrations || 0) > 0;
   
   if (!hasIncrease) {
-    return currencySymbol + '0.00';
+    // 如果没有增加值，显示原始的单次注册费用
+    return ad.registration_cost || currencySymbol + '0.00';
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
@@ -645,12 +605,13 @@ const calculateRegistrationCost = (ad: AdData): string => {
 };
 
 // 计算单次购买费用
-const calculatePurchaseCost = (ad: AdData): string => {
+const calculatePurchaseCost = (ad: AdData): string | number => {
   // 检查是否有增加值
   const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_purchases || 0) > 0;
   
   if (!hasIncrease) {
-    return currencySymbol + '0.00';
+    // 如果没有增加值，显示原始的单次购买费用
+    return ad.purchase_cost || currencySymbol + '0.00';
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
@@ -670,12 +631,13 @@ const calculatePurchaseCost = (ad: AdData): string => {
 };
 
 // 计算单次成效费用
-const calculateCostPerResult = (ad: AdData): string => {
+const calculateCostPerResult = (ad: AdData): string | number => {
   // 检查是否有增加值
   const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_results || 0) > 0;
   
   if (!hasIncrease) {
-    return currencySymbol + '0.00';
+    // 如果没有增加值，显示原始的单次成效费用
+    return ad.costPerResult || currencySymbol + '0.00';
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
