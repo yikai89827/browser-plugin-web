@@ -1261,7 +1261,7 @@ input:checked + .slider:before {
 
 .ads-table th {
   white-space: nowrap;
-  min-width: 52px;
+  min-width: 100px;
 }
 
 /* 合计行样式 */
