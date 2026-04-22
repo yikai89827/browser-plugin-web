@@ -166,11 +166,6 @@ export function interceptFetch() {
                             console.error('Error intercepting XMLHttpRequest response:', error);
                         }
                     }
-                    
-                    // 调用原始的onreadystatechange
-                    if (typeof originalOnreadystatechange === 'function') {
-                        originalOnreadystatechange.call(this);
-                    }
                 };
             }
             
