@@ -154,7 +154,7 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
 }
 
 // 更新单元格数据
-function updateCell(cell: Element, field: string, value: number, increaseValue: number, currencySymbol: string = '$'): void {
+export function updateCell(cell: Element, field: string, value: number, increaseValue: number, currencySymbol: string = '$'): void {
   // 找到最内层的DOM元素进行更新
   const innermostElement = findInnermostElement(cell);
   

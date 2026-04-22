@@ -9,7 +9,7 @@ import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
-import { findFooterRow,handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
+import { findFooterRow,updateCell, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
 
 
 // 全局同步状态变量
@@ -239,21 +239,22 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
     // 获取当前页面层级
     const pageState = getCurrentPageState();
     const currentLevel = pageState.level || 'Campaigns';
-    
+    let currencySymbol = '$';
     // 遍历修改数据，更新到页面
     for (const modification of modifications) {
-      if (!modification || !modification.completeData || !modification.completeData.id || !modification.modifiedFields) {
+      const { completeData, modifiedFields } = modification || {};
+      if (!completeData || !completeData.id || !modifiedFields) {
         continue;
       }
-      
+      currencySymbol = completeData.currencySymbol || '$';
       // 找到对应的广告行
       let adRow: any = null;
       const idColumn = getIdColumn();
-      console.log('当前层级的ID列:', idColumn, modification.completeData,ads);
+      console.log('当前层级的ID列:', idColumn, completeData,ads);
       // 首先尝试使用当前层级的ID列查找
-      if (modification.completeData.id) {
-        console.log('尝试使用当前层级的ID列查找:', modification.completeData.id);
-        adRow = ads.find(ad => ad[idColumn] === modification.completeData.id);
+      if (completeData.id) {
+        console.log('尝试使用当前层级的ID列查找:', completeData.id);
+        adRow = ads.find(ad => ad[idColumn] === completeData.id);
       }
       
       if (adRow) {
@@ -261,9 +262,9 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
         const { valuesToUpdate, increaseValues } = calculateValuesToUpdate(modification);
         
         // 更新数据到页面
-        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues);
+        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues,currencySymbol);
         //更新合计到页面
-        await updateFooterRowByEntity(valuesToUpdate, increaseValues);
+        await updateFooterRowByEntity(valuesToUpdate, increaseValues,currencySymbol);
       } else {
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
@@ -385,52 +386,26 @@ async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, i
     }
     
     // 找到可滚动列部分
-    const scrollableElement = footerRow.querySelector('[data-surface=""]');
-    if (!scrollableElement) {
+    const cells = footerRow.children?.[1]?.children[0]?.children || [];
+    if (!cells) {
       console.warn('更新合计行数据: 未找到可滚动列部分');
       return;
     }
-    
-    // 获取所有带有data-surface-wrapper属性的单元格
-    const cells = scrollableElement.querySelectorAll('[data-surface-wrapper="1"]');
-    
-    // 定义金额字段列表
-    const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
-    
+    console.log('可滚动列部分:', cells, valuesToUpdate, increaseValues);
+      
     for (const [field, value] of Object.entries(valuesToUpdate)) {
-      // 获取当前字段对应的data-surface值
-      if (!footerMapping[field]) {
-        console.warn(`更新合计行数据: 字段 ${field} 没有对应的data-surface映射`);
-        continue;
-      }
-      
-      // 查找包含对应data-surface值的单元格
-      const cellnode = Array.from(cells).find(cell => {
-        const surfaceAttr = cell.getAttribute('data-surface');
-        return surfaceAttr && surfaceAttr.includes(footerMapping[field]);
-      });
-      
+      const cellnode = Array.from(cells).find(cell => (cell as HTMLElement)?.dataset?.surface?.trim()?.includes(footerMapping[field]));
       if (!cellnode) {
         console.warn(`更新合计行数据: 未找到字段 ${field} 对应的单元格`);
         continue;
       }
-      
-      // 找到最内层的DOM元素进行更新
-      const innermostElement = findInnermostElement(cellnode);
-      
-      // 如果是金额字段，保留货币符号
-      if (currencyFields.includes(field)) {
-        innermostElement.textContent = currencySymbol + value;
-      } else {
-        innermostElement.textContent = String(value);
+      if (cellnode) {
+        const increaseValue = increaseValues[field] || 0;
+        const currentValue = Number((Number(value) + Number(increaseValue)).toFixed(2));
+        updateCell(cellnode, field, currentValue, increaseValue, currencySymbol);  
       }
-      
-      // 添加 data-add-value 属性，存储增加值
-      const increaseValue = increaseValues[field] || 0;
-      innermostElement.setAttribute('data-add-value', String(increaseValue));
     }
-    
-    console.log('更新合计行数据成功');
+    console.log('已更新合计行数据');
   } catch (error) {
     console.error('更新合计行数据错误:', error);
   }
