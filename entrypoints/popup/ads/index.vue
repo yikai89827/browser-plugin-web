@@ -250,7 +250,22 @@ const fetchAds = async () => {
       console.log('从DOM获取货币符号成功:', domCurrencySymbol);
       
       if (domAds && domAds.length > 0) {
-        ads.value = domAds;
+        // 转换单次费用字段为数字类型
+        const processedAds = domAds.map(ad => {
+          // 处理单次费用字段
+          if (ad.registration_cost) {
+            ad.registration_cost = parseFloat(String(ad.registration_cost).replace(/[^\d.-]/g, '')) || 0;
+          }
+          if (ad.purchase_cost) {
+            ad.purchase_cost = parseFloat(String(ad.purchase_cost).replace(/[^\d.-]/g, '')) || 0;
+          }
+          if (ad.costPerResult) {
+            ad.costPerResult = parseFloat(String(ad.costPerResult).replace(/[^\d.-]/g, '')) || 0;
+          }
+          return ad;
+        });
+        
+        ads.value = processedAds;
         columnMapping.value = receivedColumnMapping;
         
         // 更新货币符号
@@ -261,7 +276,7 @@ const fetchAds = async () => {
         // 缓存数据到content script
         await sendMessageToContent('saveCachedData', {
           date: currentDate,
-          ads: domAds,
+          ads: processedAds,
           columnMapping: receivedColumnMapping,
           sortInfo: receivedSortInfo,
           currencySymbol: currencySymbol,
@@ -407,6 +422,7 @@ const saveChanges = async () => {
     
     // 计算并保存合计数据
     const totals = calculateTotals();
+
     
     // 保存更新后的数组到content script
     
@@ -579,13 +595,13 @@ const formatCurrency = (value: number): string => {
 };
 
 // 计算单次注册费用
-const calculateRegistrationCost = (ad: AdData): string | number => {
+const calculateRegistrationCost = (ad: AdData): string => {
   // 检查是否有增加值
-  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_registrations || 0) > 0;
+  const hasIncrease = ad.increase_spend > 0 || ad.increase_registrations > 0;
   
   if (!hasIncrease) {
-    // 如果没有增加值，显示原始的单次注册费用
-    return ad.registration_cost || currencySymbol + '0.00';
+    // 如果没有增加值，显示原始的单次注册费    
+    return currencySymbol + ad.registration_cost.toFixed(2);
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
@@ -605,13 +621,12 @@ const calculateRegistrationCost = (ad: AdData): string | number => {
 };
 
 // 计算单次购买费用
-const calculatePurchaseCost = (ad: AdData): string | number => {
+const calculatePurchaseCost = (ad: AdData): string => {
   // 检查是否有增加值
-  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_purchases || 0) > 0;
+  const hasIncrease = ad.increase_spend > 0 || ad.increase_purchases > 0;
   
   if (!hasIncrease) {
-    // 如果没有增加值，显示原始的单次购买费用
-    return ad.purchase_cost || currencySymbol + '0.00';
+    return currencySymbol + ad.purchase_cost.toFixed(2);
   }
   
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
@@ -631,15 +646,13 @@ const calculatePurchaseCost = (ad: AdData): string | number => {
 };
 
 // 计算单次成效费用
-const calculateCostPerResult = (ad: AdData): string | number => {
+const calculateCostPerResult = (ad: AdData): any => {
   // 检查是否有增加值
-  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_results || 0) > 0;
+  const hasIncrease = ad.increase_spend > 0 || ad.increase_results > 0;
   
   if (!hasIncrease) {
-    // 如果没有增加值，显示原始的单次成效费用
-    return ad.costPerResult || currencySymbol + '0.00';
-  }
-  
+    return currencySymbol + ad.costPerResult.toFixed(2);
+  } 
   const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
   const totalResults = (ad.results || 0) + (ad.increase_results || 0);
   
