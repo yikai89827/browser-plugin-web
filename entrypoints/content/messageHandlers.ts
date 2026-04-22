@@ -270,14 +270,29 @@ export function handleSaveCachedData(data: { date: string; ads: any; columnMappi
     try {
       const adsKey = await generateCacheKey('ads');
       
-      const cacheData = { ads, columnMapping, level, currencySymbol };
+      // 确保每个广告对象都有id字段
+      const processedAds = ads.map((ad: any) => {
+        if (!ad.id) {
+          // 根据当前层级选择正确的ID
+          if (level === 'Ads' && ad.ad_id) {
+            ad.id = ad.ad_id;
+          } else if (level === 'Adsets' && ad.adset_id) {
+            ad.id = ad.adset_id;
+          } else if (level === 'Campaigns' && ad.campaign_id) {
+            ad.id = ad.campaign_id;
+          } 
+        }
+        return ad;
+      });
+      
+      const cacheData = { ads: processedAds, columnMapping, level: level || tabType, currencySymbol };
       const dataToSave = { sortInfo, cacheData };
       
       await browserStorage.set(adsKey, dataToSave);
       
       // 检测层级关系
-      if (ads.length > 0) {
-        hierarchyManager.detectHierarchy(ads);
+      if (processedAds.length > 0) {
+        hierarchyManager.detectHierarchy(processedAds);
       }
       
       console.log('已保存数据到缓存:', adsKey);

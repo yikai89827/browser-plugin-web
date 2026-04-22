@@ -187,6 +187,26 @@ function extractAdDataFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTM
     const { name, values } = extractRowData(rowPair, columnMapping);
     const adData: any = { name };
     Object.assign(adData, values);
+    
+    // 获取当前页面层级
+    const pageState = getCurrentPageState();
+    const currentLevel = pageState.level || 'Campaigns';
+    
+    // 根据当前层级选择正确的ID作为广告对象的id字段
+    if (!adData.id) {
+      if (currentLevel === 'Ads' && adData.ad_id) {
+        adData.id = adData.ad_id;
+      } else if (currentLevel === 'Adsets' && adData.adset_id) {
+        adData.id = adData.adset_id;
+      } else if (currentLevel === 'Campaigns' && adData.campaign_id) {
+        adData.id = adData.campaign_id;
+      } 
+      // 如果都没有，使用name作为id
+      else {
+        adData.id = name;
+      }
+    }
+    
     console.log(`  → 提取到的广告数据: ${JSON.stringify(adData)}`);
     return adData;
   } catch (error) {
