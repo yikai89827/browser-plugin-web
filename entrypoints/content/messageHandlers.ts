@@ -216,7 +216,7 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
     console.warn('更新合计行数据: 未找到可滚动列部分');
     return;
   }
-  
+  console.log('可滚动列部分:', scrollableElement, fields, increaseFields);
   // 获取可滚动列的单元格
   const cells = scrollableElement.querySelectorAll('[data-surface-wrapper="1"]');
   
@@ -263,9 +263,9 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果，
           const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
             if (completeData.hasOwnProperty(key)) {
-              // 将字符串转换为数字，去除逗号等分隔符
-              const originalValue = parseFloat(String(completeData[key]).replace(/,/g, '')) || 0;
-              const increaseValue = parseFloat(String(modifiedFields[key]).replace(/,/g, '')) || 0;
+              // 将字符串转换为数字，去除货币符号和逗号等分隔符
+              const originalValue = parseFloat(String(completeData[key]).replace(/[^\d.-]/g, '')) || 0;
+              const increaseValue = parseFloat(String(modifiedFields[key]).replace(/[^\d.-]/g, '')) || 0;
               acc[key] = Number((Number(originalValue) + Number(increaseValue)).toFixed(2));
             }
             return acc;
@@ -288,7 +288,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           // 构建增加值字段
           const increaseFields: Record<string, number> = {};
           Object.keys(modifiedFields).forEach(key => {
-            increaseFields[key] = parseFloat(String(modifiedFields[key]).replace(/,/g, '')) || 0;
+            increaseFields[key] = parseFloat(String(modifiedFields[key]).replace(/[^\d.-]/g, '')) || 0;
           });
           
           // 更新行数据，传递货币符号和增加值字段

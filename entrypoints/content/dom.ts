@@ -21,7 +21,6 @@ export function findTableContainer(): HTMLElement | null {
   for (const selector of selectors) {
     const container = document.querySelector(selector);
     if (container) {
-      console.log(`使用选择器找到表格容器: ${selector}`);
       return container as HTMLElement;
     }
   }
