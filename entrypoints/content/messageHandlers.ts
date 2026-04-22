@@ -309,6 +309,7 @@ function processModifications(modifications: any[], currentLevel: string) {
         ...item, 
         level: currentLevel,
         parentId: parentId,
+        id: completeData?.id || '',
         campaign_id: completeData?.campaign_id || '',
         adset_id: completeData?.adset_id || ''
       };

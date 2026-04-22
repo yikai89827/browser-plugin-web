@@ -722,32 +722,64 @@ const calculateTotals = () => {
     calculatedTotals.increase_results += getValue(ad.increase_results);
   });
   
-  // 计算单次费用合计
-  const totalSpend = calculatedTotals.spend + calculatedTotals.increase_spend;
-  const totalRegistrations = calculatedTotals.registrations + calculatedTotals.increase_registrations;
-  const totalPurchases = calculatedTotals.purchases + calculatedTotals.increase_purchases;
-  const totalResults = calculatedTotals.results + calculatedTotals.increase_results;
-  
-  let registrationCost = currencySymbol + '0.00';
-  if (totalRegistrations !== 0) {
-    registrationCost = currencySymbol + (totalSpend / totalRegistrations).toFixed(2);
+  // 计算原始单次费用合计
+  let originalRegistrationCost = currencySymbol + '0.00';
+  if (calculatedTotals.registrations !== 0) {
+    originalRegistrationCost = currencySymbol + (calculatedTotals.spend / calculatedTotals.registrations).toFixed(2);
   }
   
-  let purchaseCost = currencySymbol + '0.00';
-  if (totalPurchases !== 0) {
-    purchaseCost = currencySymbol + (totalSpend / totalPurchases).toFixed(2);
+  let originalPurchaseCost = currencySymbol + '0.00';
+  if (calculatedTotals.purchases !== 0) {
+    originalPurchaseCost = currencySymbol + (calculatedTotals.spend / calculatedTotals.purchases).toFixed(2);
   }
   
-  let costPerResult = currencySymbol + '0.00';
-  if (totalResults !== 0) {
-    costPerResult = currencySymbol + (totalSpend / totalResults).toFixed(2);
+  let originalCostPerResult = currencySymbol + '0.00';
+  if (calculatedTotals.results !== 0) {
+    originalCostPerResult = currencySymbol + (calculatedTotals.spend / calculatedTotals.results).toFixed(2);
+  }
+  
+  // 计算单次增加值合计
+  let registrationCostIncrease = currencySymbol + '0.00';
+  let purchaseCostIncrease = currencySymbol + '0.00';
+  let costPerResultIncrease = currencySymbol + '0.00';
+  
+  // 检查是否有增加值
+  const hasIncrease = calculatedTotals.increase_spend > 0 || 
+                     calculatedTotals.increase_registrations > 0 || 
+                     calculatedTotals.increase_purchases > 0 || 
+                     calculatedTotals.increase_results > 0;
+  
+  if (hasIncrease) {
+    const totalSpendIncrease = calculatedTotals.spend + calculatedTotals.increase_spend;
+    const totalRegistrationsIncrease = calculatedTotals.registrations + calculatedTotals.increase_registrations;
+    if (totalRegistrationsIncrease !== 0) {
+      registrationCostIncrease = currencySymbol + (totalSpendIncrease / totalRegistrationsIncrease).toFixed(2);
+    }
+    
+    const totalPurchasesIncrease = calculatedTotals.purchases + calculatedTotals.increase_purchases;
+    if (totalPurchasesIncrease !== 0) {
+      purchaseCostIncrease = currencySymbol + (totalSpendIncrease / totalPurchasesIncrease).toFixed(2);
+    }
+    
+    const totalResultsIncrease = calculatedTotals.results + calculatedTotals.increase_results;
+    if (totalResultsIncrease !== 0) {
+      costPerResultIncrease = currencySymbol + (totalSpendIncrease / totalResultsIncrease).toFixed(2);
+    }
+  } else {
+    // 如果没有增加值，显示0
+    registrationCostIncrease = currencySymbol + '0.00';
+    purchaseCostIncrease = currencySymbol + '0.00';
+    costPerResultIncrease = currencySymbol + '0.00';
   }
   
   const result = {
     ...calculatedTotals,
-    registrationCost,
-    purchaseCost,
-    costPerResult
+    originalRegistrationCost,
+    originalPurchaseCost,
+    originalCostPerResult,
+    registrationCost: registrationCostIncrease,
+    purchaseCost: purchaseCostIncrease,
+    costPerResult: costPerResultIncrease
   };
   
   // 存储到响应式变量中
@@ -988,15 +1020,15 @@ onUnmounted(() => {
             <td>{{ calculateTotals().increase_clicks }}</td>
             <td>{{ calculateTotals().registrations }}</td>
             <td>{{ calculateTotals().increase_registrations }}</td>
-            <td>{{ formatCurrency(0) }}</td>
+            <td>{{ calculateTotals().originalRegistrationCost }}</td>
             <td>{{ calculateTotals().registrationCost }}</td>
             <td>{{ calculateTotals().purchases }}</td>
             <td>{{ calculateTotals().increase_purchases }}</td>
-            <td>{{ formatCurrency(0) }}</td>
+            <td>{{ calculateTotals().originalPurchaseCost }}</td>
             <td>{{ calculateTotals().purchaseCost }}</td>
             <td>{{ calculateTotals().results }}</td>
             <td>{{ calculateTotals().increase_results }}</td>
-            <td>{{ formatCurrency(0) }}</td>
+            <td>{{ calculateTotals().originalCostPerResult }}</td>
             <td>{{ calculateTotals().costPerResult }}</td>
           </tr>
         </tbody>
