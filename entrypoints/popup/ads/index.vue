@@ -430,7 +430,8 @@ const saveChanges = async () => {
      await sendMessageToContent('saveModifications', {
       date: currentDate,
       modifications: modificationsArray,
-      totals: totals
+      totals: totals,
+      currencySymbol: currencySymbol
     });
     
     // 获取当前排序信息

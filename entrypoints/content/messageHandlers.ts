@@ -7,6 +7,41 @@ import { generateCacheKey, generateSortInfoKey } from './cache';
 import { footerMapping } from './config';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom } from './dom';
 
+// 更新合计行数据
+export async function updateFooterData(totals: any, currencySymbol: string): Promise<void> {
+  if (totals) {
+
+    // 构建合计行的字段
+    const footerFields: Record<string, number> = {};
+    const footerIncreaseFields: Record<string, number> = {};
+    
+    // 处理数值字段
+    const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
+    numericFields.forEach(field => {
+      if (totals[field] !== undefined) {
+        footerFields[field] = totals[field];
+      }
+      if (totals[`increase_${field}`] !== undefined) {
+        footerIncreaseFields[field] = totals[`increase_${field}`];
+      }
+    });
+    
+    // 处理费用字段
+    const costFields = ['registration_cost', 'purchase_cost', 'costPerResult', 'spend'];
+    costFields.forEach(field => {
+      if (totals[field] !== undefined) {
+        // 提取数值
+        const valueStr = String(totals[field]);
+        const value = parseFloat(valueStr.replace(/[^\d.-]/g, '')) || 0;
+        footerFields[field] = value;
+      }
+    });
+    
+    // 更新合计行
+    await updateFooterRow(footerFields, footerIncreaseFields, currencySymbol);
+  }
+}
+
 // 消息处理函数 - 从DOM获取广告数据
 export function handleGetAdsFromDom(sendResponse: (response: any) => void): boolean {
   (async () => {
@@ -297,37 +332,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       }
       console.log(`更新合计行数据`,modifications, totals);
       // 更新合计行数据
-      if (totals) {
-
-        // 构建合计行的字段
-        const footerFields: Record<string, number> = {};
-        const footerIncreaseFields: Record<string, number> = {};
-        
-        // 处理数值字段
-        const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
-        numericFields.forEach(field => {
-          if (totals[field] !== undefined) {
-            footerFields[field] = totals[field];
-          }
-          if (totals[`increase_${field}`] !== undefined) {
-            footerIncreaseFields[field] = totals[`increase_${field}`];
-          }
-        });
-        
-        // 处理费用字段
-        const costFields = ['registration_cost', 'purchase_cost', 'costPerResult', 'spend'];
-        costFields.forEach(field => {
-          if (totals[field] !== undefined) {
-            // 提取数值
-            const valueStr = String(totals[field]);
-            const value = parseFloat(valueStr.replace(/[^\d.-]/g, '')) || 0;
-            footerFields[field] = value;
-          }
-        });
-        
-        // 更新合计行
-        await updateFooterRow(footerFields, footerIncreaseFields, currencySymbol);
-      }
+      await updateFooterData(totals, currencySymbol);
       
       console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
       sendResponse({ success: true, successCount, failCount });
@@ -445,8 +450,8 @@ function processModifications(modifications: any[], currentLevel: string) {
 }
 
 // 消息处理函数 - 保存修改数据
-export function handleSaveModifications(data: { date: string; modifications: any[]; tabType: string }, sendResponse: (response: any) => void): boolean {
-  const { modifications, tabType } = data;
+export function handleSaveModifications(data: { date: string; modifications: any[]; totals?: any; currencySymbol: string; tabType: string }, sendResponse: (response: any) => void): boolean {
+  const { modifications, totals } = data;
   (async () => {
     try {
       // 获取当前页面状态和层级
@@ -458,10 +463,12 @@ export function handleSaveModifications(data: { date: string; modifications: any
       
       const modificationsKey = await generateCacheKey('ad_modifications');
       const sortInfoKey = await generateSortInfoKey();
+      const totalsKey = await generateCacheKey('ad_totals');
       
       // 保存修改数据
       await Promise.all([
         browserStorage.set(modificationsKey, modificationsWithId),
+        browserStorage.set(totalsKey, totals),
         browserStorage.set(sortInfoKey, pageState || {})
       ]);
       

@@ -9,7 +9,7 @@ import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
-import { findFooterRow,updateCell, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
+import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
 
 
 // 全局同步状态变量
@@ -224,7 +224,7 @@ async function loadCachedData(): Promise<void> {
 }
 
 // 应用缓存的修改数据到页面
-async function applyCachedModifications(modifications: any[]): Promise<void> {
+async function applyCachedModifications(modifications: any[], totals?: any): Promise<void> {
   try {
     console.log('应用缓存的修改数据到页面，修改数据数量:', modifications?.length || 0);
     if(modifications?.length === 0) {
@@ -262,9 +262,9 @@ async function applyCachedModifications(modifications: any[]): Promise<void> {
         const { valuesToUpdate, increaseValues } = calculateValuesToUpdate(modification);
         
         // 更新数据到页面
-        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues,currencySymbol);
-        //更新合计到页面
-        await updateFooterRowByEntity(valuesToUpdate, increaseValues,currencySymbol);
+        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues, currencySymbol);
+        // 更新合计数据
+        await updateFooterData(totals, currencySymbol);
       } else {
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
@@ -481,11 +481,13 @@ function initPageObserver(): void {
       // 立即显示遮盖层并应用修改数据
       (async () => {
         const modificationsKey = await generateCacheKey('ad_modifications');
+        const totalsKey = await generateCacheKey('ad_totals');
         const modificationsArray = await browserStorage.get(modificationsKey);
+        const totals = await browserStorage.get(totalsKey);
         if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
           // 等待DOM更新完成后再应用修改数据
           setTimeout(async () => {
-            await applyCachedModifications(modificationsArray);
+            await applyCachedModifications(modificationsArray, totals);
             removeOverlay();
           }, 100);
         } else {
