@@ -6,10 +6,10 @@ import { footerMapping } from './content/config';
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
-import { findFooterRow, getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
+import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
 import { dataExtractor } from './content/dataExtractor';
 import { hierarchyManager } from './content/hierarchy';
-import { handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
+import { findFooterRow,handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
 
 
 // 全局同步状态变量
