@@ -87,7 +87,7 @@ function findFooterRow(): HTMLElement | null {
   }
   
   // 查找带有data-pagelet="FixedDataTableNew_footerRow"属性的元素
-  const footerRow = tableContainer.querySelector('[data-pagelet="FixedDataTableNew_footerRow"]');
+  const footerRow = tableContainer.querySelector('[data-pagelet="FixedDataTableNew_footerRow"] > span > div > div > div');
   if (!footerRow) {
     console.warn('刷新页面数据: 未找到合计行');
     return null;
@@ -211,7 +211,7 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
   const columnIndices = await getColumnIndices();
   
   // 找到可滚动列部分
-  const scrollableElement = footerRow.querySelector('[data-surface=""]');
+  const scrollableElement = footerRow.children?.[1]?.querySelector('div');
   if (!scrollableElement) {
     console.warn('更新合计行数据: 未找到可滚动列部分');
     return;
@@ -228,6 +228,7 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
       updateCell(cell, field, value, increaseValue, currencySymbol);
     }
   }
+  console.log('已更新合计行数据');
 }
 
 // 消息处理函数 - 刷新页面数据
@@ -328,7 +329,6 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
         
         // 更新合计行
         await updateFooterRow(footerFields, footerIncreaseFields, currencySymbol);
-        console.log('已更新合计行数据');
       }
       
       console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
