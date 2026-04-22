@@ -11,8 +11,8 @@ import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
 import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
 
-// 导入新页面的消息处理函数
-import { handleGetDataFromDom, handleRefreshPageWithData as handleReportingRefresh, handleGetCachedData as handleReportingGetCachedData } from './content/reporting/messageHandlers';
+// 导入报告页面的消息处理函数
+import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData } from './content/reporting/messageHandlers';
 
 
 // 全局同步状态变量
