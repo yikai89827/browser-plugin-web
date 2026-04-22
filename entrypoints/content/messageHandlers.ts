@@ -78,6 +78,24 @@ function findTableBody(): HTMLElement | null {
   return tableBody as HTMLElement;
 }
 
+// 查找合计行
+function findFooterRow(): HTMLElement | null {
+  const tableContainer = findTableContainer();
+  if (!tableContainer) {
+    console.warn('刷新页面数据: 未找到表格容器');
+    return null;
+  }
+  
+  // 查找带有data-pagelet="FixedDataTableNew_footerRow"属性的元素
+  const footerRow = tableContainer.querySelector('[data-pagelet="FixedDataTableNew_footerRow"]');
+  if (!footerRow) {
+    console.warn('刷新页面数据: 未找到合计行');
+    return null;
+  }
+  
+  return footerRow as HTMLElement;
+}
+
 // 根据ID查找行
 function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; fixed: HTMLElement; scrollable: HTMLElement } | null {
   console.log(`查找ID为 ${id} 的行`);
@@ -176,13 +194,58 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
   }
 }
 
+// 更新合计行数据
+async function updateFooterRow(fields: Record<string, number>, increaseFields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
+  // 查找合计行
+  const footerRow = findFooterRow();
+  if (!footerRow) {
+    console.warn('更新合计行数据: 未找到合计行');
+    return;
+  }
+  
+  // 获取列索引
+  const columnIndices = await getColumnIndices();
+  
+  // 找到可滚动列部分
+  const scrollableElement = footerRow.querySelector('[data-surface=""]');
+  if (!scrollableElement) {
+    console.warn('更新合计行数据: 未找到可滚动列部分');
+    return;
+  }
+  
+  // 获取可滚动列的单元格
+  const cells = scrollableElement.querySelectorAll('[data-surface-wrapper="1"]');
+  
+  // 定义金额字段列表
+  const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
+  
+  for (const [field, value] of Object.entries(fields)) {
+    const originalIndex = columnIndices[field];
+    if (originalIndex !== undefined && cells[originalIndex]) {
+      const cell = cells[originalIndex];
+      // 找到最内层的DOM元素进行更新
+      const innermostElement = findInnermostElement(cell);
+      
+      // 如果是金额字段，保留货币符号
+      if (currencyFields.includes(field)) {
+        innermostElement.textContent = currencySymbol + value.toFixed(2);
+      } else {
+        innermostElement.textContent = String(value);
+      }
+      // 添加 data-add-value 属性，存储增加值
+      const increaseValue = increaseFields[field] || 0;
+      innermostElement.setAttribute('data-add-value', String(increaseValue));
+    }
+  }
+}
+
 // 消息处理函数 - 刷新页面数据
-export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[] }, sendResponse: (response: any) => void): boolean {
+export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[]; totals?: any }, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
       
-      const { modifications } = data;
+      const { modifications, totals } = data;
       
       // 找到表体
       const tableBody = findTableBody();
@@ -197,11 +260,14 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       // 处理每个修改项
       let successCount = 0;
       let failCount = 0;
+      let currencySymbol = '$';
       
       for (const modification of modifications) {
         if (modification && modification.completeData) {
           const { completeData, modifiedFields } = modification;
           const id = completeData.id;
+          // 保存货币符号
+          currencySymbol = completeData.currencySymbol || '$';
           // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果，
           const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
             if (completeData.hasOwnProperty(key)) {
@@ -234,11 +300,45 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           });
           
           // 更新行数据，传递货币符号和增加值字段
-          const currencySymbol = completeData.currencySymbol || '$';
           await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields, increaseFields, currencySymbol);
           console.log(`已刷新页面数据行: ${id}`, saveFields);
           successCount++;
         }
+      }
+      
+      // 更新合计行数据
+      if (totals) {
+        console.log('更新合计行数据:', totals);
+        
+        // 构建合计行的字段
+        const footerFields: Record<string, number> = {};
+        const footerIncreaseFields: Record<string, number> = {};
+        
+        // 处理数值字段
+        const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases', 'results'];
+        numericFields.forEach(field => {
+          if (totals[field] !== undefined) {
+            footerFields[field] = totals[field];
+          }
+          if (totals[`increase_${field}`] !== undefined) {
+            footerIncreaseFields[field] = totals[`increase_${field}`];
+          }
+        });
+        
+        // 处理费用字段
+        const costFields = ['registration_cost', 'purchase_cost', 'costPerResult'];
+        costFields.forEach(field => {
+          if (totals[field] !== undefined) {
+            // 提取数值
+            const valueStr = String(totals[field]);
+            const value = parseFloat(valueStr.replace(/[^\d.-]/g, '')) || 0;
+            footerFields[field] = value;
+          }
+        });
+        
+        // 更新合计行
+        await updateFooterRow(footerFields, footerIncreaseFields, currencySymbol);
+        console.log('已更新合计行数据');
       }
       
       console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
