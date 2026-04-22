@@ -193,7 +193,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果，
           const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
             if (completeData.hasOwnProperty(key)) {
-              acc[key] = completeData[key] + modifiedFields[key];
+              acc[key] = Number((Number(completeData[key]) + Number(modifiedFields[key])).toFixed(2));
             }
             return acc;
           }, {});
