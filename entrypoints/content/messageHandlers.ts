@@ -315,7 +315,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
         });
         
         // 处理费用字段
-        const costFields = ['registration_cost', 'purchase_cost', 'costPerResult'];
+        const costFields = ['registration_cost', 'purchase_cost', 'costPerResult', 'spend'];
         costFields.forEach(field => {
           if (totals[field] !== undefined) {
             // 提取数值

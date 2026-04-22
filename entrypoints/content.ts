@@ -280,19 +280,23 @@ function calculateValuesToUpdate(modification: any) {
   const increaseValues: Record<string, number> = {};
   
   if (modification.completeData && modification.modifiedFields) {
+    const costFields = ['registration_cost', 'purchase_cost', 'costPerResult', 'spend'];
     Object.keys(modification.modifiedFields).forEach(field => {
-      const originalValue = modification.completeData[field] || 0;
-      const increaseValue = modification.modifiedFields[field] || 0;
-      const totalValue = originalValue + increaseValue;
+      // 将字符串转换为数字，去除货币符号和逗号等分隔符
+      const originalValue = parseFloat(String(modification.completeData[field]).replace(/[^\d.-]/g, '')) || 0;
+      const increaseValue = parseFloat(String(modification.modifiedFields[field]).replace(/[^\d.-]/g, '')) || 0;
+      const tempValue = Number((Number(originalValue) + Number(increaseValue)));
+      const totalValue = costFields.includes(field) ? tempValue.toFixed(2) : tempValue;
+      console.log(`处理字段 ${field}:`,'原始值:', originalValue, '增加值:', increaseValue);
       
       // 格式化数值
       if (typeof totalValue === 'number') {
         valuesToUpdate[field] = totalValue.toLocaleString();
       } else {
-        valuesToUpdate[field] = String(totalValue);
+        valuesToUpdate[field] = totalValue || '';
       }
       
-      increaseValues[field] = increaseValue;
+      increaseValues[field] = Number(increaseValue || 0);
     });
   }
   
