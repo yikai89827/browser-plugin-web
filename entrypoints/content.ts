@@ -4,9 +4,9 @@ import { interceptFetch } from './content/manage/fetch';
 import { footerMapping } from './content/manage/config';
 
 // 导入各个模块
-import { saveAccountId, getSavedAccountId } from './content/account';
+import { saveAccountId, getSavedAccountId } from './content/manage/account';
 import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/manage/cache';
-import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
+import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
 import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
