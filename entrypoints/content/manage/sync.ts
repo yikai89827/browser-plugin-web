@@ -1,4 +1,4 @@
-import { browserStorage } from '../../utils/storage';
+import { browserStorage } from '../../../utils/storage';
 import { extractAdsFromDom, getColumnIndices, updateScrollableRow, createOverlay, removeOverlay, getAdRowElement } from './dom';
 import { generateCacheKey } from './cache';
 

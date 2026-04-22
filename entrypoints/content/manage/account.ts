@@ -1,4 +1,4 @@
-import { browserStorage } from '../../utils/storage';
+import { browserStorage } from '../../../utils/storage';
 
 // 存储账户ID
 let accountId: string = '';

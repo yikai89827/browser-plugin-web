@@ -1,15 +1,18 @@
 // @ts-nocheck
 import { browserStorage } from '../utils/storage';
-import { interceptFetch } from './content/fetch';
-import { footerMapping } from './content/config';
+import { interceptFetch } from './content/manage/fetch';
+import { footerMapping } from './content/manage/config';
 
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/account';
-import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/cache';
+import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/manage/cache';
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/dom';
-import { dataExtractor } from './content/dataExtractor';
-import { hierarchyManager } from './content/hierarchy';
-import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/messageHandlers";
+import { dataExtractor } from './content/manage/dataExtractor';
+import { hierarchyManager } from './content/manage/hierarchy';
+import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
+
+// 导入新页面的消息处理函数
+import { handleGetDataFromDom, handleRefreshPageWithData as handleNewPageRefresh, handleGetCachedData as handleNewPageGetCachedData } from './content/reporting/messageHandlers';
 
 
 // 全局同步状态变量
@@ -579,13 +582,22 @@ function initPageObserver(): void {
 }
 
 export default {
-  matches: ['*://*.facebook.com/adsmanager/manage/*','*://*.facebook.com/adsmanager/reporting/*'],
+  matches: ['*://*.facebook.com/adsmanager/manage/*','*://*.facebook.com/adsmanager/reporting/*', '*://*.facebook.com/adsmanager/newpage/*'],
   main() {
     if (window.location.href.includes('adsmanager/reporting')) {
       console.log('Facebook Ads reporting 报告页面已加载');
       // 处理报告页面的逻辑
+      browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.action === 'getNewPageDataFromDom') {
+          return handleGetDataFromDom(sendResponse);
+        } else if (message.action === 'refreshNewPageWithData') {
+          return handleNewPageRefresh(message, sendResponse);
+        } else if (message.action === 'getNewPageCachedData') {
+          return handleNewPageGetCachedData(message.date, sendResponse);
+        }
+      });
       return;
-    }
+    } 
     console.log('Facebook Ads Manager 内容脚本已加载');
 
     interceptFetch();

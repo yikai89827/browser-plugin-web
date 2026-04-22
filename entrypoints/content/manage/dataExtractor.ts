@@ -70,7 +70,7 @@ class DataExtractor {
     }
     
     // 等待表格数据完全渲染，最多等待5秒
-    let rowPairs = [];
+    let rowPairs: any[] = [];
     for (let i = 0; i < 10; i++) {
       rowPairs = getTableDataRows(tableContainer);
       if (rowPairs.length > 0) {
@@ -82,7 +82,7 @@ class DataExtractor {
 
     console.log(`  → 表格数据行数量: ${rowPairs.length}`);
     
-    rowPairs.forEach((rowPair, rowIndex) => {
+    rowPairs.forEach((rowPair: any, rowIndex: number) => {
       const entity = this.extractEntityFromRowPair(rowPair, level, columnIndices, rowIndex);
       console.log(`  → 提取到的实体: ${JSON.stringify(entity)}`);
       if (entity) {

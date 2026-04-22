@@ -1,7 +1,7 @@
 // 消息处理模块
 // 负责处理来自popup的消息
 
-import { browserStorage } from '../../utils/storage';
+import { browserStorage } from '../../../utils/storage';
 import { hierarchyManager } from './hierarchy';
 import { generateCacheKey, generateSortInfoKey } from './cache';
 import { footerMapping } from './config';

@@ -1,4 +1,4 @@
-import { browserStorage } from '../../utils/storage';
+import { browserStorage } from '../../../utils/storage';
 import { getCurrentDate } from './date';
 import { getSavedAccountId } from './account';
 import { getCurrentPageState } from './dom';
