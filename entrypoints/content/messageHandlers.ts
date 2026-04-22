@@ -139,7 +139,7 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
 
 
 // 更新行数据
-async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>): Promise<void> {
+async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
   // 获取列索引
   const columnIndices = await getColumnIndices();
   
@@ -148,6 +148,9 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
   
   // 更新行数据
   const cells = scrollable.children[0]?.children || [];
+  
+  // 定义金额字段列表
+  const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
   
   for (const [field, value] of Object.entries(fields)) {
     const originalIndex = columnIndices[field];
@@ -158,7 +161,13 @@ async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields
         const cell = cells[columnIndex];
         // 找到最内层的DOM元素进行更新
         const innermostElement = findInnermostElement(cell);
-        innermostElement.textContent = String(value);
+        
+        // 如果是金额字段，保留货币符号
+        if (currencyFields.includes(field)) {
+          innermostElement.textContent = currencySymbol + value.toFixed(2);
+        } else {
+          innermostElement.textContent = String(value);
+        }
       }
     }
   }
@@ -193,7 +202,10 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果，
           const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
             if (completeData.hasOwnProperty(key)) {
-              acc[key] = Number((Number(completeData[key]) + Number(modifiedFields[key])).toFixed(2));
+              // 将字符串转换为数字，去除逗号等分隔符
+              const originalValue = parseFloat(String(completeData[key]).replace(/,/g, '')) || 0;
+              const increaseValue = parseFloat(String(modifiedFields[key]).replace(/,/g, '')) || 0;
+              acc[key] = Number((originalValue + increaseValue).toFixed(2));
             }
             return acc;
           }, {});
@@ -212,8 +224,9 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
             continue;
           }
           
-          // 更新行数据
-          await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields);
+          // 更新行数据，传递货币符号
+          const currencySymbol = completeData.currencySymbol || '$';
+          await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields, currencySymbol);
           console.log(`已刷新页面数据行: ${id}`, saveFields);
           successCount++;
         }
