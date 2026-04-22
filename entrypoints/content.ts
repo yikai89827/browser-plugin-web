@@ -12,7 +12,7 @@ import { hierarchyManager } from './content/manage/hierarchy';
 import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
 
 // 导入新页面的消息处理函数
-import { handleGetDataFromDom, handleRefreshPageWithData as handleNewPageRefresh, handleGetCachedData as handleNewPageGetCachedData } from './content/reporting/messageHandlers';
+import { handleGetDataFromDom, handleRefreshPageWithData as handleReportingRefresh, handleGetCachedData as handleReportingGetCachedData } from './content/reporting/messageHandlers';
 
 
 // 全局同步状态变量
@@ -582,18 +582,18 @@ function initPageObserver(): void {
 }
 
 export default {
-  matches: ['*://*.facebook.com/adsmanager/manage/*','*://*.facebook.com/adsmanager/reporting/*', '*://*.facebook.com/adsmanager/newpage/*'],
+  matches: ['*://*.facebook.com/adsmanager/manage/*','*://*.facebook.com/adsmanager/reporting/*'],
   main() {
     if (window.location.href.includes('adsmanager/reporting')) {
       console.log('Facebook Ads reporting 报告页面已加载');
       // 处理报告页面的逻辑
       browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.action === 'getNewPageDataFromDom') {
-          return handleGetDataFromDom(sendResponse);
-        } else if (message.action === 'refreshNewPageWithData') {
-          return handleNewPageRefresh(message, sendResponse);
-        } else if (message.action === 'getNewPageCachedData') {
-          return handleNewPageGetCachedData(message.date, sendResponse);
+        if (message.action === 'getReportingDataFromDom') {
+          return handleReportingGetDataFromDom(sendResponse);
+        } else if (message.action === 'refreshReportingWithData') {
+          return handleReportingRefresh(message, sendResponse);
+        } else if (message.action === 'getReportingCachedData') {
+          return handleReportingGetCachedData(message.date, sendResponse);
         }
       });
       return;

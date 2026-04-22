@@ -7,18 +7,18 @@ import { extractDataFromDom, getCurrentPageState } from './dom';
 import { dataExtractor } from './dataExtractor';
 
 // 消息处理函数 - 从DOM获取数据
-export function handleGetDataFromDom(sendResponse: (response: any) => void): boolean {
+export function handleReportingGetDataFromDom(sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       // 从DOM提取数据
       const { data, columnMapping, sortInfo, currencySymbol } = await extractDataFromDom();
       
       // 生成缓存键
-      const dataKey = await generateCacheKey('newpage_data');
+      const dataKey = await generateCacheKey('reporting_data');
       
       // 保存到缓存
       const pageState = getCurrentPageState() || {};
-      const level = pageState.level || 'NewPage';
+      const level = pageState.level || 'Reporting';
       const cacheData = { 
         data: data, 
         columnMapping: columnMapping,
@@ -47,11 +47,11 @@ export function handleGetDataFromDom(sendResponse: (response: any) => void): boo
   return true;
 }
 
-// 消息处理函数 - 刷新页面数据
-export function handleRefreshPageWithData(message: any, sendResponse: (response: any) => void): boolean {
+// 消息处理函数 - 刷新报告页面数据
+export function handleReportingRefresh(message: any, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
-      console.log('刷新新页面数据:', message);
+      console.log('刷新报告页面数据:', message);
       
       // 处理刷新逻辑
       const { modifications, totals } = message;
@@ -71,16 +71,16 @@ export function handleRefreshPageWithData(message: any, sendResponse: (response:
 }
 
 // 消息处理函数 - 获取缓存数据
-export function handleGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
+export function handleReportingGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
-      const dataKey = await generateCacheKey('newpage_data');
+      const dataKey = await generateCacheKey('reporting_data');
       const cachedData = await browserStorage.get(dataKey);
       
-      console.log('获取新页面缓存数据:', cachedData);
+      console.log('获取报告页面缓存数据:', cachedData);
       sendResponse({ success: true, data: cachedData });
     } catch (error: any) {
-      console.error('获取新页面缓存数据错误:', error);
+      console.error('获取报告页面缓存数据错误:', error);
       sendResponse({ success: false, error: error.message });
     }
   })();
