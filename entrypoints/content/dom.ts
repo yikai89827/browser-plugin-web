@@ -248,15 +248,24 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
       if (dataAdValue) {
         // 如果有，使用当前值减去增加值，得到原始值
         try {
-          // 提取货币符号
-          const currencySymbol = extractCurrencySymbolFromText(cellText);
           // 提取数值
           const currentValue = parseFloat(cellText.replace(/[^\d.-]/g, ''));
           const increaseValue = parseFloat(dataAdValue);
           if (!isNaN(currentValue) && !isNaN(increaseValue)) {
             const originalValue = currentValue - increaseValue;
-            // 保留货币符号
-            cellText = currencySymbol + originalValue.toLocaleString();
+            
+            // 定义金额字段列表
+            const currencyFields = ['spend', 'registration_cost', 'purchase_cost', 'costPerResult'];
+            
+            // 只对金额字段保留货币符号
+            if (currencyFields.includes(field)) {
+              // 提取货币符号
+              const currencySymbol = extractCurrencySymbolFromText(cellText);
+              cellText = currencySymbol + originalValue.toLocaleString();
+            } else {
+              // 非金额字段，直接显示数值
+              cellText = originalValue.toLocaleString();
+            }
           }
         } catch (error) {
           console.error('解析 data-add-value 属性错误:', error);
