@@ -7,8 +7,6 @@ import { extractDataFromDom } from './dom';
 import { saveModifiedData, getModifiedData } from './cache';
 import { updateDomElements } from './domUpdater';
 
-// 确保jQuery已加载
-declare const $: any;
 
 // 消息处理函数 - 从DOM获取数据
 export function handleReportingGetDataFromDom(sendResponse: (response: any) => void): boolean {
@@ -33,7 +31,7 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
       
       await browserStorage.set(dataKey, cacheData);
       
-      console.log('已从报表页面DOM提取数据并缓存:', { data: data, currencySymbol });
+      console.log('已从报表页面DOM提取数据并缓存:', { data: data, currencySymbol, columnMapping });
       
       sendResponse({ 
         success: true, 

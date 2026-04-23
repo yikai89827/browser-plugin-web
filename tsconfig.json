@@ -17,7 +17,6 @@
       "./types"
     ],
     "types": [
-      "@wxt/client",
       "chrome"
     ],
     "baseUrl": ".", // 基础路径

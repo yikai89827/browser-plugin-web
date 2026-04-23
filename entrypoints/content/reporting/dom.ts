@@ -226,7 +226,6 @@ export function processAccountNames(data: any[]): any[] {
       // 如果当前行没有账户名，但有其他数据，使用当前账户名
       else if (currentAccountName && (item.campaignName || item.adSetName || item.adName)) {
         item.accountName = currentAccountName;
-        console.log('为行赋值账户名:', currentAccountName, item);
       }
     }
     

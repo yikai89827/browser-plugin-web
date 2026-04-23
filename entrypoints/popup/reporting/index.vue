@@ -45,19 +45,18 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
 }
 
 // 从DOM获取广告数据
-async function getAdsFromDom(): Promise<{ ads: AdData[], columnMapping: any, sortInfo: any, currencySymbol: string }> {
+async function getAdsFromDom(): Promise<{ ads: AdData[], currencySymbol: string, columnMapping: any }> {
   const response = await sendMessageToContent('getReportingDataFromDom');
   if (response && response.data) {
     // 扁平化广告数据
     const ads = flattenAds(response.data);
     return { 
       ads,
+      currencySymbol: response.currencySymbol || '$',
       columnMapping: response.columnMapping || {},
-      sortInfo: response.sortInfo || {},
-      currencySymbol: response.currencySymbol || '$'
     };
   } else {
-    return { ads: [], columnMapping: {}, sortInfo: {}, currencySymbol: '$' };
+    return { ads: [], currencySymbol: '$', columnMapping: {} };  
   }
 }
 
@@ -231,10 +230,9 @@ const fetchAds = async () => {
 
   try {
     // 从DOM获取广告数据
-    const { ads: domAds, columnMapping: receivedColumnMapping, sortInfo: receivedSortInfo, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
+    const { ads: domAds, columnMapping: receivedColumnMapping, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
     console.log('从DOM获取广告数据成功:', domAds);
     console.log('从DOM获取列映射成功:', receivedColumnMapping);
-    console.log('从DOM获取排序信息成功:', receivedSortInfo);
     console.log('从DOM获取货币符号成功:', domCurrencySymbol);
     
     if (domAds && domAds.length > 0) {
