@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 // import { ref, onMounted } from "vue";
-import { exportToExcel } from "../../../utils/excelExport";
 import { browser } from "wxt/browser";
 import LoginBox from "./components/loginBox.vue";
 import { Connect } from "../../../utils/connect/content";
@@ -12,39 +11,7 @@ const Connection = new Connect('popup')
 const closePopup = () => {
   window.close();
 };
-const data = [
-  {
-    country: "中国",
-    title: "四大古都法国队复合风管火锅1",
-    discount: "10%",
-  },
-  {
-    country: "美国",
-    title:
-      "四大古都法国队复合风管火锅时代发生的官方大哥发的根深蒂固东风股份大概的风格的风格堆放高度2",
-    discount: "14%",
-  },
-  {
-    country: "法国",
-    title: "四大古都法国队复合风管火锅山东高速冬瓜豆腐3",
-    discount: "11%",
-  },
-];
-//导出数据
-const exportData = () => {
-  // exportToExcel(data)//test
-  console.log('导出数据')
-  Connection.actions.export()
-  Connection.watchMessage((msg:{action:string,data:any}) => {
-    const {action,data} = msg
-    if(action==='export'){
-      exportToExcel(data)
-    }
-  }); 
-};
 const isLogin = ref(false)
-const isShow = ref(false)
-const taskTimeRange = ref('')
 const pluginRange = ref('')
 const startWorker = async () => {
   isLogin.value = true
@@ -61,18 +28,6 @@ const stopWorker = async ()=>{
   console.log("插件id:", browser?.runtime?.id);
   Connection.actions.stop()
 }
-const showtimeBox = ()=>{
-  isShow.value = true
-}
-const taskTimeRangeChange = (e)=>{
-  console.log(e.target.value)
-  taskTimeRange.value = e.target.value
-}
-const confirmModify = ()=>{
-  pluginRange.value = taskTimeRange.value
-  isShow.value = false
-  browserStorage.set('lyPluginRange',taskTimeRange.value)
-}
 onMounted(async () => {
   const orgName = await browserStorage.get("lyPluginIsLogin") || '';
   isLogin.value = Boolean(orgName);
@@ -82,7 +37,7 @@ onMounted(async () => {
 
 <template>
   <div class="title">
-    <span>ERP助手</span>
+    <span>浏览器助手</span>
     <div class="close" @click="closePopup">
       <svg
         class="icon"
@@ -99,51 +54,6 @@ onMounted(async () => {
   </div>
 
   <LoginBox @loginSuccess="startWorker" @loginFailure="loginFailure" @logoutFinish="stopWorker"></LoginBox>
-  <p v-if="isShow" style="display: flex; gap: 20px;">
-    <label style="display: flex; align-items: center; cursor: pointer;">
-      <input 
-        v-model="pluginRange"
-        type="radio" 
-        name="taskTimeGroup" 
-        value="全天" 
-        style="margin-right: 8px;"
-        @click="taskTimeRangeChange"
-      >
-      全天
-    </label>
-    <label style="display: flex; align-items: center; cursor: pointer;">
-      <input
-        v-model="pluginRange" 
-        type="radio" 
-        name="taskTimeGroup" 
-        value="晚上9:00至早上9:00"
-        style="margin-right: 8px;"
-        @click="taskTimeRangeChange"
-      >
-      晚上9:00至早上9:00
-    </label>
-    <label style="display: flex; align-items: center; cursor: pointer;">
-      <input
-        v-model="pluginRange" 
-        type="radio" 
-        name="taskTimeGroup" 
-        value="晚上9:00至早上9:00"
-        style="margin-right: 8px;"
-        @click="taskTimeRangeChange"
-      >
-      早上9:00至晚上9:00
-    </label>
-    <span @click="confirmModify" class="footer-btn">确定</span> 
-  </p>
-  <p >
-    <span style="color:red">
-      注：当前任务时间为 {{pluginRange}} 
-      <!-- 【 <span @click="showtimeBox" class="footer-btn">修改时间</span> 】 -->
-      ，请保持浏览器开启。如需立即获取点击
-    </span> 
-    【 <span @click="startWorker" class="footer-btn">立即获取</span> 】 
-    【 <span @click="exportData" class="footer-btn"> 导出数据 </span> 】
-  </p>
 </template>
 
 <style scoped>

@@ -12,7 +12,7 @@ import { hierarchyManager } from './content/manage/hierarchy';
 import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
 
 // 导入报告页面的消息处理函数
-import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData } from './content/reporting/messageHandlers';
+import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
 
 
 // 全局同步状态变量
@@ -586,6 +586,19 @@ export default {
   main() {
     if (window.location.href.includes('adsmanager/reporting')) {
       console.log('Facebook Ads reporting 报告页面已加载');
+      
+      // 导入报告页面模块
+      import('./content/reporting/domUpdater').then(({ updateDomElements, setupScrollListener, setupSortListener }) => {
+        // 初始化DOM更新
+        updateDomElements();
+        
+        // 设置滚动监听器
+        setupScrollListener();
+        
+        // 设置排序监听器
+        setupSortListener();
+      });
+      
       // 处理报告页面的逻辑
       browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'getReportingDataFromDom') {
@@ -594,6 +607,8 @@ export default {
           return handleReportingRefresh(message, sendResponse);
         } else if (message.action === 'getReportingCachedData') {
           return handleReportingGetCachedData(message.date, sendResponse);
+        } else if (message.action === 'reporting_init') {
+          return handleReportingInit(sendResponse);
         }
       });
       return;

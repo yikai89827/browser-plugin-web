@@ -90,7 +90,7 @@ class IndexedDBStorage implements StorageWrapper {
             }
         }
 
-        if (this.db && this.db.connection) {
+        if (this.db) {
             return this.db;
         }
 
@@ -160,7 +160,7 @@ class IndexedDBStorage implements StorageWrapper {
                         };
 
                         request.onsuccess = () => {
-                            resolve(request.result as T ?? null);
+                            resolve((request.result !== undefined ? (request.result as T) : null) as T | PromiseLike<T>);
                         };
 
                         transaction.onerror = () => {
@@ -295,6 +295,43 @@ class IndexedDBStorage implements StorageWrapper {
         }
         this.watchers.get(key)!.add(callback);
     }
-}
+    async keys(): Promise<string[] | null> {
+        if (!this.isIndexedDBAvailable) {   
+            return Array.from(this.memoryStorage.keys());
+        }
 
+        try {
+            return await this.withDB<string[]>((db) => {
+                return new Promise((resolve, reject) => {
+                    try {
+                        const transaction = db.transaction(this.storeName, 'readonly');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.getAllKeys();
+
+                        request.onerror = () => {
+                            reject(new Error('获取IndexedDB所有键失败'));
+                        };
+
+                        request.onsuccess = () => {
+                            resolve(request.result as string[]);
+                        };
+
+                        transaction.onerror = () => {
+                            reject(new Error('Transaction failed'));
+                        };
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            });
+        } catch (error: any) {
+            console.error('获取IndexedDB所有键错误:', error);
+            if (error.message?.includes('connection is closing')) {
+                this.isIndexedDBAvailable = false;
+                this.db = null;
+            }
+            return Array.from(this.memoryStorage.keys());
+        }
+    }
+}  
 export const indexedDBStorage = new IndexedDBStorage();

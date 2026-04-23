@@ -1,16 +1,32 @@
 <script lang="ts" setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { browser } from 'wxt/browser';
 import LoginBox from './login/index.vue';
 import AdsManager from './ads/index.vue';
+import ReportManager from './reporting/index.vue';
 console.log('插件加载完成')
 
 const activeTab = ref('ads'); // 默认显示广告管理页面
+
+// 根据当前页面地址设置活动标签
+onMounted(() => {
+  browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0] && tabs[0].url) {
+      const url = tabs[0].url;
+      if (url.includes('/adsmanager/reporting/')) {
+        activeTab.value = 'report';
+      } else if (url.includes('/adsmanager/manage/')) {
+        activeTab.value = 'ads';
+      }
+    }
+  });
+});
 </script>
 
 <template>
   <div class="app-container">
     <!-- 导航标签 -->
-    <!-- <div class="nav-tabs">
+    <div class="nav-tabs">
       <button 
         class="tab-btn" 
         :class="{ active: activeTab === 'login' }" 
@@ -25,12 +41,20 @@ const activeTab = ref('ads'); // 默认显示广告管理页面
       >
         广告管理
       </button>
-    </div> -->
+      <button 
+        class="tab-btn" 
+        :class="{ active: activeTab === 'report' }" 
+        @click="activeTab = 'report'"
+      >
+        广告报表
+      </button>
+    </div>
     
     <!-- 内容区域 -->
     <div class="content">
-      <!-- <LoginBox v-if="activeTab === 'login'" /> -->
+      <LoginBox v-if="activeTab === 'login'" />
       <AdsManager v-if="activeTab === 'ads'" />
+      <ReportManager v-if="activeTab === 'report'" />
     </div>
   </div>
 </template>

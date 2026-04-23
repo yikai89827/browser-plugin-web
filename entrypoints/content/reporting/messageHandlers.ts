@@ -2,9 +2,14 @@
 // 负责处理来自popup的消息
 
 import { browserStorage } from '../../../utils/storage';
-import { generateCacheKey, generateSortInfoKey } from '../manage/cache';
+import { generateCacheKey as generateManageCacheKey, generateSortInfoKey } from '../manage/cache';
 import { extractDataFromDom, getCurrentPageState } from './dom';
 import { dataExtractor } from './dataExtractor';
+import { saveModifiedData, getModifiedData } from './cache';
+import { updateDomElements } from './domUpdater';
+
+// 确保jQuery已加载
+declare const $: any;
 
 // 消息处理函数 - 从DOM获取数据
 export function handleReportingGetDataFromDom(sendResponse: (response: any) => void): boolean {
@@ -14,7 +19,7 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
       const { data, columnMapping, sortInfo, currencySymbol } = await extractDataFromDom();
       
       // 生成缓存键
-      const dataKey = await generateCacheKey('reporting_data');
+      const dataKey = await generateManageCacheKey('reporting_data');
       
       // 保存到缓存
       const pageState = getCurrentPageState() || {};
@@ -58,7 +63,19 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       let successCount = 0;
       let failCount = 0;
       
-      // 这里添加刷新页面数据的具体逻辑
+      // 获取现有修改数据
+      const existingModifiedData = await getModifiedData() || {};
+      
+      // 合并修改数据
+      const updatedModifiedData = { ...existingModifiedData, ...modifications };
+      
+      // 保存修改数据
+      await saveModifiedData(updatedModifiedData);
+      
+      // 更新DOM元素
+      await updateDomElements();
+      
+      successCount = Object.keys(modifications).length;
       
       console.log(`刷新新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
       sendResponse({ success: true, successCount, failCount });
@@ -74,13 +91,31 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
 export function handleReportingGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
-      const dataKey = await generateCacheKey('reporting_data');
+      const dataKey = await generateManageCacheKey('reporting_data');
       const cachedData = await browserStorage.get(dataKey);
       
       console.log('获取报告页面缓存数据:', cachedData);
       sendResponse({ success: true, data: cachedData });
     } catch (error: any) {
       console.error('获取报告页面缓存数据错误:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
+  return true;
+}
+
+// 消息处理函数 - 初始化报告页面
+export function handleReportingInit(sendResponse: (response: any) => void): boolean {
+  (async () => {
+    try {
+      console.log('初始化报告页面');
+      
+      // 初始化DOM更新
+      await updateDomElements();
+      
+      sendResponse({ success: true });
+    } catch (error: any) {
+      console.error('初始化报告页面错误:', error);
       sendResponse({ success: false, error: error.message });
     }
   })();
