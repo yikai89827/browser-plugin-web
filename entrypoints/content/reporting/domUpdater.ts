@@ -54,10 +54,28 @@ export async function updateDomElements() {
   dataRows.forEach((row) => {
     const rowData = extractRowData(row, getColumnIndicesSync());
     if (rowData && rowData.id) {
-      // 检查是否有修改的数据
+      // 尝试多种ID格式进行匹配
+      let matchedModification = null;
+      
+      // 1. 直接使用rowData.id匹配（组合格式）
       if (modifiedData[rowData.id]) {
+        matchedModification = modifiedData[rowData.id];
+      }
+      
+      // 2. 如果rowData.id包含多个下划线，尝试提取ad_id进行匹配（简化格式）
+      if (!matchedModification && rowData.id) {
+        const idParts = rowData.id.split('_');
+        if (idParts.length >= 4) {
+          const adIdOnly = idParts[idParts.length - 1];
+          if (adIdOnly && modifiedData[adIdOnly]) {
+            matchedModification = modifiedData[adIdOnly];
+          }
+        }
+      }
+      
+      if (matchedModification) {
         // 更新数据行
-        updateAdRow(row, modifiedData[rowData.id]);
+        updateAdRow(row, matchedModification);
       } else if (summaryValues[rowData.id]) {
         // 更新合计行
         updateAdRow(row, summaryValues[rowData.id]);

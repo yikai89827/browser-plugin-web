@@ -254,10 +254,10 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     rowData.adset_id = rowData.adset_id || '';
     rowData.ad_id = rowData.ad_id || '';
     
-    // 生成ID：数据行使用广告ID，合计行使用各自的ID
+    // 生成ID：数据行使用多个ID字段的组合，合计行使用各自的ID
     if (rowData.ad_id && rowData.ad_id.trim() !== '') {
-      // 数据行：使用广告ID作为唯一标识
-      rowData.id = rowData.ad_id;
+      // 数据行：使用广告ID、广告组ID、广告系列ID和账户名称的组合作为唯一标识
+      rowData.id = `${rowData.accountName}_${rowData.campaign_id}_${rowData.adset_id}_${rowData.ad_id}`;
     } else if (rowData.adset_id && rowData.adset_id.trim() !== '') {
       // 广告组合计行：使用广告组ID作为唯一标识
       rowData.id = rowData.adset_id;

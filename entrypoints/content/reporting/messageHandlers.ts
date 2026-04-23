@@ -6,6 +6,8 @@ import { generateCacheKey as generateManageCacheKey } from '../reporting/cache';
 import { extractDataFromDom } from './dom';
 import { saveModifiedData, getModifiedData } from './cache';
 import { updateDomElements } from './domUpdater';
+import { numericFields } from './config';
+
 
 
 // 消息处理函数 - 从DOM获取数据
@@ -23,8 +25,6 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
       const modifiedData = await getModifiedData() || {};
       console.log('获取的修改数据（增加值）:', modifiedData);
       
-      // 定义数值字段
-      const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
       
       // 合并原始数据和修改数据
       const mergedData = data.map((item: any) => {
@@ -132,11 +132,11 @@ export function handleReportingGetCachedData(date: string, sendResponse: (respon
       const dataKey = await generateManageCacheKey('reporting_data');
       const cachedData = await browserStorage.get(dataKey);
       
+      // 获取修改的数据（增加值）
+      const modifiedData = await getModifiedData() || {};
+      console.log('获取的修改数据（增加值）:', modifiedData);
+      
       if (cachedData && cachedData.data) {
-        // 获取修改的数据（增加值）
-        const modifiedData = await getModifiedData() || {};
-        console.log('获取的修改数据（增加值）:', modifiedData);
-        
         // 定义数值字段
         const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
         
@@ -149,9 +149,36 @@ export function handleReportingGetCachedData(date: string, sendResponse: (respon
             itemWithIncrease[`increase_${field}`] = 0;
           });
           
-          // 如果有修改数据，应用修改
+          // 尝试多种ID格式进行匹配
+          let matchedModification = null;
+          
+          // 1. 直接使用item.id匹配（组合格式）
           if (modifiedData[item.id]) {
-            Object.entries(modifiedData[item.id]).forEach(([field, value]) => {
+            matchedModification = modifiedData[item.id];
+          }
+          
+          // 2. 如果item.id包含多个下划线，尝试提取ad_id进行匹配（简化格式）
+          if (!matchedModification && item.id) {
+            const idParts = item.id.split('_');
+            if (idParts.length >= 4) {
+              // 尝试使用ad_id（最后一部分）进行匹配
+              const adIdOnly = idParts[idParts.length - 1];
+              if (adIdOnly && modifiedData[adIdOnly]) {
+                matchedModification = modifiedData[adIdOnly];
+              }
+              // 尝试使用adset_id（倒数第二部分）进行匹配
+              if (!matchedModification && idParts.length >= 3) {
+                const adsetIdOnly = idParts[idParts.length - 2];
+                if (adsetIdOnly && modifiedData[adsetIdOnly]) {
+                  matchedModification = modifiedData[adsetIdOnly];
+                }
+              }
+            }
+          }
+          
+          // 如果有修改数据，应用修改
+          if (matchedModification) {
+            Object.entries(matchedModification).forEach(([field, value]) => {
               itemWithIncrease[`increase_${field}`] = Number(value) || 0;
             });
           }
@@ -168,8 +195,9 @@ export function handleReportingGetCachedData(date: string, sendResponse: (respon
         console.log('获取报告页面缓存数据并合并修改数据:', updatedCachedData);
         sendResponse({ success: true, data: updatedCachedData });
       } else {
-        console.log('获取报告页面缓存数据:', cachedData);
-        sendResponse({ success: true, data: cachedData });
+        // 缓存中没有数据，返回空数据
+        console.log('缓存中没有数据');
+        sendResponse({ success: true, data: null });
       }
     } catch (error: any) {
       console.error('获取报告页面缓存数据错误:', error);

@@ -410,16 +410,6 @@ const updateSummaryRows = () => {
       ad.accountName === accountName
     );
     
-    if (accountSummary) {
-      // 计算账户合计的增加值
-      accountSummary.increase_impressions = accountAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
-      accountSummary.increase_reach = accountAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
-      accountSummary.increase_spend = accountAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
-      accountSummary.increase_clicks = accountAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
-      accountSummary.increase_registrations = accountAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
-      accountSummary.increase_purchases = accountAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
-    }
-    
     // 按广告系列分组
     const campaignGroups: Record<string, AdData[]> = {};
     accountAds.forEach(ad => {
@@ -441,15 +431,6 @@ const updateSummaryRows = () => {
         ad.campaignName === campaignName
       );
       
-      if (campaignSummary) {
-        campaignSummary.increase_impressions = campaignAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
-        campaignSummary.increase_reach = campaignAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
-        campaignSummary.increase_spend = campaignAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
-        campaignSummary.increase_clicks = campaignAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
-        campaignSummary.increase_registrations = campaignAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
-        campaignSummary.increase_purchases = campaignAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
-      }
-      
       // 按广告组分组
       const adsetGroups: Record<string, AdData[]> = {};
       campaignAds.forEach(ad => {
@@ -460,7 +441,7 @@ const updateSummaryRows = () => {
         adsetGroups[adsetKey].push(ad);
       });
       
-      // 计算每个广告组的合计
+      // 计算每个广告组的合计（先计算这层）
       Object.keys(adsetGroups).forEach(adsetKey => {
         const adsetAds = adsetGroups[adsetKey];
         const [accountName, campaignName, adSetName] = adsetKey.split('_');
@@ -481,7 +462,27 @@ const updateSummaryRows = () => {
           adsetSummary.increase_purchases = adsetAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
         }
       });
+      
+      if (campaignSummary) {
+        // 计算广告系列合计的增加值（包含所有广告组的合计）
+        campaignSummary.increase_impressions = campaignAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
+        campaignSummary.increase_reach = campaignAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
+        campaignSummary.increase_spend = campaignAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
+        campaignSummary.increase_clicks = campaignAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
+        campaignSummary.increase_registrations = campaignAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
+        campaignSummary.increase_purchases = campaignAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
+      }
     });
+    
+    if (accountSummary) {
+      // 计算账户合计的增加值（包含所有广告系列的合计）
+      accountSummary.increase_impressions = accountAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
+      accountSummary.increase_reach = accountAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
+      accountSummary.increase_spend = accountAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
+      accountSummary.increase_clicks = accountAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
+      accountSummary.increase_registrations = accountAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
+      accountSummary.increase_purchases = accountAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
+    }
   });
 };
 

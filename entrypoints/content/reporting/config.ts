@@ -23,9 +23,7 @@ export const footerMapping = {
 };
 
 // 数值字段配置
-export const numericFields = [
-  // 报告页面的数值字段
-];
+export const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
 
 // 费用字段配置
 export const costFields = [
