@@ -78,11 +78,11 @@ function flattenAds(entities: any[]): AdData[] {
     let displayName = entity.adName || entity.name;
     if (isSummary) {
       if (summaryType === 'account') {
-        displayName = `${entity.accountName} 合计`;
+        displayName = `${entity.accountName} 账户合计`;
       } else if (summaryType === 'campaign') {
-        displayName = `${entity.campaignName} 合计`;
+        displayName = `${entity.campaignName} 系列合计`;
       } else if (summaryType === 'adset') {
-        displayName = `${entity.adSetName} 合计`;
+        displayName = `${entity.adSetName} 组合计`;
       }
     }
     
@@ -601,9 +601,9 @@ onUnmounted(() => {
         <thead>
           <tr>
             <th>名称</th>
-            <th>覆盖人数</th>
-            <th>增加</th>
             <th>展示次数</th>
+            <th>增加</th>
+            <th>覆盖人数</th>
             <th>增加</th>
             <th>花费金额</th>
             <th>增加</th>
