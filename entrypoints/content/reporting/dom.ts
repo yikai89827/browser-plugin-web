@@ -148,8 +148,8 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
       }
     }
     
-    // 处理账户名称赋值，确保同一账户下的所有行都有账户名
-    const processedData = processAccountNames(data);
+    // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
+    const processedData = processNames(data);
     
     console.log('提取的报表数据:', processedData);
     return { data: processedData, columnMapping, currencySymbol };
@@ -239,6 +239,12 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
       }
     }
     
+    // 确保所有名称字段都有值
+    rowData.accountName = rowData.accountName || '';
+    rowData.campaignName = rowData.campaignName || '';
+    rowData.adSetName = rowData.adSetName || '';
+    rowData.adName = rowData.adName || '';
+    
     // 生成 ID
     rowData.id = generateAdId(rowData);
     
@@ -250,29 +256,53 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
   }
 }
 
-// 处理账户名称赋值，确保同一账户下的所有行都有账户名
-export function processAccountNames(data: any[]): any[] {
+// 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
+export function processNames(data: any[]): any[] {
   try {
     if (!data || data.length === 0) {
       return data;
     }
     
     let currentAccountName = '';
+    let currentCampaignName = '';
+    let currentAdSetName = '';
     
     for (const item of data) {
       // 如果当前行有账户名，更新当前账户名
       if (item.accountName && item.accountName.trim() !== '') {
         currentAccountName = item.accountName;
+        // 重置系列和组名称，因为账户变更了
+        currentCampaignName = '';
+        currentAdSetName = '';
       }
+      // 如果当前行有广告系列名称，更新当前系列名
+      if (item.campaignName && item.campaignName.trim() !== '') {
+        currentCampaignName = item.campaignName;
+        // 重置组名称，因为系列变更了
+        currentAdSetName = '';
+      }
+      // 如果当前行有广告组名称，更新当前组名
+      if (item.adSetName && item.adSetName.trim() !== '') {
+        currentAdSetName = item.adSetName;
+      }
+      
       // 如果当前行没有账户名，但有其他数据，使用当前账户名
-      else if (currentAccountName && (item.campaignName || item.adSetName || item.adName)) {
+      if (currentAccountName && item.accountName === '') {
         item.accountName = currentAccountName;
+      }
+      // 如果当前行没有系列名，但有其他数据，使用当前系列名
+      if (currentCampaignName && item.campaignName === '') {
+        item.campaignName = currentCampaignName;
+      }
+      // 如果当前行没有组名，但有其他数据，使用当前组名
+      if (currentAdSetName && item.adSetName === '') {
+        item.adSetName = currentAdSetName;
       }
     }
     
     return data;
   } catch (error) {
-    console.error('处理账户名称错误:', error);
+    console.error('处理名称错误:', error);
     return data;
   }
 }

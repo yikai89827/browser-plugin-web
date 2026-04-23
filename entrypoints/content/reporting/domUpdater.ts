@@ -1,7 +1,7 @@
 // 报告页面的DOM更新模块
 // 负责处理DOM元素的更新和保持修改的值
 
-import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData } from './dom';
+import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId } from './dom';
 import { getModifiedData } from './cache';
 
 // 更新DOM元素
@@ -21,8 +21,8 @@ export async function updateDomElements() {
   console.log('找到的数据行数:', dataRows.length);
   
   // 构建ID到行的映射
-  const idToRowMap: Record<string, HTMLElement> = {};
-  const allRowData: any[] = [];
+  let idToRowMap: Record<string, HTMLElement> = {};
+  let allRowData: any[] = [];
   
   // 第一次遍历，构建映射和收集所有行数据
   dataRows.forEach((row) => {
@@ -32,6 +32,20 @@ export async function updateDomElements() {
       allRowData.push(rowData);
     }
   });
+  
+  // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
+  allRowData = processNames(allRowData);
+  
+  // 重新构建ID到行的映射，使用处理后的名称数据
+  const updatedIdToRowMap: Record<string, HTMLElement> = {};
+  allRowData.forEach((rowData) => {
+    if (rowData && rowData.id) {
+      // 重新生成ID，确保使用完整的名称数据
+      rowData.id = generateAdId(rowData);
+      updatedIdToRowMap[rowData.id] = idToRowMap[rowData.id] || rowData;
+    }
+  });
+  idToRowMap = updatedIdToRowMap;
   
   // 计算合计行的增加值
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
