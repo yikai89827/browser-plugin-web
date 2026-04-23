@@ -292,39 +292,33 @@ const saveChanges = async () => {
         continue;
       }
       
-      // 检查是否有数值被修改
-      const hasChanges = 
-        ad.increase_impressions !== undefined ||
-        ad.increase_reach !== undefined ||
-        ad.increase_spend !== undefined ||
-        ad.increase_clicks !== undefined ||
-        ad.increase_registrations !== undefined ||
-        ad.increase_purchases !== undefined;
+      // 构建修改的字段数据
+      const modifiedFields: any= {};
       
-      if (hasChanges) {
+      // 检查并保存所有增加字段，包括0值
+      if (ad.increase_impressions !== undefined) {
+        modifiedFields.impressions = ad.increase_impressions;
+      }
+      if (ad.increase_reach !== undefined) {
+        modifiedFields.reach = ad.increase_reach;
+      }
+      if (ad.increase_spend !== undefined) {
+        modifiedFields.spend = ad.increase_spend;
+      }
+      if (ad.increase_clicks !== undefined) {
+        modifiedFields.clicks = ad.increase_clicks;
+      }
+      if (ad.increase_registrations !== undefined) {
+        modifiedFields.registrations = ad.increase_registrations;
+      }
+      if (ad.increase_purchases !== undefined) {
+        modifiedFields.purchases = ad.increase_purchases;
+      }
+      
+      // 检查是否有修改
+      if (Object.keys(modifiedFields).length > 0) {
         modifiedCount++;
         console.log(`Modified ad: ${ad.id}`, ad);
-        // 构建修改的字段数据
-        const modifiedFields: any= {};
-        if (ad.increase_impressions !== undefined) {
-          modifiedFields.impressions = ad.increase_impressions;
-        }
-        if (ad.increase_reach !== undefined) {
-          modifiedFields.reach = ad.increase_reach;
-        }
-        if (ad.increase_spend !== undefined) {
-          modifiedFields.spend = ad.increase_spend;
-        }
-        if (ad.increase_clicks !== undefined) {
-          modifiedFields.clicks = ad.increase_clicks;
-        }
-        if (ad.increase_registrations !== undefined) {
-          modifiedFields.registrations = ad.increase_registrations;
-        }
-        if (ad.increase_purchases !== undefined) {
-          modifiedFields.purchases = ad.increase_purchases;
-        }
-        
         modifications[ad.id] = modifiedFields;
       }
     }
@@ -419,6 +413,14 @@ const updateSummaryRows = () => {
     );
     
     if (accountSummary) {
+      // 确保合计行的增加值默认为0
+      accountSummary.increase_impressions = 0;
+      accountSummary.increase_reach = 0;
+      accountSummary.increase_spend = 0;
+      accountSummary.increase_clicks = 0;
+      accountSummary.increase_registrations = 0;
+      accountSummary.increase_purchases = 0;
+      
       // 计算账户合计的增加值
       accountSummary.increase_impressions = accountAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
       accountSummary.increase_reach = accountAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
@@ -450,6 +452,14 @@ const updateSummaryRows = () => {
       );
       
       if (campaignSummary) {
+        // 确保合计行的增加值默认为0
+        campaignSummary.increase_impressions = 0;
+        campaignSummary.increase_reach = 0;
+        campaignSummary.increase_spend = 0;
+        campaignSummary.increase_clicks = 0;
+        campaignSummary.increase_registrations = 0;
+        campaignSummary.increase_purchases = 0;
+        
         campaignSummary.increase_impressions = campaignAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
         campaignSummary.increase_reach = campaignAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
         campaignSummary.increase_spend = campaignAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
@@ -481,6 +491,14 @@ const updateSummaryRows = () => {
         );
         
         if (adsetSummary) {
+          // 确保合计行的增加值默认为0
+          adsetSummary.increase_impressions = 0;
+          adsetSummary.increase_reach = 0;
+          adsetSummary.increase_spend = 0;
+          adsetSummary.increase_clicks = 0;
+          adsetSummary.increase_registrations = 0;
+          adsetSummary.increase_purchases = 0;
+          
           adsetSummary.increase_impressions = adsetAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
           adsetSummary.increase_reach = adsetAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
           adsetSummary.increase_spend = adsetAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);

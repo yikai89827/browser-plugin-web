@@ -93,9 +93,6 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       await saveModifiedData(updatedModifiedData);
       console.log('保存修改后的数据:', updatedModifiedData);
       
-      // 更新DOM元素
-      await updateDomElements();
-      
       // 从DOM重新提取数据，确保包含所有行（包括滚动后可见的行）
       const { data, columnMapping, currencySymbol } = await extractDataFromDom();
       console.log('重新提取的报表数据:', data);
@@ -112,6 +109,9 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       
       await browserStorage.set(dataKey, cacheData);
       console.log('已更新缓存数据:', cacheData);
+      
+      // 更新DOM元素
+      await updateDomElements();
       
       successCount = Object.keys(modifications).length;
       
