@@ -51,8 +51,9 @@ export async function updateDomElements() {
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
   
   // 第二次遍历，更新所有行
-  dataRows.forEach((row) => {
-    const rowData = extractRowData(row, getColumnIndicesSync());
+  dataRows.forEach((row, index) => {
+    // 使用处理后的行数据，而不是重新提取
+    const rowData = allRowData[index];
     if (rowData && rowData.id) {
       // 尝试多种ID格式进行匹配
       let matchedModification = null;
@@ -113,12 +114,33 @@ function calculateSummaryValues(allRowData: any[], modifiedData: any): Record<st
   const accountGroups: Record<string, any[]> = {};
   
   allRowData.forEach(rowData => {
-    if (rowData.id && modifiedData[rowData.id]) {
-      const accountKey = rowData.accountName;
-      if (!accountGroups[accountKey]) {
-        accountGroups[accountKey] = [];
+    if (rowData.id) {
+      // 尝试多种ID格式进行匹配
+      let matchedModification = null;
+      
+      // 1. 直接使用rowData.id匹配（组合格式）
+      if (modifiedData[rowData.id]) {
+        matchedModification = modifiedData[rowData.id];
       }
-      accountGroups[accountKey].push(rowData);
+      
+      // 2. 如果rowData.id包含多个下划线，尝试提取ad_id进行匹配（简化格式）
+      if (!matchedModification && rowData.id) {
+        const idParts = rowData.id.split('_');
+        if (idParts.length >= 4) {
+          const adIdOnly = idParts[idParts.length - 1];
+          if (adIdOnly && modifiedData[adIdOnly]) {
+            matchedModification = modifiedData[adIdOnly];
+          }
+        }
+      }
+      
+      if (matchedModification) {
+        const accountKey = rowData.accountName;
+        if (!accountGroups[accountKey]) {
+          accountGroups[accountKey] = [];
+        }
+        accountGroups[accountKey].push({ ...rowData, modification: matchedModification });
+      }
     }
   });
   
@@ -206,7 +228,17 @@ function calculateGroupModifications(ads: any[], modifiedData: any): any {
   const modifications: any = {};
   
   ads.forEach(ad => {
-    if (ad.id && modifiedData[ad.id]) {
+    if (ad.modification) {
+      // 使用已匹配的修改数据
+      const adModifications = ad.modification;
+      Object.entries(adModifications).forEach(([field, value]) => {
+        if (!modifications[field]) {
+          modifications[field] = 0;
+        }
+        modifications[field] += Number(value);
+      });
+    } else if (ad.id && modifiedData[ad.id]) {
+      // 回退到直接匹配
       const adModifications = modifiedData[ad.id];
       Object.entries(adModifications).forEach(([field, value]) => {
         if (!modifications[field]) {

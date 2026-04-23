@@ -42,12 +42,23 @@ export function getColumnIndicesSync(): any {
     // 查找匹配的字段
     for (const { field, labels } of fieldMappingConfig) {
       if (labels.some(label => text.includes(label.toLowerCase()))) {
-        columnIndices[field] = index;
+        // 确保字段名与extractRowData中使用的一致
+        let mappedField = field;
+        // 特殊处理ID字段，确保与extractRowData中使用的字段名一致
+        if (field === 'campaign_id') {
+          mappedField = 'campaign_id';
+        } else if (field === 'adset_id') {
+          mappedField = 'adset_id';
+        } else if (field === 'ad_id') {
+          mappedField = 'ad_id';
+        }
+        columnIndices[mappedField] = index;
         break;
       }
     }
   });
   
+  console.log('生成的列映射:', columnIndices);
   return columnIndices;
 }
 
