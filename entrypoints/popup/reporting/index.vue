@@ -74,9 +74,21 @@ function flattenAds(entities: any[]): AdData[] {
     const isSummary = isSummaryRow(entity);
     const summaryType = getSummaryType(entity);
     
+    // 生成显示名称
+    let displayName = entity.adName || entity.name;
+    if (isSummary) {
+      if (summaryType === 'account') {
+        displayName = `${entity.accountName} 合计`;
+      } else if (summaryType === 'campaign') {
+        displayName = `${entity.campaignName} 合计`;
+      } else if (summaryType === 'adset') {
+        displayName = `${entity.adSetName} 合计`;
+      }
+    }
+    
     ads.push({
       id: generateAdId(entity),
-      name: entity.adName || entity.name,
+      name: displayName,
       accountName: entity.accountName,
       campaignName: entity.campaignName,
       adSetName: entity.adSetName,
@@ -804,7 +816,7 @@ onUnmounted(() => {
 
 .ads-table {
   width: 100%;
-  min-width: 770px;
+  min-width: 870px;
   border-collapse: collapse;
 }
 
@@ -827,6 +839,10 @@ onUnmounted(() => {
   background: #999;
 }
 
+.ads-table th:first-child {
+  width: 300px;
+}
+
 .ads-table td {
   font-size: 14px;
   max-width: 100px!important;
@@ -837,7 +853,7 @@ onUnmounted(() => {
 }
 
 .ellipsis-cell {
-  max-width: 150px;
+  max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
