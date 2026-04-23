@@ -43,26 +43,22 @@ export async function updateDomElements() {
 // 提取行数据
 export function extractRowData(row: HTMLElement): any {
   const data: any = {};
-  const cells = Array.from(row.children);
   
-  cells.forEach((cell: any, index: number) => {
-    const text = cell.textContent?.trim() || '';
-    data[`column_${index}`] = text;
-  });
+  // 固定列数据
+  const cells = row.querySelector('[role="presentation"]')?.children[0];
+  if (!cells?.childNodes?.length) {
+    return data;
+  }
+  
+  const fixedColumnCells = cells?.children[0];
+  const fixedColumnCellsArray = Array.from(fixedColumnCells?.children[0]?.children);
   
   // 提取账户名称、广告系列名称、广告组名称和广告名称
-  // 确保cells数组的长度足够
-  if (cells.length >= 4) {
-    data.accountName = cells[0]?.textContent?.trim() || '';
-    data.campaignName = cells[1]?.textContent?.trim() || '';
-    data.adSetName = cells[2]?.textContent?.trim() || '';
-    data.adName = cells[3]?.textContent?.trim() || '';
-  } else {
-    // 处理长度不足的情况，例如设置默认值或跳过更新
-    data.accountName = '';
-    data.campaignName = '';
-    data.adSetName = '';
-    data.adName = '';
+  if (fixedColumnCellsArray.length >= 4) {
+    data.accountName = fixedColumnCellsArray[0]?.textContent?.trim() || '';
+    data.campaignName = fixedColumnCellsArray[1]?.textContent?.trim() || '';
+    data.adSetName = fixedColumnCellsArray[2]?.textContent?.trim() || '';
+    data.adName = fixedColumnCellsArray[3]?.textContent?.trim() || '';
   }
   
   return data;
@@ -118,18 +114,26 @@ function hashToBase62(num: number): string {
 
 // 更新广告行
 export function updateAdRow(row: HTMLElement, modifications: any) {
-  const cells = Array.from(row.children);
+  // 固定列数据
+  const cells = row.querySelector('[role="presentation"]')?.children[0];
+  if (!cells?.childNodes?.length) {
+    return;
+  }
   
   // 获取列索引
   const columnIndices = getColumnIndicesSync();
+  
+  // 获取可滚动列数据
+  const scrollableColumn = cells.children[1];
+  const scrollableColumnCellsArray = Array.from(scrollableColumn.children[0].children);
   
   // 遍历修改的数据
   Object.entries(modifications).forEach(([field, value]) => {
     // 确定列索引
     const columnIndex = columnIndices[field] ?? -1;
     
-    if (columnIndex >= 0 && cells[columnIndex]) {
-      const cell = cells[columnIndex];
+    if (columnIndex >= 0 && scrollableColumnCellsArray[columnIndex]) {
+      const cell = scrollableColumnCellsArray[columnIndex];
       const innermostElement = findInnermostElement(cell);
       
       // 获取原始值
