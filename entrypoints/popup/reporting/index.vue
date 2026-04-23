@@ -824,7 +824,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #000;
+  background: #999;
 }
 
 .ads-table td {
@@ -868,7 +868,7 @@ onUnmounted(() => {
 }
 
 .total-row {
-  background-color: #f5f5f5;
+  background-color: #999;
   font-weight: 600;
 }
 
@@ -877,12 +877,12 @@ onUnmounted(() => {
 }
 
 .summary-row {
-  background-color: #f5f5f5;
+  background-color: #999;
   font-weight: 600;
 }
 
 .summary-row td {
-  background-color: #f5f5f5;
+  background-color: #999;
 }
 
 .summary-cell {
