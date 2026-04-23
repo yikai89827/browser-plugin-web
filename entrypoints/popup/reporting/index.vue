@@ -881,7 +881,7 @@ onUnmounted(() => {
   height: 240px!important;
   text-align: center!important;
   padding: 40px;
-  color: #999;
+  color: #fff;
 }
 
 .total-row {
@@ -903,7 +903,7 @@ onUnmounted(() => {
 }
 
 .summary-cell {
-  color: #999;
+  color: #fff;
   font-style: italic;
 }
 
