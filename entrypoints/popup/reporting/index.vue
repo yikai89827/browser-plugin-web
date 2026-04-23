@@ -64,8 +64,12 @@ async function getAdsFromDom(): Promise<{ ads: AdData[], currencySymbol: string,
 function flattenAds(entities: any[]): AdData[] {
   const ads: AdData[] = [];
   
-  function processEntity(entity: any) {
-    if (entity.type === 'ad') {
+  console.log('开始扁平化广告数据:', entities);
+  
+  // 直接遍历所有实体，因为报表页面的数据结构与管理页面不同
+  entities.forEach(entity => {
+    // 只处理有广告名称的实体
+    if (entity.adName && entity.adName.trim() !== '') {
       ads.push({
         id: generateAdId(entity),
         name: entity.adName || entity.name,
@@ -85,12 +89,10 @@ function flattenAds(entities: any[]): AdData[] {
         registrations: entity.registrations || 0,
         increase_registrations: 0
       });
-    } else if (entity.children && entity.children.length > 0) {
-      entity.children.forEach((child: any) => processEntity(child));
     }
-  }
+  });
   
-  entities.forEach(entity => processEntity(entity));
+  console.log('扁平化后的广告数据:', ads);
   return ads;
 }
 
@@ -136,7 +138,6 @@ const error = ref('');
 const selectedDate = ref(new Date().toISOString().split('T')[0]);
 const dropdownOpen = ref<Record<string, boolean>>({});
 const dropdownRefs = ref<Record<string, HTMLElement>>({});
-const totals = ref<any>(null);
 
 // 获取日期，优先使用选择的日期，无选择时使用当天日期
 const getCurrentDate = () => {
@@ -163,64 +164,6 @@ const getCurrencySymbol = async () => {
   } catch (error) {
     console.error('获取货币符号失败:', error);
   }
-};
-
-// 格式化货币，保留两位小数并添加货币符号
-const formatCurrency = (value: number): string => {
-  if (value === undefined || value === null || isNaN(value)) {
-    return currencySymbol + '0.00';
-  }
-  return currencySymbol + value.toFixed(2);
-};
-
-// 计算合计数据
-const calculateTotals = () => {
-  const calculatedTotals = {
-    impressions: 0,
-    increase_impressions: 0,
-    reach: 0,
-    increase_reach: 0,
-    spend: 0,
-    increase_spend: 0,
-    clicks: 0,
-    increase_clicks: 0,
-    registrations: 0,
-    increase_registrations: 0,
-    purchases: 0,
-    increase_purchases: 0
-  };
-  
-  // 计算各字段合计
-  ads.value.forEach(ad => {
-    // 处理非数字值，将其转换为0
-    const getValue = (val: any): number => {
-      if (val === undefined || val === null || val === '-') {
-        return 0;
-      }
-      // 清理字符串，去除货币符号和逗号
-      const cleanedVal = String(val).replace(/[^\d.-]/g, '');
-      const numVal = parseFloat(cleanedVal);
-      if (isNaN(numVal)) {
-        return 0;
-      }
-      return numVal;
-    };
-    
-    calculatedTotals.impressions += getValue(ad.impressions);
-    calculatedTotals.increase_impressions += getValue(ad.increase_impressions);
-    calculatedTotals.reach += getValue(ad.reach);
-    calculatedTotals.increase_reach += getValue(ad.increase_reach);
-    calculatedTotals.spend += getValue(ad.spend);
-    calculatedTotals.increase_spend += getValue(ad.increase_spend);
-    calculatedTotals.clicks += getValue(ad.clicks);
-    calculatedTotals.increase_clicks += getValue(ad.increase_clicks);
-    calculatedTotals.registrations += getValue(ad.registrations);
-    calculatedTotals.increase_registrations += getValue(ad.increase_registrations);
-    calculatedTotals.purchases += getValue(ad.purchases);
-    calculatedTotals.increase_purchases += getValue(ad.increase_purchases);
-  });
-  
-  return calculatedTotals;
 };
 
 // 获取广告列表
@@ -442,9 +385,9 @@ onUnmounted(() => {
         <thead>
           <tr>
             <th>名称</th>
-            <th>展示次数</th>
-            <th>增加</th>
             <th>覆盖人数</th>
+            <th>增加</th>
+            <th>展示次数</th>
             <th>增加</th>
             <th>花费金额</th>
             <th>增加</th>
@@ -461,17 +404,6 @@ onUnmounted(() => {
             <td class="ellipsis-cell" :title="ad.name">
               {{ ad.name }}
             </td>
-            <td class="ellipsis-cell" :title="String(ad.impressions || '-')">
-              {{ ad.impressions|| '-' }}
-            </td>
-            <td>
-              <input 
-                type="number" 
-                v-model="ad.increase_impressions" 
-                class="editable-input"
-                min="0"
-              />
-            </td>
             <td class="ellipsis-cell" :title="String(ad.reach || '-')">
               {{ ad.reach || '-' }}
             </td>
@@ -479,6 +411,17 @@ onUnmounted(() => {
               <input 
                 type="number" 
                 v-model="ad.increase_reach" 
+                class="editable-input"
+                min="0"
+              />
+            </td>
+            <td class="ellipsis-cell" :title="String(ad.impressions || '-')">
+              {{ ad.impressions|| '-' }}
+            </td>
+            <td>
+              <input 
+                type="number" 
+                v-model="ad.increase_impressions" 
                 class="editable-input"
                 min="0"
               />
@@ -532,21 +475,6 @@ onUnmounted(() => {
             <td colspan="13" class="empty-state">
               暂无广告数据，请点击"获取数据"按钮加载
             </td>
-          </tr>
-          <tr v-if="ads.length > 0" class="total-row">
-            <td colspan="1" class="total-label">合计</td>
-            <td>{{ calculateTotals().impressions }}</td>
-            <td>{{ calculateTotals().increase_impressions }}</td>
-            <td>{{ calculateTotals().reach }}</td>
-            <td>{{ calculateTotals().increase_reach }}</td>
-            <td>{{ formatCurrency(calculateTotals().spend) }}</td>
-            <td>{{ calculateTotals().increase_spend }}</td>
-            <td>{{ calculateTotals().clicks }}</td>
-            <td>{{ calculateTotals().increase_clicks }}</td>
-            <td>{{ calculateTotals().registrations }}</td>
-            <td>{{ calculateTotals().increase_registrations }}</td>
-            <td>{{ calculateTotals().purchases }}</td>
-            <td>{{ calculateTotals().increase_purchases }}</td>
           </tr>
         </tbody>
       </table>
@@ -680,6 +608,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 10;
+  background: #000;
 }
 
 .ads-table td {
