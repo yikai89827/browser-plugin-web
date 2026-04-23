@@ -96,6 +96,23 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       // 更新DOM元素
       await updateDomElements();
       
+      // 从DOM重新提取数据，确保包含所有行（包括滚动后可见的行）
+      const { data, columnMapping, currencySymbol } = await extractDataFromDom();
+      console.log('重新提取的报表数据:', data);
+      
+      // 生成缓存键
+      const dataKey = await generateManageCacheKey('reporting_data');
+      
+      // 保存更新后的数据到缓存
+      const cacheData = { 
+        data: data, 
+        columnMapping: columnMapping,
+        currencySymbol
+      };
+      
+      await browserStorage.set(dataKey, cacheData);
+      console.log('已更新缓存数据:', cacheData);
+      
       successCount = Object.keys(modifications).length;
       
       console.log(`刷新报表页面数据完成`);

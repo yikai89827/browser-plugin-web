@@ -223,8 +223,19 @@ export function updateAdRow(row: HTMLElement, modifications: any) {
       // 计算新值
       const newValue = originalValue + Number(value);
       
+      // 保留千分位格式
+      let formattedValue = String(newValue);
+      // 检查原始文本是否包含货币符号
+      if (originalText.includes('$')) {
+        // 货币格式，保留两位小数并添加千分位
+        formattedValue = '$' + parseFloat(newValue.toString()).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      } else if (!isNaN(newValue) && Number.isInteger(newValue)) {
+        // 整数格式，添加千分位
+        formattedValue = newValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      }
+      
       // 更新DOM元素
-      innermostElement.textContent = String(newValue);
+      innermostElement.textContent = formattedValue;
       
       // 添加属性，存储增加值
       innermostElement.setAttribute('data-increase', String(value));

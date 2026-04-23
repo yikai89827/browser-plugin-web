@@ -180,8 +180,7 @@ function stringToCharCodeString(str: string): string {
 
 // 将字符编码字符串转换为数字
 function charCodeStringToNumber(charCodeString: string): number {
-  const truncated = charCodeString.substring(0, 32);
-  return parseInt(truncated, 10);
+  return parseInt(charCodeString, 10);
 }
 
 // 将数字转换为 62 进制

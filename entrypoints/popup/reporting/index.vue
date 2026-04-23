@@ -235,6 +235,9 @@ const fetchAds = async () => {
       if (cachedResult.currencySymbol) {
         currencySymbol = cachedResult.currencySymbol;
       }
+      
+      // 更新合计行的增加值
+      updateSummaryRows();
     } else {
       console.log('缓存中没有数据，从DOM获取广告数据');
       // 缓存中没有数据，从DOM获取
@@ -251,6 +254,9 @@ const fetchAds = async () => {
         if (domCurrencySymbol) {
           currencySymbol = domCurrencySymbol;
         }
+        
+        // 更新合计行的增加值
+        updateSummaryRows();
       }
     }
     
@@ -281,6 +287,11 @@ const saveChanges = async () => {
     const modifications: any = {};
     
     for (const ad of ads.value) {
+      // 跳过合计行，只保存非合计行的修改
+      if (ad.isSummary) {
+        continue;
+      }
+      
       // 检查是否有数值被修改
       const hasChanges = 
         ad.increase_impressions !== undefined ||
