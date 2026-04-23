@@ -38,11 +38,11 @@ export async function updateDomElements() {
   
   // 重新构建ID到行的映射，使用处理后的名称数据
   const updatedIdToRowMap: Record<string, HTMLElement> = {};
-  allRowData.forEach((rowData) => {
+  allRowData.forEach((rowData, index) => {
     if (rowData && rowData.id) {
-      // 重新生成ID，确保使用完整的名称数据
-      rowData.id = generateAdId(rowData);
-      updatedIdToRowMap[rowData.id] = idToRowMap[rowData.id] || rowData;
+      // 不要重新生成ID，使用第一次提取时生成的ID
+      // 这样可以确保与modifiedData中的ID匹配
+      updatedIdToRowMap[rowData.id] = idToRowMap[rowData.id] || dataRows[index];
     }
   });
   idToRowMap = updatedIdToRowMap;
@@ -51,10 +51,19 @@ export async function updateDomElements() {
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
   
   // 第二次遍历，更新所有行
-  dataRows.forEach((row, index) => {
-    // 使用处理后的行数据，而不是重新提取
-    const rowData = allRowData[index];
+  dataRows.forEach((row) => {
+    // 重新提取行数据，确保ID匹配
+    let rowData = extractRowData(row, getColumnIndicesSync());
     if (rowData && rowData.id) {
+      // 处理名称赋值，确保行数据有完整的账户、系列、组和广告名称
+      // 简单处理：如果账户名称为空，尝试从ID中提取
+      if (!rowData.accountName && rowData.id) {
+        const idParts = rowData.id.split('_');
+        if (idParts.length >= 4) {
+          rowData.accountName = idParts[0];
+        }
+      }
+      
       // 尝试多种ID格式进行匹配
       let matchedModification = null;
       
