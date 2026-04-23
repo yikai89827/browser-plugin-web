@@ -54,25 +54,24 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       console.log('刷新报告页面数据:', message);
       
       // 处理刷新逻辑
-      const { modifications, totals } = message;
+      const { modifications } = message;
+      console.log('修改数据:', modifications);
+      
       let successCount = 0;
       let failCount = 0;
       
-      // 获取现有修改数据
-      const existingModifiedData = await getModifiedData() || {};
-      
-      // 合并修改数据
-      const updatedModifiedData = { ...existingModifiedData, ...modifications };
-      
       // 保存修改数据
+      const existingModifiedData = await getModifiedData() || {};
+      const updatedModifiedData = { ...existingModifiedData, ...modifications };
       await saveModifiedData(updatedModifiedData);
+      console.log('保存修改后的数据:', updatedModifiedData);
       
       // 更新DOM元素
       await updateDomElements();
       
       successCount = Object.keys(modifications).length;
       
-      console.log(`刷新报表页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
+      console.log(`刷新报表页面数据完成`);
       sendResponse({ success: true, successCount, failCount });
     } catch (error: any) {
       console.error('刷新报表页面数据错误:', error);

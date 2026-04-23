@@ -603,12 +603,8 @@ export default {
       browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'getReportingDataFromDom') {
           return handleReportingGetDataFromDom(sendResponse);
-        } else if (message.action === 'refreshReportingPage' || message.action === 'refreshReportingWithData') {
-          return handleReportingRefresh(message, sendResponse);
         } else if (message.action === 'saveReportingModifications') {
           return handleReportingRefresh(message, sendResponse);
-        } else if (message.action === 'getReportingCachedData') {
-          return handleReportingGetCachedData(message.date, sendResponse);
         } else if (message.action === 'reporting_init') {
           return handleReportingInit(sendResponse);
         }

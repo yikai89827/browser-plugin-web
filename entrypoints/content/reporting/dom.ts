@@ -161,8 +161,42 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
   }
 }
 
+// 生成广告唯一标识符
+export function generateAdId(adData: any): string {
+  const originalId = `${adData.accountName}_${adData.campaignName}_${adData.adSetName}_${adData.adName}`;
+  const hash = stringToHash(originalId);
+  return hashToBase62(hash);
+}
+
+// 将字符串转换为哈希值
+function stringToHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // 转换为 32 位整数
+  }
+  return Math.abs(hash);
+}
+
+// 将数字转换为 62 进制
+function hashToBase62(num: number): string {
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let result = '';
+  let n = num;
+  
+  if (n === 0) return '0';
+  
+  while (n > 0) {
+    result = chars[n % 62] + result;
+    n = Math.floor(n / 62);
+  }
+  
+  return result;
+}
+
 // 从行中提取数据
-function extractRowData(row: HTMLElement, columnMapping: Record<string, number>): any {
+export function extractRowData(row: HTMLElement, columnMapping: Record<string, number>): any {
   try {
     const rowData: any = {};
     
@@ -200,6 +234,9 @@ function extractRowData(row: HTMLElement, columnMapping: Record<string, number>)
         console.log('提取的字段数据:', field, columnIndex, cellText);
       }
     }
+    
+    // 生成 ID
+    rowData.id = generateAdId(rowData);
     
     console.log('提取的行数据:', rowData);
     return rowData;
@@ -242,12 +279,6 @@ export async function getColumnIndices(): Promise<any> {
   return {};
 }
 
-
-// 查找数据行
-export function getRowElement(id: string): HTMLElement | null {
-  // 报告页面的数据行查找逻辑
-  return null;
-}
 // 查找最内层元素
 export function findInnermostElement(element: any): any {
   let current = element;

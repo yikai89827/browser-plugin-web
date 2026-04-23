@@ -321,11 +321,6 @@ const saveChanges = async () => {
       modifications: modifications
     });
     
-    // 向content script发送消息，通知页面刷新
-    await sendMessageToContent('refreshReportingPage', {
-      modifications: modifications
-    });
-    
     // 保存完成
     saving.value = false;
 
@@ -631,7 +626,7 @@ onUnmounted(() => {
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell"></span>
+              <span v-else class="summary-cell">{{ ad.increase_impressions || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.reach || '-')">
               {{ ad.reach || '-' }}
@@ -644,7 +639,7 @@ onUnmounted(() => {
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell"></span>
+              <span v-else class="summary-cell">{{ ad.increase_reach || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.spend || '-')">
               {{ ad.spend || '0' }}
@@ -657,7 +652,7 @@ onUnmounted(() => {
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell"></span>
+              <span v-else class="summary-cell">{{ ad.increase_spend || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.clicks || '-')">  
               {{ ad.clicks || '0' }}
@@ -670,7 +665,7 @@ onUnmounted(() => {
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell"></span>
+              <span v-else class="summary-cell">{{ ad.increase_clicks || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.registrations || '-')">  
               {{ ad.registrations || '0' }}
@@ -683,7 +678,7 @@ onUnmounted(() => {
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell"></span>
+              <span v-else class="summary-cell">{{ ad.increase_registrations || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.purchases || '-')">  
               {{ ad.purchases || '0' }}
@@ -696,7 +691,7 @@ onUnmounted(() => {
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell"></span>
+              <span v-else class="summary-cell">{{ ad.increase_purchases || 0 }}</span>
             </td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
