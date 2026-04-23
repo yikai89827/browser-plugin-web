@@ -1,29 +1,15 @@
 // 新页面的配置文件
 // 定义新页面的各种配置项
 
-// 列映射配置
-export const columnMapping = {
-  name: 'reporting_table_column_name',//广告名称
-  impressions: 'reporting_table_column_impressions',//展示次数
-  reach: 'reporting_table_column_reach',//覆盖人数
-  spend: 'reporting_table_column_spend',//已花费金额
-  clicks: 'reporting_table_column_clicks',//点击量（全部）
-  campaign_id: 'reporting_table_column_campaign_group_id',//广告系列编号
-  adset_id: 'reporting_table_column_campaign_id',//广告组编号
-  ad_id: 'reporting_table_column_adgroup_id',//广告编号
-  purchases: 'reporting_table_column_actions:omni_purchase',//购物次数
-  purchase_cost: 'reporting_table_column_cost_per_action_type:omni_purchase',//单次购物费用
-  results: 'ads_manager_table_results_column_label_id',//成效
-  costPerResult: 'reporting_table_column_cost_per_result',//单次成效费用
-  registrations: 'reporting_table_column_actions:omni_complete_registration',//完成注册次数
-  registration_cost: 'reporting_table_column_cost_per_action_type:omni_complete_registration',//单次完成注册费用
-};
 // 字段映射配置 - 用于表头文本到字段名的映射
 export const fieldMappingConfig = [
   { field: 'account_name', labels: ['account name', '账户名称'] },
   { field: 'campaign_name', labels: ['campaign name', '广告系列名称'] },
   { field: 'adset_name', labels: ['ad set name', '广告组名称'] },
   { field: 'ad_name', labels: ['ad name', '广告名称'] },
+  { field: 'campaign_id', labels: ['campaign_id', '广告系列编号'] },
+  { field: 'adset_id', labels: ['adset_id', '广告组编号'] },
+  { field: 'ad_id', labels: ['ad_id', '广告编号'] },
   { field: 'spend', labels: ['amount spent', '已花费金额'] },
   { field: 'impressions', labels: ['impressions', '展示次数'] },
   { field: 'reach', labels: ['reach', '覆盖人数'] },

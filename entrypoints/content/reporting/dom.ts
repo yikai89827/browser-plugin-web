@@ -249,8 +249,28 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     rowData.adSetName = rowData.adSetName || '';
     rowData.adName = rowData.adName || '';
     
-    // 生成 ID
-    rowData.id = generateAdId(rowData);
+    // 提取ID字段
+    rowData.campaign_id = rowData.campaign_id || '';
+    rowData.adset_id = rowData.adset_id || '';
+    rowData.ad_id = rowData.ad_id || '';
+    
+    // 生成ID：数据行使用广告ID，合计行使用各自的ID
+    if (rowData.ad_id && rowData.ad_id.trim() !== '') {
+      // 数据行：使用广告ID作为唯一标识
+      rowData.id = rowData.ad_id;
+    } else if (rowData.adset_id && rowData.adset_id.trim() !== '') {
+      // 广告组合计行：使用广告组ID作为唯一标识
+      rowData.id = rowData.adset_id;
+    } else if (rowData.campaign_id && rowData.campaign_id.trim() !== '') {
+      // 广告系列合计行：使用广告系列ID作为唯一标识
+      rowData.id = rowData.campaign_id;
+    } else if (rowData.accountName && rowData.accountName.trim() !== '') {
+      // 账户合计行：使用账户名称作为唯一标识
+      rowData.id = rowData.accountName;
+    } else {
+      // 其他情况：使用生成的ID
+      rowData.id = generateAdId(rowData);
+    }
     
     console.log('提取的行数据:', rowData);
     return rowData;

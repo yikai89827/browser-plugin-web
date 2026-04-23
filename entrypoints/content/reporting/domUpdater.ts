@@ -56,11 +56,17 @@ export async function updateDomElements() {
     if (rowData && rowData.id) {
       // 检查是否有修改的数据
       if (modifiedData[rowData.id]) {
-        // 更新广告行
+        // 更新数据行
         updateAdRow(row, modifiedData[rowData.id]);
       } else if (summaryValues[rowData.id]) {
         // 更新合计行
         updateAdRow(row, summaryValues[rowData.id]);
+      } else if (rowData.accountName && !rowData.ad_id) {
+        // 账户合计行：使用账户名称匹配
+        const accountSummary = summaryValues[rowData.accountName];
+        if (accountSummary) {
+          updateAdRow(row, accountSummary);
+        }
       }
     }
   });
@@ -93,10 +99,13 @@ function calculateSummaryValues(allRowData: any[], modifiedData: any): Record<st
       rowData.adName === '全部'
     );
     
-    if (accountSummary && accountSummary.id) {
-      // 计算账户合计的增加值
-      const accountModifications = calculateGroupModifications(accountAds, modifiedData);
-      if (Object.keys(accountModifications).length > 0) {
+    // 计算账户合计的增加值
+    const accountModifications = calculateGroupModifications(accountAds, modifiedData);
+    if (Object.keys(accountModifications).length > 0) {
+      // 使用账户名称作为键，确保账户合计行能匹配
+      summaryValues[accountName] = accountModifications;
+      // 同时使用账户合计行的ID作为键
+      if (accountSummary && accountSummary.id) {
         summaryValues[accountSummary.id] = accountModifications;
       }
     }
@@ -122,41 +131,37 @@ function calculateSummaryValues(allRowData: any[], modifiedData: any): Record<st
         rowData.adName === '全部'
       );
       
-      if (campaignSummary && campaignSummary.id) {
-        const campaignModifications = calculateGroupModifications(campaignAds, modifiedData);
-        if (Object.keys(campaignModifications).length > 0) {
-          summaryValues[campaignSummary.id] = campaignModifications;
-        }
+      const campaignModifications = calculateGroupModifications(campaignAds, modifiedData);
+      if (Object.keys(campaignModifications).length > 0 && campaignSummary && campaignSummary.id) {
+        summaryValues[campaignSummary.id] = campaignModifications;
       }
+    });
+    
+    // 按广告组分组
+    const adsetGroups: Record<string, any[]> = {};
+    accountAds.forEach(rowData => {
+      const adsetKey = `${rowData.accountName}_${rowData.campaignName}_${rowData.adSetName}`;
+      if (!adsetGroups[adsetKey]) {
+        adsetGroups[adsetKey] = [];
+      }
+      adsetGroups[adsetKey].push(rowData);
+    });
+    
+    // 计算每个广告组的合计
+    Object.keys(adsetGroups).forEach(adsetKey => {
+      const adsetAds = adsetGroups[adsetKey];
+      const [accountName, campaignName, adSetName] = adsetKey.split('_');
+      const adsetSummary = allRowData.find(rowData => 
+        rowData.accountName === accountName && 
+        rowData.campaignName === campaignName && 
+        rowData.adSetName === adSetName && 
+        rowData.adName === '全部'
+      );
       
-      // 按广告组分组
-      const adsetGroups: Record<string, any[]> = {};
-      campaignAds.forEach(rowData => {
-        const adsetKey = `${rowData.accountName}_${rowData.campaignName}_${rowData.adSetName}`;
-        if (!adsetGroups[adsetKey]) {
-          adsetGroups[adsetKey] = [];
-        }
-        adsetGroups[adsetKey].push(rowData);
-      });
-      
-      // 计算每个广告组的合计
-      Object.keys(adsetGroups).forEach(adsetKey => {
-        const adsetAds = adsetGroups[adsetKey];
-        const [accountName, campaignName, adSetName] = adsetKey.split('_');
-        const adsetSummary = allRowData.find(rowData => 
-          rowData.accountName === accountName && 
-          rowData.campaignName === campaignName && 
-          rowData.adSetName === adSetName && 
-          rowData.adName === '全部'
-        );
-        
-        if (adsetSummary && adsetSummary.id) {
-          const adsetModifications = calculateGroupModifications(adsetAds, modifiedData);
-          if (Object.keys(adsetModifications).length > 0) {
-            summaryValues[adsetSummary.id] = adsetModifications;
-          }
-        }
-      });
+      const adsetModifications = calculateGroupModifications(adsetAds, modifiedData);
+      if (Object.keys(adsetModifications).length > 0 && adsetSummary && adsetSummary.id) {
+        summaryValues[adsetSummary.id] = adsetModifications;
+      }
     });
   });
   
