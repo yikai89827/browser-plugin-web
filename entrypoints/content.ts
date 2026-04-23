@@ -180,7 +180,7 @@ async function debouncedSync(): Promise<void> {
         // 这里可以添加页面数据同步逻辑
         console.log('页面数据同步完成:', { entities: entities?.length || 0, level: currentLevel, sortInfo });
       } catch (error) {
-        console.error('刷新页面数据错误:', error);
+        console.error('刷报表页面数据错误:', error);
         removeOverlay();
       } finally {
         // 无论成功失败都关闭遮盖层

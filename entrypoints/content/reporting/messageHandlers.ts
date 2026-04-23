@@ -1,10 +1,9 @@
-// 新页面的消息处理模块
+// 报表页面的消息处理模块
 // 负责处理来自popup的消息
 
 import { browserStorage } from '../../../utils/storage';
-import { generateCacheKey as generateManageCacheKey, generateSortInfoKey } from '../manage/cache';
-import { extractDataFromDom, getCurrentPageState } from './dom';
-import { dataExtractor } from './dataExtractor';
+import { generateCacheKey as generateManageCacheKey } from '../reporting/cache';
+import { extractDataFromDom } from './dom';
 import { saveModifiedData, getModifiedData } from './cache';
 import { updateDomElements } from './domUpdater';
 
@@ -15,37 +14,35 @@ declare const $: any;
 export function handleReportingGetDataFromDom(sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
+      console.log('开始从报表页面DOM提取数据...');
       // 从DOM提取数据
-      const { data, columnMapping, sortInfo, currencySymbol } = await extractDataFromDom();
+      const { data, columnMapping, currencySymbol } = await extractDataFromDom();
+      console.log('提取的报表数据:', data);
+      console.log('提取的列映射:', columnMapping);
+      console.log('提取的货币符号:', currencySymbol);
       
       // 生成缓存键
-      const dataKey = await generateManageCacheKey('reporting_data');
+      const dataKey = await generateManageCacheKey('reporting_data', );
       
       // 保存到缓存
-      const pageState = getCurrentPageState() || {};
-      const level = pageState.level || 'Reporting';
       const cacheData = { 
         data: data, 
         columnMapping: columnMapping,
-        level,
         currencySymbol
       };
-      const dataToSave = { sortInfo, cacheData };
       
-      await browserStorage.set(dataKey, dataToSave);
+      await browserStorage.set(dataKey, cacheData);
       
-      console.log('已从新页面DOM提取数据并缓存:', { data: data.length, level, currencySymbol });
+      console.log('已从报表页面DOM提取数据并缓存:', { data: data, currencySymbol });
       
       sendResponse({ 
         success: true, 
         data: data, 
         columnMapping: columnMapping, 
-        sortInfo: sortInfo,
-        level: level,
-        currencySymbol: currencySymbol
+        currencySymbol
       });
     } catch (error: any) {
-      console.error('从新页面DOM获取数据错误:', error);
+      console.error('从报表页面DOM获取数据错误:', error);
       sendResponse({ success: false, error: error.message });
     }
   })();
@@ -77,10 +74,10 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       
       successCount = Object.keys(modifications).length;
       
-      console.log(`刷新新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
+      console.log(`刷新报表页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
       sendResponse({ success: true, successCount, failCount });
     } catch (error: any) {
-      console.error('刷新新页面数据错误:', error);
+      console.error('刷新报表页面数据错误:', error);
       sendResponse({ success: false, error: error.message });
     }
   })();

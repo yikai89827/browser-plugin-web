@@ -46,18 +46,18 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
 
 // 从DOM获取广告数据
 async function getAdsFromDom(): Promise<{ ads: AdData[], columnMapping: any, sortInfo: any, currencySymbol: string }> {
-  const response = await sendMessageToContent('getReportingData');
-  if (response && response.entities) {
+  const response = await sendMessageToContent('getReportingDataFromDom');
+  if (response && response.data) {
     // 扁平化广告数据
-    const ads = flattenAds(response.entities);
+    const ads = flattenAds(response.data);
     return { 
       ads,
-      columnMapping: response.columnIndices || {},
-      sortInfo: response.sortInfo || { field: null, direction: null },
+      columnMapping: response.columnMapping || {},
+      sortInfo: response.sortInfo || {},
       currencySymbol: response.currencySymbol || '$'
     };
   } else {
-    return { ads: [], columnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '$' };
+    return { ads: [], columnMapping: {}, sortInfo: {}, currencySymbol: '$' };
   }
 }
 

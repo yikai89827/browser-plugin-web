@@ -26,7 +26,7 @@ onMounted(() => {
 <template>
   <div class="app-container">
     <!-- 导航标签 -->
-    <div class="nav-tabs">
+    <!-- <div class="nav-tabs">
       <button 
         class="tab-btn" 
         :class="{ active: activeTab === 'login' }" 
@@ -48,7 +48,7 @@ onMounted(() => {
       >
         广告报表
       </button>
-    </div>
+    </div> -->
     
     <!-- 内容区域 -->
     <div class="content">
