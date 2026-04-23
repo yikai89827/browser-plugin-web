@@ -1,7 +1,7 @@
 // 报告页面的DOM更新模块
 // 负责处理DOM元素的更新和保持修改的值
 
-import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId } from './dom';
+import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter } from './dom';
 import { getModifiedData } from './cache';
 
 // 更新DOM元素
@@ -113,6 +113,9 @@ export async function updateDomElements() {
       }
     }
   });
+  
+  // 更新表格底部合计行
+  updateFooterRows(modifiedData, summaryValues);
 }
 
 // 计算合计行的增加值
@@ -340,6 +343,49 @@ export function updateAdRow(row: HTMLElement, modifications: any) {
 export function parseNumber(text: string): number {
   const cleaned = text.replace(/[^0-9.-]/g, '');
   return parseFloat(cleaned) || 0;
+}
+
+// 更新表格底部合计行
+function updateFooterRows(modifiedData: any, summaryValues: Record<string, any>) {
+  // 获取表格底部行
+  const footerRows = getReportingTableFooter();
+  console.log('表格底部行:', footerRows);
+  
+  if (footerRows.length === 0) {
+    return;
+  }
+  
+  // 计算所有账户合计增加值的总和
+  const totalModifications = calculateTotalModifications(summaryValues);
+  console.log('底部合计行修改值:', totalModifications);
+  
+  // 更新底部合计行
+  footerRows.forEach((row) => {
+    updateAdRow(row, totalModifications);
+  });
+}
+
+// 计算所有账户合计增加值的总和
+function calculateTotalModifications(summaryValues: Record<string, any>): any {
+  const total: any = {
+    impressions: 0,
+    reach: 0,
+    spend: 0,
+    clicks: 0,
+    registrations: 0,
+    purchases: 0
+  };
+  
+  // 遍历所有账户的合计值
+  Object.values(summaryValues).forEach((modifications: any) => {
+    Object.entries(modifications).forEach(([field, value]) => {
+      if (total[field] !== undefined) {
+        total[field] += Number(value) || 0;
+      }
+    });
+  });
+  
+  return total;
 }
 
 // 监听表格滚动

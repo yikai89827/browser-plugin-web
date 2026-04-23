@@ -78,17 +78,17 @@ export function getReportingTableDataRows(): HTMLElement[] {
 }
 
 // 获取表格底部
-export function getReportingTableFooter(): HTMLElement | null {
+export function getReportingTableFooter(): HTMLElement[] {
   const tableContainer = findTableContainer();
   if (!tableContainer) {
-    return null;
+    return [];
   }
-  const element = tableContainer.children[0]?.children[3];
+  const element = tableContainer.children[0]?.children[3]?.querySelector('[role="presentation"]')?.children[0]?.children[1]?.children[0]?.children;
   if (!element) {
-    return null;
+    return [];
   }
   console.log('表格底部:', element);
-  return element as HTMLElement;
+  return Array.from(element) as HTMLElement[];
 }
 
 
