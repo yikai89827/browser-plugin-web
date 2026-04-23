@@ -39,6 +39,7 @@ export async function updateDomElements() {
   // 第二次遍历，更新所有行
   dataRows.forEach((row) => {
     const rowData = extractRowData(row, getColumnIndicesSync());
+    if (rowData && rowData.id) {
       // 检查是否有修改的数据
       if (modifiedData[rowData.id]) {
         // 更新广告行
@@ -48,7 +49,7 @@ export async function updateDomElements() {
         updateAdRow(row, summaryValues[rowData.id]);
       }
     }
-  );
+  });
 }
 
 // 计算合计行的增加值

@@ -38,7 +38,6 @@ export function getColumnIndicesSync(): any {
    scrollableCellsArray.forEach((cell: any, index: number) => {
     const cellText = cell.textContent?.trim().toLowerCase() || '';
     const text = cellText.replace('打开列内操作菜单', '');
-    console.log('表格标题单元格文本:', index, text);
     
     // 查找匹配的字段
     for (const { field, labels } of fieldMappingConfig) {
@@ -47,7 +46,6 @@ export function getColumnIndicesSync(): any {
         break;
       }
     }
-    console.log('匹配结果:', columnIndices);
   });
   
   return columnIndices;
@@ -164,23 +162,30 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
 // 生成广告唯一标识符
 export function generateAdId(adData: any): string {
   const originalId = `${adData.accountName}_${adData.campaignName}_${adData.adSetName}_${adData.adName}`;
-  const hash = stringToHash(originalId);
-  return hashToBase62(hash);
+  const charCodeString = stringToCharCodeString(originalId);
+  const num = charCodeStringToNumber(charCodeString);
+  return numberToBase62(num);
 }
 
-// 将字符串转换为哈希值
-function stringToHash(str: string): number {
-  let hash = 0;
+// 将字符串转换为字符编码字符串
+function stringToCharCodeString(str: string): string {
+  let result = '';
   for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // 转换为 32 位整数
+    const charCode = str.charCodeAt(i);
+    // 确保每个字符编码占3位，不足前面补0
+    result += charCode.toString().padStart(3, '0');
   }
-  return Math.abs(hash);
+  return result;
+}
+
+// 将字符编码字符串转换为数字
+function charCodeStringToNumber(charCodeString: string): number {
+  const truncated = charCodeString.substring(0, 32);
+  return parseInt(truncated, 10);
 }
 
 // 将数字转换为 62 进制
-function hashToBase62(num: number): string {
+function numberToBase62(num: number): string {
   const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let result = '';
   let n = num;

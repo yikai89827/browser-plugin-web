@@ -19,10 +19,36 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
       console.log('提取的列映射:', columnMapping);
       console.log('提取的货币符号:', currencySymbol);
       
-      // 生成缓存键
-      const dataKey = await generateManageCacheKey('reporting_data', );
+      // 获取修改的数据（增加值）
+      const modifiedData = await getModifiedData() || {};
+      console.log('获取的修改数据（增加值）:', modifiedData);
       
-      // 保存到缓存
+      // 定义数值字段
+      const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
+      
+      // 合并原始数据和修改数据
+      const mergedData = data.map((item: any) => {
+        // 初始化增加字段
+        const itemWithIncrease: any = { ...item };
+        
+        numericFields.forEach(field => {
+          itemWithIncrease[`increase_${field}`] = 0;
+        });
+        
+        // 如果有修改数据，应用修改
+        if (modifiedData[item.id]) {
+          Object.entries(modifiedData[item.id]).forEach(([field, value]) => {
+            itemWithIncrease[`increase_${field}`] = Number(value) || 0;
+          });
+        }
+        
+        return itemWithIncrease;
+      });
+      
+      // 生成缓存键
+      const dataKey = await generateManageCacheKey('reporting_data');
+      
+      // 保存原始数据到缓存
       const cacheData = { 
         data: data, 
         columnMapping: columnMapping,
@@ -32,10 +58,11 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
       await browserStorage.set(dataKey, cacheData);
       
       console.log('已从报表页面DOM提取数据并缓存:', { data: data, currencySymbol, columnMapping });
+      console.log('合并后的数据:', mergedData);
       
       sendResponse({ 
         success: true, 
-        data: data, 
+        data: mergedData, 
         columnMapping: columnMapping, 
         currencySymbol
       });
@@ -88,8 +115,45 @@ export function handleReportingGetCachedData(date: string, sendResponse: (respon
       const dataKey = await generateManageCacheKey('reporting_data');
       const cachedData = await browserStorage.get(dataKey);
       
-      console.log('获取报告页面缓存数据:', cachedData);
-      sendResponse({ success: true, data: cachedData });
+      if (cachedData && cachedData.data) {
+        // 获取修改的数据（增加值）
+        const modifiedData = await getModifiedData() || {};
+        console.log('获取的修改数据（增加值）:', modifiedData);
+        
+        // 定义数值字段
+        const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
+        
+        // 合并原始数据和修改数据
+        const mergedData = cachedData.data.map((item: any) => {
+          // 初始化增加字段
+          const itemWithIncrease: any = { ...item };
+          
+          numericFields.forEach(field => {
+            itemWithIncrease[`increase_${field}`] = 0;
+          });
+          
+          // 如果有修改数据，应用修改
+          if (modifiedData[item.id]) {
+            Object.entries(modifiedData[item.id]).forEach(([field, value]) => {
+              itemWithIncrease[`increase_${field}`] = Number(value) || 0;
+            });
+          }
+          
+          return itemWithIncrease;
+        });
+        
+        // 更新缓存数据中的data为合并后的数据
+        const updatedCachedData = {
+          ...cachedData,
+          data: mergedData
+        };
+        
+        console.log('获取报告页面缓存数据并合并修改数据:', updatedCachedData);
+        sendResponse({ success: true, data: updatedCachedData });
+      } else {
+        console.log('获取报告页面缓存数据:', cachedData);
+        sendResponse({ success: true, data: cachedData });
+      }
     } catch (error: any) {
       console.error('获取报告页面缓存数据错误:', error);
       sendResponse({ success: false, error: error.message });

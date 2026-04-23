@@ -46,6 +46,21 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
   });
 }
 
+// 从缓存获取广告数据
+async function getAdsFromCache(): Promise<{ ads: AdData[], currencySymbol: string, columnMapping: any } | null> {
+  const response = await sendMessageToContent('getReportingCachedData', { date: getCurrentDate() });
+  if (response && response.success && response.data && response.data.data) {
+    // 扁平化广告数据
+    const ads = flattenAds(response.data.data);
+    return { 
+      ads,
+      currencySymbol: response.data.currencySymbol || '$',
+      columnMapping: response.data.columnMapping || {},
+    };
+  }
+  return null;
+}
+
 // 从DOM获取广告数据
 async function getAdsFromDom(): Promise<{ ads: AdData[], currencySymbol: string, columnMapping: any }> {
   const response = await sendMessageToContent('getReportingDataFromDom');
@@ -68,6 +83,9 @@ function flattenAds(entities: any[]): AdData[] {
   
   console.log('开始扁平化广告数据:', entities);
   
+  // 定义数值字段
+  const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
+  
   // 直接遍历所有实体，因为报表页面的数据结构与管理页面不同
   entities.forEach(entity => {
     // 判断是否为合计行
@@ -86,27 +104,30 @@ function flattenAds(entities: any[]): AdData[] {
       }
     }
     
-    ads.push({
-      id: generateAdId(entity),
+    // 创建广告数据对象
+    const adData: AdData = {
+      id: entity.id || '',
       name: displayName,
       accountName: entity.accountName,
       campaignName: entity.campaignName,
       adSetName: entity.adSetName,
       impressions: entity.impressions || 0,
-      increase_impressions: 0,
+      increase_impressions: entity.increase_impressions || 0,
       reach: entity.reach || 0,
-      increase_reach: 0,
+      increase_reach: entity.increase_reach || 0,
       spend: entity.spend || 0,
-      increase_spend: 0,
+      increase_spend: entity.increase_spend || 0,
       clicks: entity.clicks || 0,
-      increase_clicks: 0,
+      increase_clicks: entity.increase_clicks || 0,
       purchases: entity.purchases || 0,
-      increase_purchases: 0,
+      increase_purchases: entity.increase_purchases || 0,
       registrations: entity.registrations || 0,
-      increase_registrations: 0,
+      increase_registrations: entity.increase_registrations || 0,
       isSummary: isSummary,
       summaryType: summaryType
-    });
+    };
+    
+    ads.push(adData);
   });
   
   console.log('扁平化后的广告数据:', ads);
@@ -160,40 +181,6 @@ function getSummaryType(entity: any): 'account' | 'campaign' | 'adset' | 'ad' {
   return 'ad';
 }
 
-// 生成广告唯一标识符
-function generateAdId(adData: any): string {
-  const originalId = `${adData.accountName}_${adData.campaignName}_${adData.adSetName}_${adData.adName}`;
-  const hash = stringToHash(originalId);
-  return hashToBase62(hash);
-}
-
-// 将字符串转换为哈希值
-function stringToHash(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // 转换为 32 位整数
-  }
-  return Math.abs(hash);
-}
-
-// 将数字转换为 62 进制
-function hashToBase62(num: number): string {
-  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let result = '';
-  let n = num;
-  
-  if (n === 0) return '0';
-  
-  while (n > 0) {
-    result = chars[n % 62] + result;
-    n = Math.floor(n / 62);
-  }
-  
-  return result;
-}
-
 // 状态管理
 const ads = ref<AdData[]>([]);
 const loading = ref(false);
@@ -236,19 +223,34 @@ const fetchAds = async () => {
   error.value = '';
 
   try {
-    // 从DOM获取广告数据
-    const { ads: domAds, columnMapping: receivedColumnMapping, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
-    console.log('从DOM获取广告数据成功:', domAds);
-    console.log('从DOM获取列映射成功:', receivedColumnMapping);
-    console.log('从DOM获取货币符号成功:', domCurrencySymbol);
+    // 先尝试从缓存获取数据
+    const cachedResult = await getAdsFromCache();
     
-    if (domAds && domAds.length > 0) {
-      ads.value = domAds;
-      columnMapping.value = receivedColumnMapping;
+    if (cachedResult && cachedResult.ads && cachedResult.ads.length > 0) {
+      console.log('从缓存获取广告数据成功:', cachedResult.ads);
+      ads.value = cachedResult.ads;
+      columnMapping.value = cachedResult.columnMapping;
       
       // 更新货币符号
-      if (domCurrencySymbol) {
-        currencySymbol = domCurrencySymbol;
+      if (cachedResult.currencySymbol) {
+        currencySymbol = cachedResult.currencySymbol;
+      }
+    } else {
+      console.log('缓存中没有数据，从DOM获取广告数据');
+      // 缓存中没有数据，从DOM获取
+      const { ads: domAds, columnMapping: receivedColumnMapping, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
+      console.log('从DOM获取广告数据成功:', domAds);
+      console.log('从DOM获取列映射成功:', receivedColumnMapping);
+      console.log('从DOM获取货币符号成功:', domCurrencySymbol);
+      
+      if (domAds && domAds.length > 0) {
+        ads.value = domAds;
+        columnMapping.value = receivedColumnMapping;
+        
+        // 更新货币符号
+        if (domCurrencySymbol) {
+          currencySymbol = domCurrencySymbol;
+        }
       }
     }
     
