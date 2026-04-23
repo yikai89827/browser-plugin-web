@@ -76,14 +76,29 @@ export async function updateDomElements() {
       if (matchedModification) {
         // 更新数据行
         updateAdRow(row, matchedModification);
-      } else if (summaryValues[rowData.id]) {
-        // 更新合计行
-        updateAdRow(row, summaryValues[rowData.id]);
-      } else if (rowData.accountName && !rowData.ad_id) {
+      } else {
+        // 对于合计行，总是计算并更新
+        let summaryModification = summaryValues[rowData.id];
+        
         // 账户合计行：使用账户名称匹配
-        const accountSummary = summaryValues[rowData.accountName];
-        if (accountSummary) {
-          updateAdRow(row, accountSummary);
+        if (!summaryModification && rowData.accountName && !rowData.ad_id) {
+          summaryModification = summaryValues[rowData.accountName];
+        }
+        
+        if (summaryModification) {
+          // 更新合计行
+          updateAdRow(row, summaryModification);
+        } else {
+          // 没有修改数据，确保合计行显示为0
+          const zeroModification = {
+            impressions: 0,
+            reach: 0,
+            spend: 0,
+            clicks: 0,
+            registrations: 0,
+            purchases: 0
+          };
+          updateAdRow(row, zeroModification);
         }
       }
     }

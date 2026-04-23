@@ -140,6 +140,123 @@ export function handleReportingGetCachedData(date: string, sendResponse: (respon
         // 定义数值字段
         const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
         
+        // 计算合计行的增加值
+        function calculateSummaryValuesForCache(allRowData: any[], modifiedData: any): Record<string, any> {
+          const summaryValues: Record<string, any> = {};
+          
+          // 按账户分组
+          const accountGroups: Record<string, any[]> = {};
+          
+          allRowData.forEach(rowData => {
+            if (rowData.id) {
+              // 尝试多种ID格式进行匹配
+              let matchedModification = null;
+              
+              // 1. 直接使用rowData.id匹配（组合格式）
+              if (modifiedData[rowData.id]) {
+                matchedModification = modifiedData[rowData.id];
+              }
+              
+              // 2. 如果rowData.id包含多个下划线，尝试提取ad_id进行匹配（简化格式）
+              if (!matchedModification && rowData.id) {
+                const idParts = rowData.id.split('_');
+                if (idParts.length >= 4) {
+                  const adIdOnly = idParts[idParts.length - 1];
+                  if (adIdOnly && modifiedData[adIdOnly]) {
+                    matchedModification = modifiedData[adIdOnly];
+                  }
+                }
+              }
+              
+              if (matchedModification) {
+                const accountKey = rowData.accountName;
+                if (!accountGroups[accountKey]) {
+                  accountGroups[accountKey] = [];
+                }
+                accountGroups[accountKey].push({ ...rowData, modification: matchedModification });
+              }
+            }
+          });
+          
+          // 计算每个账户的合计
+          Object.keys(accountGroups).forEach(accountName => {
+            const accountAds = accountGroups[accountName];
+            
+            // 计算账户合计的增加值
+            const accountModifications = accountAds.reduce((sum: any, ad: any) => {
+              const mod = ad.modification;
+              Object.keys(mod).forEach(field => {
+                sum[field] = (sum[field] || 0) + Number(mod[field]);
+              });
+              return sum;
+            }, {});
+            
+            if (Object.keys(accountModifications).length > 0) {
+              summaryValues[accountName] = accountModifications;
+            }
+            
+            // 按广告系列分组
+            const campaignGroups: Record<string, any[]> = {};
+            accountAds.forEach((ad: any) => {
+              const campaignKey = `${ad.accountName}_${ad.campaignName}`;
+              if (!campaignGroups[campaignKey]) {
+                campaignGroups[campaignKey] = [];
+              }
+              campaignGroups[campaignKey].push(ad);
+            });
+            
+            // 计算每个广告系列的合计
+            Object.keys(campaignGroups).forEach(campaignKey => {
+              const campaignAds = campaignGroups[campaignKey];
+              const [accountName, campaignName] = campaignKey.split('_');
+              
+              const campaignModifications = campaignAds.reduce((sum: any, ad: any) => {
+                const mod = ad.modification;
+                Object.keys(mod).forEach(field => {
+                  sum[field] = (sum[field] || 0) + Number(mod[field]);
+                });
+                return sum;
+              }, {});
+              
+              if (Object.keys(campaignModifications).length > 0) {
+                summaryValues[campaignKey] = campaignModifications;
+              }
+              
+              // 按广告组分组
+              const adsetGroups: Record<string, any[]> = {};
+              campaignAds.forEach((ad: any) => {
+                const adsetKey = `${ad.accountName}_${ad.campaignName}_${ad.adSetName}`;
+                if (!adsetGroups[adsetKey]) {
+                  adsetGroups[adsetKey] = [];
+                }
+                adsetGroups[adsetKey].push(ad);
+              });
+              
+              // 计算每个广告组的合计
+              Object.keys(adsetGroups).forEach(adsetKey => {
+                const adsetAds = adsetGroups[adsetKey];
+                
+                const adsetModifications = adsetAds.reduce((sum: any, ad: any) => {
+                  const mod = ad.modification;
+                  Object.keys(mod).forEach(field => {
+                    sum[field] = (sum[field] || 0) + Number(mod[field]);
+                  });
+                  return sum;
+                }, {});
+                
+                if (Object.keys(adsetModifications).length > 0) {
+                  summaryValues[adsetKey] = adsetModifications;
+                }
+              });
+            });
+          });
+          
+          return summaryValues;
+        }
+        
+        // 计算合计行的增加值
+        const summaryValues = calculateSummaryValuesForCache(cachedData.data, modifiedData);
+        
         // 合并原始数据和修改数据
         const mergedData = cachedData.data.map((item: any) => {
           // 初始化增加字段
@@ -172,6 +289,28 @@ export function handleReportingGetCachedData(date: string, sendResponse: (respon
                 if (adsetIdOnly && modifiedData[adsetIdOnly]) {
                   matchedModification = modifiedData[adsetIdOnly];
                 }
+              }
+            }
+          }
+          
+          // 3. 检查是否为合计行，使用相应的键匹配
+          if (!matchedModification) {
+            // 检查是否为账户合计行
+            if (item.accountName && !item.ad_id && summaryValues[item.accountName]) {
+              matchedModification = summaryValues[item.accountName];
+            }
+            // 检查是否为广告系列合计行
+            else if (item.accountName && item.campaignName && !item.ad_id) {
+              const campaignKey = `${item.accountName}_${item.campaignName}`;
+              if (summaryValues[campaignKey]) {
+                matchedModification = summaryValues[campaignKey];
+              }
+            }
+            // 检查是否为广告组合计行
+            else if (item.accountName && item.campaignName && item.adSetName && !item.ad_id) {
+              const adsetKey = `${item.accountName}_${item.campaignName}_${item.adSetName}`;
+              if (summaryValues[adsetKey]) {
+                matchedModification = summaryValues[adsetKey];
               }
             }
           }
