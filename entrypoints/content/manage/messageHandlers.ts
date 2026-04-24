@@ -324,7 +324,7 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
   return sortedAdIds;
 }
 // 排序表格行
-async function sortTableRows(modifications: any[] = []): Promise<void> {
+export async function sortTableRows(modifications: any[] = []): Promise<void> {
   try {
     // 获取当前页面状态和排序信息
     const pageState = getCurrentPageState();

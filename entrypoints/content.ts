@@ -9,7 +9,7 @@ import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
-import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
+import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, sortTableRows } from "./content/manage/messageHandlers";
 
 // 导入报告页面的消息处理函数
 import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
@@ -272,6 +272,9 @@ async function applyCachedModifications(modifications: any[], totals?: any): Pro
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
     }
+    
+    // 对表格行进行排序
+    await sortTableRows(modifications);
     
     console.log('应用缓存的修改数据到页面完成');
   } catch (error) {
