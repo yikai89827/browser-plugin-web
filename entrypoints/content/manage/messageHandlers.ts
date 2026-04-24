@@ -56,10 +56,6 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
       
       // 生成缓存键
       const adsKey = await generateCacheKey('ads');
-      const modificationsKey = await generateCacheKey('ad_modifications');
-      
-      // 获取修改数据
-      const modifications = await browserStorage.get(modificationsKey);
       
       // 保存到缓存
       const pageState = getCurrentPageState() || {};
@@ -70,7 +66,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
         level,
         currencySymbol
       };
-      const dataToSave = { sortInfo, cacheData, modifications };
+      const dataToSave = { sortInfo, cacheData };
       
       await browserStorage.set(adsKey, dataToSave);
       
@@ -558,15 +554,18 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
     try {
       // 获取当前 tab 的缓存数据
       const adsKey = await generateCacheKey('ads');
+      const modificationsKey = await generateCacheKey('ad_modifications');
       
-      const adsData = await browserStorage.get(adsKey);
+      const [adsData, modifications] = await Promise.all([
+        browserStorage.get(adsKey),
+        browserStorage.get(modificationsKey)
+      ]);
       
       let ads = adsData?.cacheData?.ads || [];
       const columnMapping = adsData?.cacheData?.columnMapping || {};
       const level = adsData?.cacheData?.level || tabType;
       const sortInfo = adsData?.sortInfo || { field: null, direction: null };
       const currencySymbol = adsData?.cacheData?.currencySymbol || '¥';
-      const modifications = adsData?.modifications || [];
       
       // 检测层级关系
       if (ads.length > 0) {
