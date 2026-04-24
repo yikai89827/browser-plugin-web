@@ -250,7 +250,7 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
         // 去掉数值后面的中括号和数字，如 "12[2]" → "12"
         cellText = cellText.replace(/\[\d+\]$/, '');
         rowData[field] = cellText;
-        console.log('提取的字段数据:', field, columnIndex, cellText);
+        // console.log('提取的字段数据:', field, columnIndex, cellText);
       }
     }
     

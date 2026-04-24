@@ -51,19 +51,11 @@ export async function updateDomElements() {
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
   
   // 第二次遍历，更新所有行
-  dataRows.forEach((row) => {
-    // 重新提取行数据，确保ID匹配
-    let rowData = extractRowData(row, getColumnIndicesSync());
+  dataRows.forEach((row, index) => {
+    // 使用处理后的行数据，而不是重新提取
+    // 这样可以确保行数据有完整的名称信息
+    const rowData = allRowData[index];
     if (rowData && rowData.id) {
-      // 处理名称赋值，确保行数据有完整的账户、系列、组和广告名称
-      // 简单处理：如果账户名称为空，尝试从ID中提取
-      if (!rowData.accountName && rowData.id) {
-        const idParts = rowData.id.split('_');
-        if (idParts.length >= 4) {
-          rowData.accountName = idParts[0];
-        }
-      }
-      
       // 尝试多种ID格式进行匹配
       let matchedModification = null;
       
@@ -313,7 +305,8 @@ export function updateAdRow(row: HTMLElement, modifications: any) {
       
       // 如果有增加值属性，说明不是原始值，需要减去现有增加值
       if (existingIncrease) {
-        originalValue -= Number(existingIncrease);
+        const existingIncreaseValue = Number(existingIncrease);
+        originalValue = originalValue - existingIncreaseValue;
       }
       
       // 计算新值
@@ -333,8 +326,13 @@ export function updateAdRow(row: HTMLElement, modifications: any) {
       // 更新DOM元素
       innermostElement.textContent = formattedValue;
       
-      // 添加属性，存储增加值
-      innermostElement.setAttribute('data-increase', String(value));
+      // 只有当值不为0时，才添加属性，存储增加值
+      if (Number(value) !== 0) {
+        innermostElement.setAttribute('data-increase', String(value));
+      } else {
+        // 如果值为0，移除属性
+        innermostElement.removeAttribute('data-increase');
+      }
     }
   });
 }
@@ -378,6 +376,7 @@ function calculateTotalModifications(summaryValues: Record<string, any>): any {
   
   // 遍历所有账户的合计值
   Object.values(summaryValues).forEach((modifications: any) => {
+    console.log('%c账户合计值:', 'color: green;background-color: #e6f7ff;', modifications );
     Object.entries(modifications).forEach(([field, value]) => {
       if (total[field] !== undefined) {
         total[field] += Number(value) || 0;
