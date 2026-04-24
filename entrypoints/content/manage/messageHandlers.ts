@@ -448,6 +448,10 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       // 从DOM中提取当前数据，确保按照DOM顺序处理
       const { ads: currentAds } = await extractAdsFromDom();
       
+      // 获取当前页面层级
+      const pageState = getCurrentPageState();
+      const currentLevel = pageState.level || 'Campaigns';
+      
       // 按照DOM顺序处理修改数据
       for (const ad of currentAds) {
         // 找到对应广告的修改项
@@ -455,16 +459,13 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           if (!mod || !mod.completeData) return false;
           
           // 根据当前层级选择正确的ID进行匹配
-          const pageState = getCurrentPageState();
-          const currentLevel = pageState.level || 'Campaigns';
-          
           switch (currentLevel) {
             case 'Ads':
-              return mod.completeData.ad_id === ad.ad_id || mod.completeData.id === ad.id;
+              return mod.completeData.ad_id === ad.ad_id || mod.completeData.id === ad.ad_id;
             case 'Adsets':
-              return mod.completeData.adset_id === ad.adset_id || mod.completeData.id === ad.id;
+              return mod.completeData.adset_id === ad.adset_id || mod.completeData.id === ad.adset_id;
             case 'Campaigns':
-              return mod.completeData.campaign_id === ad.campaign_id || mod.completeData.id === ad.id;
+              return mod.completeData.campaign_id === ad.campaign_id || mod.completeData.id === ad.campaign_id;
             default:
               return mod.completeData.id === ad.id;
           }
@@ -492,26 +493,29 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
             continue;
           }
           
-          // 根据当前层级选择正确的ID
-          const pageState = getCurrentPageState();
-          const currentLevel = pageState.level || 'Campaigns';
-          let lookupId = id;
+          // 查找匹配的行
+          let foundRow = null;
+          let lookupId = '';
           
           // 根据当前层级选择正确的ID
           switch (currentLevel) {
             case 'Ads':
-              lookupId = completeData.ad_id || id;
+              lookupId = ad.ad_id || id;
               break;
             case 'Adsets':
-              lookupId = completeData.adset_id || id;
+              lookupId = ad.adset_id || id;
               break;
             case 'Campaigns':
-              lookupId = completeData.campaign_id || id;
+              lookupId = ad.campaign_id || id;
               break;
+            default:
+              lookupId = ad.id || id;
           }
           
-          // 查找匹配的行
-          const foundRow = findRowById(filteredRows, lookupId);
+          if (lookupId) {
+            foundRow = findRowById(filteredRows, lookupId);
+          }
+          
           if (!foundRow) {
             console.warn(`刷新页面数据: 未找到匹配的行: ${lookupId}`);
             failCount++;
