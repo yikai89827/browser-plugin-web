@@ -270,66 +270,54 @@ export function identifyRowType(rowData: any): string {
 }
 
 // 更新广告行
-export function updateAdRow(row: HTMLElement, modifications: any) {
-  // 固定列数据
+export function updateAdRow(row: Element, modifications: any) {
   const cells = row.querySelector('[role="presentation"]')?.children[0];
   if (!cells?.childNodes?.length) {
     return;
   }
   
-  // 获取列索引
-  const columnIndices = getColumnIndicesSync();
-  
-  // 获取可滚动列数据
   const scrollableColumn = cells.children[1];
   const scrollableColumnCellsArray = Array.from(scrollableColumn.children[0].children);
   
-  // 遍历修改的数据
+  applyModificationsToCells(scrollableColumnCellsArray, modifications);
+}
+
+// 应用修改到单元格数组
+function applyModificationsToCells(cellsArray: Element[], modifications: any) {
+  const columnIndices = getColumnIndicesSync();
+
   Object.entries(modifications).forEach(([field, value]) => {
-    // 确定列索引
     const columnIndex = columnIndices[field] ?? -1;
     
-    if (columnIndex >= 0 && scrollableColumnCellsArray[columnIndex]) {
-      const cell = scrollableColumnCellsArray[columnIndex];
+    if (columnIndex >= 0 && cellsArray[columnIndex]) {
+      const cell = cellsArray[columnIndex];
       const innermostElement = findInnermostElement(cell);
       
-      // 检查是否有增加值属性
       const existingIncrease = innermostElement.getAttribute('data-increase');
       
-      // 获取原始值
       let originalText = innermostElement.textContent?.trim() || '';
-      // 去掉数值后面的中括号和数字，如 "12[2]" → "12"
       originalText = originalText.replace(/\[\d+\]$/, '');
       let originalValue = parseNumber(originalText);
       
-      // 如果有增加值属性，说明不是原始值，需要减去现有增加值
       if (existingIncrease) {
         const existingIncreaseValue = Number(existingIncrease);
         originalValue = originalValue - existingIncreaseValue;
       }
       
-      // 计算新值
       const newValue = originalValue + Number(value);
       
-      // 保留千分位格式
       let formattedValue = String(newValue);
-      // 检查原始文本是否包含货币符号
       if (originalText.includes('$')) {
-        // 货币格式，保留两位小数并添加千分位
         formattedValue = '$' + parseFloat(newValue.toString()).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
       } else if (!isNaN(newValue) && Number.isInteger(newValue)) {
-        // 整数格式，添加千分位
         formattedValue = newValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
       }
       
-      // 更新DOM元素
       innermostElement.textContent = formattedValue;
       
-      // 只有当值不为0时，才添加属性，存储增加值
       if (Number(value) !== 0) {
         innermostElement.setAttribute('data-increase', String(value));
       } else {
-        // 如果值为0，移除属性
         innermostElement.removeAttribute('data-increase');
       }
     }
@@ -357,10 +345,8 @@ function updateFooterRows(modifiedData: any, summaryValues: Record<string, any>)
   const totalModifications = calculateTotalModifications(modifiedData);
   console.log('%c底部合计行修改值:', 'color: green;background-color: #e6f7ff;', totalModifications);
   
-  // 更新底部合计行
-  footerRows.forEach((row) => {
-    updateAdRow(row, totalModifications);
-  });
+  const footerCellsArray = Array.from(footerRows);
+  applyModificationsToCells(footerCellsArray, totalModifications);
 }
 
 // 计算所有账户合计增加值的总和
