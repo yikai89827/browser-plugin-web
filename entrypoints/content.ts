@@ -715,7 +715,7 @@ export default {
     } 
     console.log('Facebook Ads Manager 内容脚本已加载');
 
-    interceptFetch();
+    // interceptFetch();
 
     // 监听来自popup的消息
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
