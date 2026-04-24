@@ -254,10 +254,29 @@ async function applyCachedModifications(modifications: any[], totals?: any): Pro
       let adRow: any = null;
       const idColumn = getIdColumn();
       console.log('当前层级的ID列:', idColumn, completeData,ads);
-      // 首先尝试使用当前层级的ID列查找
-      if (completeData.id) {
-        console.log('尝试使用当前层级的ID列查找:', completeData.id);
-        adRow = ads.find(ad => ad[idColumn] === completeData.id);
+      
+      // 根据当前层级使用对应的ID列查找
+      const currentLevel = pageState.level || 'Campaigns';
+      let lookupId: string | null = null;
+      
+      // 根据当前层级选择正确的ID
+      switch (currentLevel) {
+        case 'Ads':
+          lookupId = completeData.ad_id || completeData.id;
+          break;
+        case 'Adsets':
+          lookupId = completeData.adset_id;
+          break;
+        case 'Campaigns':
+          lookupId = completeData.campaign_id;
+          break;
+        default:
+          lookupId = completeData.id;
+      }
+      
+      if (lookupId) {
+        console.log('根据当前层级', currentLevel, '使用ID', lookupId, '查找匹配的行');
+        adRow = ads.find(ad => ad[idColumn] === lookupId);
       }
       
       if (adRow) {

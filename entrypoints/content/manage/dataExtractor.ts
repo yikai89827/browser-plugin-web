@@ -172,7 +172,7 @@ class DataExtractor {
     else if (level === 'Campaigns') {
       if (values.campaign_id) idFields.campaign_id = values.campaign_id;
     }
-    console.log(`  → 提取到的ID字段: ${JSON.stringify(idFields)}`);
+    // console.log(`  → 提取到的ID字段: ${JSON.stringify(idFields)}`);
     
     return idFields;
   }
@@ -204,7 +204,7 @@ class DataExtractor {
         }
       }
     }
-    console.log(`  → 处理后的字段值: ${JSON.stringify(processedValues)}`);
+    // console.log(`  → 处理后的字段值: ${JSON.stringify(processedValues)}`);
     
     return processedValues;
   }
