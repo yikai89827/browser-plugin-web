@@ -171,11 +171,11 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
           if (idColumnIndex !== undefined) {
             // 计算滚动列的索引（减去固定列的长度）
             const scrollableColumnIndex = idColumnIndex - fixedColumnLength;
-            console.log(`  → 固定列长度: ${fixedColumnLength}, ${idColumn}列索引: ${idColumnIndex}, 滚动列索引: ${scrollableColumnIndex}`);
+            // console.log(`  → 固定列长度: ${fixedColumnLength}, ${idColumn}列索引: ${idColumnIndex}, 滚动列索引: ${scrollableColumnIndex}`);
             if (scrollableColumnIndex >= 0 && scrollableCells[scrollableColumnIndex]) {
               const idCell = scrollableCells[scrollableColumnIndex];
               const idText = idCell?.textContent?.trim() || '';
-              console.log(`缓存数据id:${id}  → ${idColumn}单元格文本: ${idText}`);
+              // console.log(`缓存数据id:${id}  → ${idColumn}单元格文本: ${idText}`);
               if (idText === id) {
                 return { row, fixed, scrollable };
               }
@@ -263,41 +263,69 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
   }
   console.log('已更新合计行数据');
 }
-
-// 提取行的排序值
-function extractRowSortValue(row: HTMLElement, sortField: string, columnIndices: Record<string, number>): number {
-  const children = row.children;
-  if (children.length === 1) {
-    const firstChild = children[0] as HTMLElement;
-    const grandchildren = firstChild.children;
-    
-    if (grandchildren.length >= 2) {
-      const fixed = grandchildren[0] as HTMLElement;
-      const scrollable = grandchildren[1] as HTMLElement;
+// 排序缓存的广告数据根据排序字段
+async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortField: string, sortDirection: string): Promise<string[]> {
+    // 应用修改数据到广告数据
+  if (modifications && Array.isArray(modifications) && modifications.length > 0) {
+    ads = ads.map((ad: any) => {
+      let updatedAd = { ...ad };
+      // 确保increaseValues对象存在
+      if (!updatedAd.increaseValues) {
+        updatedAd.increaseValues = {};
+      }
       
-      // 计算固定列长度
-      const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+      // 查找对应的修改记录
+      const modification = modifications.find(mod => {
+        return mod.completeData.id === ad.id || 
+                mod.completeData.ad_id === ad.id || 
+                mod.completeData.adset_id === ad.id || 
+                mod.completeData.campaign_id === ad.id;
+      });
       
-      // 获取可滚动列的单元格
-      const scrollableCells = scrollable.children[0]?.children || [];
-      const columnIndex = columnIndices[sortField];
-      
-      if (columnIndex !== undefined) {
-        const scrollableIndex = columnIndex - fixedColumnLength;
-        if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
-          const cell = scrollableCells[scrollableIndex];
-          const innermostElement = findInnermostElement(cell);
-          const text = innermostElement.textContent?.trim() || '';
-          // 提取数值
-          const value = parseFloat(text.replace(/[^.-]/g, '')) || 0;
-          return value;
+      // 应用修改值
+      if (modification) {
+        for (const [field, value] of Object.entries(modification.modifiedFields)) {
+          updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
         }
       }
-    }
+      
+      return updatedAd;
+    });
   }
-  return 0;
+  
+  // 对广告数据进行排序
+  ads.sort((a: any, b: any) => {
+    let valueA = 0;
+    let valueB = 0;
+    
+    // 获取原始值
+    if (a[sortField] !== undefined) {
+      valueA = parseFloat(String(a[sortField]).replace(/[^\d.-]/g, '')) || 0;
+    }
+    if (b[sortField] !== undefined) {
+      valueB = parseFloat(String(b[sortField]).replace(/[^\d.-]/g, '')) || 0;
+    }
+    
+    // 加上增加值
+    if (a.increaseValues && a.increaseValues[sortField]) {
+      valueA += a.increaseValues[sortField];
+    }
+    if (b.increaseValues && b.increaseValues[sortField]) {
+      valueB += b.increaseValues[sortField];
+    }
+    
+    if (sortDirection === 'desc') {
+      return valueB - valueA;
+    } else {
+      return valueA - valueB;
+    }
+  });
+  
+  // 获取排序后的广告id数组
+  const sortedAdIds = ads.map((ad: any) => ad.id);
+  console.log('排序后的广告id数组:', sortedAdIds);
+  return sortedAdIds;
 }
-
 // 排序表格行
 async function sortTableRows(modifications: any[] = []): Promise<void> {
   try {
@@ -328,64 +356,8 @@ async function sortTableRows(modifications: any[] = []): Promise<void> {
     
     let ads = adsData.cacheData.ads;
     
-    // 应用修改数据到广告数据
-    if (modifications && Array.isArray(modifications) && modifications.length > 0) {
-      ads = ads.map((ad: any) => {
-        let updatedAd = { ...ad };
-        // 确保increaseValues对象存在
-        if (!updatedAd.increaseValues) {
-          updatedAd.increaseValues = {};
-        }
-        
-        // 查找对应的修改记录
-        const modification = modifications.find(mod => {
-          return mod.completeData.id === ad.id || 
-                 mod.completeData.ad_id === ad.id || 
-                 mod.completeData.adset_id === ad.id || 
-                 mod.completeData.campaign_id === ad.id;
-        });
-        
-        // 应用修改值
-        if (modification) {
-          for (const [field, value] of Object.entries(modification.modifiedFields)) {
-            updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
-          }
-        }
-        
-        return updatedAd;
-      });
-    }
-    
-    // 对广告数据进行排序
-    ads.sort((a: any, b: any) => {
-      let valueA = 0;
-      let valueB = 0;
-      
-      // 获取原始值
-      if (a[sortField] !== undefined) {
-        valueA = parseFloat(String(a[sortField]).replace(/[^\d.-]/g, '')) || 0;
-      }
-      if (b[sortField] !== undefined) {
-        valueB = parseFloat(String(b[sortField]).replace(/[^\d.-]/g, '')) || 0;
-      }
-      
-      // 加上增加值
-      if (a.increaseValues && a.increaseValues[sortField]) {
-        valueA += a.increaseValues[sortField];
-      }
-      if (b.increaseValues && b.increaseValues[sortField]) {
-        valueB += b.increaseValues[sortField];
-      }
-      
-      if (sortDirection === 'desc') {
-        return valueB - valueA;
-      } else {
-        return valueA - valueB;
-      }
-    });
-    
     // 获取排序后的广告id数组
-    const sortedAdIds = ads.map((ad: any) => ad.id);
+    const sortedAdIds = await sortCacheIds(modifications, ads, sortField, sortDirection as string);
     console.log('排序后的广告id数组:', sortedAdIds);
     
     // 获取tableBody中的span子元素
@@ -395,8 +367,8 @@ async function sortTableRows(modifications: any[] = []): Promise<void> {
     // 只处理被修改的行
     if (modifications && Array.isArray(modifications) && modifications.length > 0) {
       modifications.forEach(modification => {
-        if (modification && modification.completeData) {
-          const adId = modification.completeData.id;
+        if (modification && modification?.completeData) {
+          const adId = modification?.completeData?.id || '';
           // 找到修改行在排序后的位置
           const newIndex = sortedAdIds.indexOf(adId);
           

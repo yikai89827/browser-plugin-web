@@ -240,7 +240,7 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
       const innermostElement = findInnermostElement(cells[columnIndex]);
       let cellText = innermostElement.textContent?.trim() || '';
 
-      console.log(`  → 提取到的原始文本: ${cellText}`, field, columnIndex);
+      // console.log(`  → 提取到的原始文本: ${cellText}`, field, columnIndex);
       // 检查是否有 data-add-value 属性
       const dataAdValue = innermostElement.getAttribute('data-add-value');
       if (dataAdValue) {
