@@ -273,13 +273,12 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
       if (!updatedAd.increaseValues) {
         updatedAd.increaseValues = {};
       }
-      
       // 查找对应的修改记录
       const modification = modifications.find(mod => {
-        return mod.completeData.id === ad.id || 
-                mod.completeData.ad_id === ad.id || 
-                mod.completeData.adset_id === ad.id || 
-                mod.completeData.campaign_id === ad.id;
+        return mod?.completeData?.id?.toString() === ad.id || 
+                mod?.completeData?.ad_id?.toString() === ad.id || 
+                mod?.completeData?.adset_id?.toString() === ad.id || 
+                mod?.completeData?.campaign_id?.toString() === ad.id;
       });
       
       // 应用修改值
@@ -313,7 +312,6 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
     if (b.increaseValues && b.increaseValues[sortField]) {
       valueB += b.increaseValues[sortField];
     }
-    
     if (sortDirection === 'desc') {
       return valueB - valueA;
     } else {
@@ -323,7 +321,6 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
   
   // 获取排序后的广告id数组
   const sortedAdIds = ads.map((ad: any) => ad.id);
-  console.log('排序后的广告id数组:', sortedAdIds);
   return sortedAdIds;
 }
 // 排序表格行
@@ -355,10 +352,10 @@ async function sortTableRows(modifications: any[] = []): Promise<void> {
     }
     
     let ads = adsData.cacheData.ads;
-    
+    console.log('排序前的广告id数组:', JSON.stringify(ads?.map((ad: any) => ad.id)));
     // 获取排序后的广告id数组
     const sortedAdIds = await sortCacheIds(modifications, ads, sortField, sortDirection as string);
-    console.log('排序后的广告id数组:', sortedAdIds);
+    console.log('排序后的广告id数组:', JSON.stringify(sortedAdIds));
     
     // 获取tableBody中的span子元素
     const spanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
@@ -380,12 +377,27 @@ async function sortTableRows(modifications: any[] = []): Promise<void> {
             });
             
             if (targetSpan) {
-              // 找到目标位置的元素
-              const targetElement = spanElements[newIndex];
+              // 重新获取当前的span元素列表，确保获取最新的DOM状态
+              const currentSpanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
+              const currentSpanIndex = currentSpanElements.indexOf(targetSpan);
+              
+              // 如果已经在正确位置，不需要移动
+              if (currentSpanIndex === newIndex) {
+                console.log(`广告行 ${adId} 已经在正确位置 ${newIndex}`);
+                return;
+              }
+              
+              // 找到目标位置的元素（重新获取以确保准确性）
+              const targetElement = currentSpanElements[newIndex];
+              
               if (targetElement && targetElement !== targetSpan) {
+                console.log(`表体dom`, tableBody);
+                console.log(`需要移动的元素`, targetSpan);
+                console.log(`目标位置元素索引`, currentSpanIndex);
+                console.log(`目标位置原有元素`, targetElement);
                 // 移动到正确的位置
                 tableBody.insertBefore(targetSpan, targetElement);
-                console.log(`移动广告行 ${adId} 到位置 ${newIndex}`);
+                console.log(`移动广告行 ${adId} 从位置 ${currentSpanIndex} 到位置 ${newIndex}`);
               }
             }
           }
