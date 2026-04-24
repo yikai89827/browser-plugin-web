@@ -50,7 +50,7 @@ export async function updateDomElements() {
   // 计算合计行的增加值
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
   
-  // 第二次遍历，更新所有行
+  // 第二次遍历，只更新修改过的行和相关的合计行
   dataRows.forEach((row, index) => {
     // 使用处理后的行数据，而不是重新提取
     // 这样可以确保行数据有完整的名称信息
@@ -75,34 +75,33 @@ export async function updateDomElements() {
         }
       }
       
+      // 3. 检查是否为合计行，使用相应的键匹配
+      let summaryModification = null;
+      if (!matchedModification) {
+        // 检查是否为账户合计行
+        if (rowData.accountName && !rowData.ad_id) {
+          summaryModification = summaryValues[rowData.accountName];
+        }
+        // 检查是否为广告系列合计行
+        else if (rowData.accountName && rowData.campaignName && !rowData.ad_id) {
+          const campaignKey = `${rowData.accountName}_${rowData.campaignName}`;
+          summaryModification = summaryValues[campaignKey];
+        }
+        // 检查是否为广告组合计行
+        else if (rowData.accountName && rowData.campaignName && rowData.adSetName && !rowData.ad_id) {
+          const adsetKey = `${rowData.accountName}_${rowData.campaignName}_${rowData.adSetName}`;
+          summaryModification = summaryValues[adsetKey];
+        }
+      }
+      
       if (matchedModification) {
         // 更新数据行
         updateAdRow(row, matchedModification);
-      } else {
-        // 对于合计行，总是计算并更新
-        let summaryModification = summaryValues[rowData.id];
-        
-        // 账户合计行：使用账户名称匹配
-        if (!summaryModification && rowData.accountName && !rowData.ad_id) {
-          summaryModification = summaryValues[rowData.accountName];
-        }
-        
-        if (summaryModification) {
-          // 更新合计行
-          updateAdRow(row, summaryModification);
-        } else {
-          // 没有修改数据，确保合计行显示为0
-          const zeroModification = {
-            impressions: 0,
-            reach: 0,
-            spend: 0,
-            clicks: 0,
-            registrations: 0,
-            purchases: 0
-          };
-          updateAdRow(row, zeroModification);
-        }
+      } else if (summaryModification) {
+        // 更新合计行
+        updateAdRow(row, summaryModification);
       }
+      // 对于没有修改的行，不做处理
     }
   });
   
@@ -348,14 +347,15 @@ function updateFooterRows(modifiedData: any, summaryValues: Record<string, any>)
   // 获取表格底部行
   const footerRows = getReportingTableFooter();
   console.log('表格底部行:', footerRows);
-  
+  console.log('%c数据修改缓存:', 'color: green;background-color: #e6f7ff;', modifiedData);
+  console.log('%c账户合计值:', 'color: green;background-color: #e6f7ff;', summaryValues );
   if (footerRows.length === 0) {
     return;
   }
   
   // 计算所有账户合计增加值的总和
-  const totalModifications = calculateTotalModifications(summaryValues);
-  console.log('底部合计行修改值:', totalModifications);
+  const totalModifications = calculateTotalModifications(modifiedData);
+  console.log('%c底部合计行修改值:', 'color: green;background-color: #e6f7ff;', totalModifications);
   
   // 更新底部合计行
   footerRows.forEach((row) => {
@@ -364,7 +364,7 @@ function updateFooterRows(modifiedData: any, summaryValues: Record<string, any>)
 }
 
 // 计算所有账户合计增加值的总和
-function calculateTotalModifications(summaryValues: Record<string, any>): any {
+function calculateTotalModifications(modifiedData: any): any {
   const total: any = {
     impressions: 0,
     reach: 0,
@@ -374,9 +374,8 @@ function calculateTotalModifications(summaryValues: Record<string, any>): any {
     purchases: 0
   };
   
-  // 遍历所有账户的合计值
-  Object.values(summaryValues).forEach((modifications: any) => {
-    console.log('%c账户合计值:', 'color: green;background-color: #e6f7ff;', modifications );
+  // 遍历所有修改的数据，只计算广告行的修改，不包括合计行
+  Object.values(modifiedData).forEach((modifications: any) => {
     Object.entries(modifications).forEach(([field, value]) => {
       if (total[field] !== undefined) {
         total[field] += Number(value) || 0;

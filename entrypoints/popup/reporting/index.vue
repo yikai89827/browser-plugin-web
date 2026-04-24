@@ -295,7 +295,7 @@ const saveChanges = async () => {
     // 构建修改的字段数据
     const modifiedFields: any= {};
     
-    // 检查并保存所有增加字段，包括0值
+    // 检查并保存所有增加字段
     modifiedFields.impressions = ad.increase_impressions || 0;
     modifiedFields.reach = ad.increase_reach || 0;
     modifiedFields.spend = ad.increase_spend || 0;
@@ -303,10 +303,14 @@ const saveChanges = async () => {
     modifiedFields.registrations = ad.increase_registrations || 0;
     modifiedFields.purchases = ad.increase_purchases || 0;
     
-    // 检查是否有修改
-    modifiedCount++;
-    console.log(`Modified ad: ${ad.id}`, ad);
-    modifications[ad.id] = modifiedFields;
+    // 检查是否有修改（至少有一个字段不为0）
+    const hasModification = Object.values(modifiedFields).some(value => Number(value) !== 0);
+    
+    if (hasModification) {
+      modifiedCount++;
+      console.log(`Modified ad: ${ad.id}`, ad);
+      modifications[ad.id] = modifiedFields;
+    }
   }
     
     // 保存修改数据
