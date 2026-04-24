@@ -468,10 +468,28 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
             continue;
           }
           
+          // 根据当前层级选择正确的ID
+          const pageState = getCurrentPageState();
+          const currentLevel = pageState.level || 'Campaigns';
+          let lookupId = id;
+          
+          // 根据当前层级选择正确的ID
+          switch (currentLevel) {
+            case 'Ads':
+              lookupId = completeData.ad_id || id;
+              break;
+            case 'Adsets':
+              lookupId = completeData.adset_id || id;
+              break;
+            case 'Campaigns':
+              lookupId = completeData.campaign_id || id;
+              break;
+          }
+          
           // 查找匹配的行
-          const foundRow = findRowById(filteredRows, id);
+          const foundRow = findRowById(filteredRows, lookupId);
           if (!foundRow) {
-            console.warn(`刷新页面数据: 未找到匹配的行: ${id}`);
+            console.warn(`刷新页面数据: 未找到匹配的行: ${lookupId}`);
             failCount++;
             continue;
           }
@@ -590,19 +608,33 @@ function processModifications(modifications: any[], currentLevel: string) {
       
       // 根据当前层级建立parentId关系
       let parentId: string | undefined;
-      if (currentLevel === 'Adsets' && completeData.campaign_id) {
-        parentId = completeData?.campaign_id || '';
-      } else if (currentLevel === 'Ads' && completeData.adset_id) {
-        parentId = completeData?.adset_id || '';
+      let itemId: string = '';
+      
+      // 根据当前层级选择正确的ID
+      switch (currentLevel) {
+        case 'Ads':
+          itemId = completeData?.ad_id || completeData?.id || '';
+          parentId = completeData?.adset_id || '';
+          break;
+        case 'Adsets':
+          itemId = completeData?.adset_id || completeData?.id || '';
+          parentId = completeData?.campaign_id || '';
+          break;
+        case 'Campaigns':
+          itemId = completeData?.campaign_id || completeData?.id || '';
+          break;
+        default:
+          itemId = completeData?.id || '';
       }
       
       return { 
         ...item, 
         level: currentLevel,
         parentId: parentId,
-        id: completeData?.id || '',
+        id: itemId,
         campaign_id: completeData?.campaign_id || '',
-        adset_id: completeData?.adset_id || ''
+        adset_id: completeData?.adset_id || '',
+        ad_id: completeData?.ad_id || ''
       };
     }
     // 如果completeData为null，跳过这个修改项
