@@ -264,6 +264,169 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
   console.log('已更新合计行数据');
 }
 
+// 提取行的排序值
+function extractRowSortValue(row: HTMLElement, sortField: string, columnIndices: Record<string, number>): number {
+  const children = row.children;
+  if (children.length === 1) {
+    const firstChild = children[0] as HTMLElement;
+    const grandchildren = firstChild.children;
+    
+    if (grandchildren.length >= 2) {
+      const fixed = grandchildren[0] as HTMLElement;
+      const scrollable = grandchildren[1] as HTMLElement;
+      
+      // 计算固定列长度
+      const fixedColumnLength = fixed.children[0]?.children?.length - 1 || 0;
+      
+      // 获取可滚动列的单元格
+      const scrollableCells = scrollable.children[0]?.children || [];
+      const columnIndex = columnIndices[sortField];
+      
+      if (columnIndex !== undefined) {
+        const scrollableIndex = columnIndex - fixedColumnLength;
+        if (scrollableIndex >= 0 && scrollableCells[scrollableIndex]) {
+          const cell = scrollableCells[scrollableIndex];
+          const innermostElement = findInnermostElement(cell);
+          const text = innermostElement.textContent?.trim() || '';
+          // 提取数值
+          const value = parseFloat(text.replace(/[^.-]/g, '')) || 0;
+          return value;
+        }
+      }
+    }
+  }
+  return 0;
+}
+
+// 排序表格行
+async function sortTableRows(modifications: any[] = []): Promise<void> {
+  try {
+    // 获取当前页面状态和排序信息
+    const pageState = getCurrentPageState();
+    const { sortField, sortDirection } = pageState;
+    
+    if (!sortField) {
+      console.log('没有排序字段，跳过排序');
+      return;
+    }
+    
+    // 找到表体
+    const tableBody = findTableBody();
+    if (!tableBody) {
+      console.warn('排序表格行: 未找到表体');
+      return;
+    }
+    
+    // 获取缓存数据
+    const adsKey = await generateCacheKey('ads');
+    const adsData = await browserStorage.get(adsKey);
+    
+    if (!adsData || !adsData.cacheData || !adsData.cacheData.ads) {
+      console.warn('排序表格行: 未找到缓存数据');
+      return;
+    }
+    
+    let ads = adsData.cacheData.ads;
+    
+    // 应用修改数据到广告数据
+    if (modifications && Array.isArray(modifications) && modifications.length > 0) {
+      ads = ads.map((ad: any) => {
+        let updatedAd = { ...ad };
+        // 确保increaseValues对象存在
+        if (!updatedAd.increaseValues) {
+          updatedAd.increaseValues = {};
+        }
+        
+        // 查找对应的修改记录
+        const modification = modifications.find(mod => {
+          return mod.completeData.id === ad.id || 
+                 mod.completeData.ad_id === ad.id || 
+                 mod.completeData.adset_id === ad.id || 
+                 mod.completeData.campaign_id === ad.id;
+        });
+        
+        // 应用修改值
+        if (modification) {
+          for (const [field, value] of Object.entries(modification.modifiedFields)) {
+            updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+          }
+        }
+        
+        return updatedAd;
+      });
+    }
+    
+    // 对广告数据进行排序
+    ads.sort((a: any, b: any) => {
+      let valueA = 0;
+      let valueB = 0;
+      
+      // 获取原始值
+      if (a[sortField] !== undefined) {
+        valueA = parseFloat(String(a[sortField]).replace(/[^\d.-]/g, '')) || 0;
+      }
+      if (b[sortField] !== undefined) {
+        valueB = parseFloat(String(b[sortField]).replace(/[^\d.-]/g, '')) || 0;
+      }
+      
+      // 加上增加值
+      if (a.increaseValues && a.increaseValues[sortField]) {
+        valueA += a.increaseValues[sortField];
+      }
+      if (b.increaseValues && b.increaseValues[sortField]) {
+        valueB += b.increaseValues[sortField];
+      }
+      
+      if (sortDirection === 'desc') {
+        return valueB - valueA;
+      } else {
+        return valueA - valueB;
+      }
+    });
+    
+    // 获取排序后的广告id数组
+    const sortedAdIds = ads.map((ad: any) => ad.id);
+    console.log('排序后的广告id数组:', sortedAdIds);
+    
+    // 获取tableBody中的span子元素
+    const spanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
+    console.log('找到的span元素数量:', spanElements.length);
+    
+    // 只处理被修改的行
+    if (modifications && Array.isArray(modifications) && modifications.length > 0) {
+      modifications.forEach(modification => {
+        if (modification && modification.completeData) {
+          const adId = modification.completeData.id;
+          // 找到修改行在排序后的位置
+          const newIndex = sortedAdIds.indexOf(adId);
+          
+          if (newIndex !== -1) {
+            // 找到包含当前adId的span元素
+            const targetSpan = spanElements.find(span => {
+              const surface = span.getAttribute('data-surface');
+              return surface && surface.includes(adId);
+            });
+            
+            if (targetSpan) {
+              // 找到目标位置的元素
+              const targetElement = spanElements[newIndex];
+              if (targetElement && targetElement !== targetSpan) {
+                // 移动到正确的位置
+                tableBody.insertBefore(targetSpan, targetElement);
+                console.log(`移动广告行 ${adId} 到位置 ${newIndex}`);
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    console.log('表格行排序完成');
+  } catch (error) {
+    console.error('排序表格行错误:', error);
+  }
+}
+
 // 消息处理函数 - 刷新页面数据
 export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[]; totals?: any }, sendResponse: (response: any) => void): boolean {
   (async () => {
@@ -333,6 +496,9 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       console.log(`更新合计行数据`,modifications, totals);
       // 更新合计行数据
       await updateFooterData(totals, currencySymbol);
+      
+      // 对表格行进行排序
+      await sortTableRows(modifications);
       
       console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
       sendResponse({ success: true, successCount, failCount });
