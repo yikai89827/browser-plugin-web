@@ -56,6 +56,10 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
       
       // 生成缓存键
       const adsKey = await generateCacheKey('ads');
+      const modificationsKey = await generateCacheKey('ad_modifications');
+      
+      // 获取修改数据
+      const modifications = await browserStorage.get(modificationsKey);
       
       // 保存到缓存
       const pageState = getCurrentPageState() || {};
@@ -66,7 +70,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
         level,
         currencySymbol
       };
-      const dataToSave = { sortInfo, cacheData };
+      const dataToSave = { sortInfo, cacheData, modifications };
       
       await browserStorage.set(adsKey, dataToSave);
       
@@ -445,7 +449,31 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       let failCount = 0;
       let currencySymbol = '$';
       
-      for (const modification of modifications) {
+      // 从DOM中提取当前数据，确保按照DOM顺序处理
+      const { ads: currentAds } = await extractAdsFromDom();
+      
+      // 按照DOM顺序处理修改数据
+      for (const ad of currentAds) {
+        // 找到对应广告的修改项
+        const modification = modifications.find(mod => {
+          if (!mod || !mod.completeData) return false;
+          
+          // 根据当前层级选择正确的ID进行匹配
+          const pageState = getCurrentPageState();
+          const currentLevel = pageState.level || 'Campaigns';
+          
+          switch (currentLevel) {
+            case 'Ads':
+              return mod.completeData.ad_id === ad.ad_id || mod.completeData.id === ad.id;
+            case 'Adsets':
+              return mod.completeData.adset_id === ad.adset_id || mod.completeData.id === ad.id;
+            case 'Campaigns':
+              return mod.completeData.campaign_id === ad.campaign_id || mod.completeData.id === ad.id;
+            default:
+              return mod.completeData.id === ad.id;
+          }
+        });
+        
         if (modification && modification.completeData) {
           const { completeData, modifiedFields } = modification;
           const id = completeData.id;
@@ -530,18 +558,15 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
     try {
       // 获取当前 tab 的缓存数据
       const adsKey = await generateCacheKey('ads');
-      const modificationsKey = await generateCacheKey('ad_modifications');
       
-      const [adsData, modifications] = await Promise.all([
-        browserStorage.get(adsKey),
-        browserStorage.get(modificationsKey)
-      ]);
+      const adsData = await browserStorage.get(adsKey);
       
       let ads = adsData?.cacheData?.ads || [];
       const columnMapping = adsData?.cacheData?.columnMapping || {};
       const level = adsData?.cacheData?.level || tabType;
       const sortInfo = adsData?.sortInfo || { field: null, direction: null };
       const currencySymbol = adsData?.cacheData?.currencySymbol || '¥';
+      const modifications = adsData?.modifications || [];
       
       // 检测层级关系
       if (ads.length > 0) {
