@@ -361,49 +361,60 @@ async function sortTableRows(modifications: any[] = []): Promise<void> {
     const spanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
     console.log('找到的span元素数量:', spanElements.length);
     
-    // 只处理被修改的行
-    if (modifications && Array.isArray(modifications) && modifications.length > 0) {
-      modifications.forEach(modification => {
-        if (modification && modification?.completeData) {
-          const adId = modification?.completeData?.id || '';
-          // 找到修改行在排序后的位置
-          const newIndex = sortedAdIds.indexOf(adId);
-          
-          if (newIndex !== -1) {
-            // 找到包含当前adId的span元素
-            const targetSpan = spanElements.find(span => {
-              const surface = span.getAttribute('data-surface');
-              return surface && surface.includes(adId);
-            });
-            
-            if (targetSpan) {
-              // 重新获取当前的span元素列表，确保获取最新的DOM状态
-              const currentSpanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
-              const currentSpanIndex = currentSpanElements.indexOf(targetSpan);
-              
-              // 如果已经在正确位置，不需要移动
-              if (currentSpanIndex === newIndex) {
-                console.log(`广告行 ${adId} 已经在正确位置 ${newIndex}`);
-                return;
-              }
-              
-              // 找到目标位置的元素（重新获取以确保准确性）
-              const targetElement = currentSpanElements[newIndex];
-              
-              if (targetElement && targetElement !== targetSpan) {
-                console.log(`表体dom`, tableBody);
-                console.log(`需要移动的元素`, targetSpan);
-                console.log(`目标位置元素索引`, currentSpanIndex);
-                console.log(`目标位置原有元素`, targetElement);
-                // 移动到正确的位置
-                tableBody.insertBefore(targetSpan, targetElement);
-                console.log(`移动广告行 ${adId} 从位置 ${currentSpanIndex} 到位置 ${newIndex}`);
-              }
-            }
-          }
+    // 收集所有span元素及其translate值
+    const spanInfoArray: Array<{ span: Element; adId: string; translateElement: Element | null; originalIndex: number }> = [];
+    
+    spanElements.forEach((span, index) => {
+      // 获取span的adId
+      const surface = span.getAttribute('data-surface') || '';
+      // 修改正则表达式，确保能正确匹配 adId
+      const adIdMatch = surface.match(/(?<=table_row:)(\d+)(?=unit)/);
+      const adId = adIdMatch ? adIdMatch[1] : null;
+      console.log(`行 ${index} surface: ${surface}, adId: ${adId}`);
+      if (adId) {
+        // 找到带有translate样式的子元素（span的唯一子元素）
+        let translateElement: Element | null = span.firstElementChild;
+        
+        spanInfoArray.push({ span, adId, translateElement, originalIndex: index });
+        console.log(`行 ${index} adId: ${adId}, originalIndex: ${index}, translateElement: ${translateElement}`);
+      }
+    });
+    
+    // 计算基准translate值，按照行索引生成
+    const baseTranslateValues: string[] = [];
+    spanElements.forEach((_, index) => {
+      // 每行的translate值为 0px, 46px, 92px, 138px, ...
+      const translateValue = `${index * 46}px`;
+      baseTranslateValues.push(translateValue);
+    });
+    console.log('基准translate值列表:', baseTranslateValues);
+    console.log('排序后的广告id数组:', sortedAdIds);
+    
+    // 为每个排序后的adId分配对应的translate值
+    sortedAdIds.forEach((adId, index) => {
+      if (index < baseTranslateValues.length) {
+        // 找到对应的span信息
+        const spanInfo = spanInfoArray.find(info => info.adId === adId);
+        
+        if (spanInfo && spanInfo.translateElement) {
+          const newTranslate = baseTranslateValues[index];
+          (spanInfo.translateElement as HTMLElement).style.transform = `translate(0px, ${newTranslate})`;
+          // 验证修改是否成功
+          const updatedTransform = (spanInfo.translateElement as HTMLElement).style.transform;
+          console.log(`更新广告行 ${adId} 的translate值为: ${newTranslate}, 更新后transform: ${updatedTransform}`);
+        } else {
+          console.warn(`未找到广告行 ${adId} 的translate元素`);
         }
-      });
-    }
+      }
+    });
+    
+    // 保存translate值和行id到缓存
+    const translateCache = sortedAdIds.map((adId, index) => ({
+      adId,
+      translate: baseTranslateValues[index] || ''
+    }));
+    browserStorage.set('adTranslateValues', translateCache);
+    console.log('已保存translate值到StorageManager:', translateCache.length, '个值');
     
     console.log('表格行排序完成');
   } catch (error) {

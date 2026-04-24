@@ -7,6 +7,8 @@ export function interceptFetch() {
     
     window.fetch = async function(...args: Parameters<typeof fetch>) {
         const [url, options] = args;
+        console.log('url======', url);
+        console.log('options======', options);
         
         // 要拦截的API路径
         const apiPaths = [
@@ -101,7 +103,7 @@ export function interceptFetch() {
         xhr.send = function(...args: any[]) {
             // 要拦截的API路径
             const apiPaths = [
-                '/lightads?access_token',
+                '/light_ads?access_token',
                 '/light_adsets?access_token',
                 '/light_campaigns?access_token'
             ];
