@@ -412,6 +412,105 @@ async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, i
   }
 }
 
+// 初始化报表页面变化监听
+function initReportingPageObserver(): void {
+  // 使用MutationObserver来拦截页面渲染
+  const observer = new MutationObserver((mutations) => {
+    // 检查是否有排序变化（通过style变化检测）
+    let hasSortChange = false;
+
+    // 检查是否有新的表格元素被创建（可能是页面刷新）
+    let hasTableCreated = false;
+    // 检查是否有loading状态（可能是点击了刷新按钮）
+    let hasLoadingState = false;
+    try {
+      // 检测表格元素创建
+      hasTableCreated = mutations.some(mutation => {
+        if (mutation.type === 'childList') {
+          // 检查是否有新的表格元素被添加
+          return Array.from(mutation.addedNodes).some(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as HTMLElement;
+              return element.getAttribute('role') === 'table' ||
+                     element.querySelector('[role="table"]');
+            }
+            return false;
+          });
+        }
+        return false;
+      });
+
+      // 检测loading状态
+      // hasLoadingState = mutations.some(mutation => {
+      //   if (mutation.target.nodeType === Node.ELEMENT_NODE) {
+      //     const element = mutation.target as HTMLElement;
+      //     // 检查是否有loading相关的元素或类名
+      //     return element.classList.contains('loading') ||
+      //            element.querySelector('.loading') ||
+      //            element.classList.contains('spinner') ||
+      //            element.querySelector('.spinner') ||
+      //            element.getAttribute('aria-busy') === 'true' ||
+      //            element.querySelector('[aria-busy="true"]');
+      //   }
+      //   return false;
+      // });
+
+      if (hasTableCreated) {
+        console.log('检测到报表页面表格元素被创建，可能是页面刷新');
+        // 显示遮盖层
+        createOverlay();
+        // 等待DOM更新完成后再应用修改数据
+        setTimeout(async () => {
+          // 导入reporting模块的updateDomElements函数
+          const { updateDomElements } = await import('./content/reporting/domUpdater');
+          await updateDomElements();
+          removeOverlay();
+        }, 2000); // 等待2秒让新数据加载完成
+      }
+    } catch (error) {
+      console.error('检测报表页面状态错误:', error);
+      removeOverlay();
+    }
+
+    // 只在排序变化时触发同步
+    if (hasSortChange) {
+      console.log('检测到报表页面排序变更，触发同步');
+
+      // 立即显示遮盖层并应用修改数据
+      (async () => {
+        // 导入reporting模块的updateDomElements函数
+        const { updateDomElements } = await import('./content/reporting/domUpdater');
+        createOverlay();
+        // 等待DOM更新完成后再应用修改数据
+        setTimeout(async () => {
+          await updateDomElements();
+          removeOverlay();
+        }, 100);
+      })();
+    }
+  });
+
+  // 开始观察页面变化
+  const tableElement = document.querySelector('[role="table"]');
+  if (tableElement) {
+    observer.observe(tableElement, {
+      childList: true, // 监听子节点变化
+      subtree: true, // 监听子树变化
+      attributes: true, // 监听属性变化
+      attributeFilter: ['style'] // 监听style和class变化
+    });
+    console.log('报表页面变化监听已启动');
+  } else {
+    console.log('报表页面未找到表格元素，页面变化监听未启动');
+    // 尝试在整个文档上监听，以捕获表格元素的创建
+    observer.observe(document.body, {
+      childList: true, // 监听子节点变化
+      subtree: true, // 监听子树变化
+    });
+    console.log('在整个文档上启动报表页面变化监听');
+  }
+}
+
 // 初始化页面变化监听
 function initPageObserver(): void {
   // 使用MutationObserver来拦截页面渲染
@@ -571,7 +670,7 @@ function initPageObserver(): void {
     });
     console.log('页面变化监听已启动');
   } else {
-    console.warn('未找到表格元素，页面变化监听未启动');
+    console.log('未找到表格元素，页面变化监听未启动');
     // 尝试在整个文档上监听，以捕获表格元素的创建
     observer.observe(document.body, {
       childList: true, // 监听子节点变化
@@ -597,6 +696,9 @@ export default {
         
         // 设置排序监听器
         setupSortListener();
+        
+        // 初始化报表页面变化监听
+        initReportingPageObserver();
       });
       
       // 处理报告页面的逻辑
@@ -636,7 +738,9 @@ export default {
     // 立即开始获取缓存数据
     loadCachedData();
 
-    // 初始化页面变化监听
-    initPageObserver();
+    if (window.location.href.includes('adsmanager/manage')) {
+      // 初始化页面变化监听
+      initPageObserver();
+    }
   }
 };

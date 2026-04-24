@@ -9,6 +9,10 @@ export async function updateDomElements() {
   // 获取修改的数据
   const modifiedData = await getModifiedData() || {};
   console.log('更新DOM元素，修改的数据:', modifiedData);
+  if (Object.keys(modifiedData).length === 0) {
+    console.log('没有修改数据，无需更新DOM元素');
+    return;
+  }
   
   // 找到表格容器
   const tableContainer = document.querySelector('[role="table"]');
