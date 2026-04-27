@@ -123,34 +123,19 @@ function extractCurrencySymbolFromText(text: string): string {
 export function extractDateRange(): string[] {
   try {
     // 查找日期范围元素
-    const dateRangeElements = document.querySelectorAll('div.x3afwf span.x120wszb');
-    console.log('找到的日期范围元素数量:', dateRangeElements.length);
-    
-    const dateRanges: string[] = [];
-    
-    dateRangeElements.forEach(element => {
-      const text = element.textContent?.trim();
-      if (text && text.includes(' - ')) {
-        console.log('找到日期范围:', text);
-        dateRanges.push(text);
-      }
-    });
-    
-    // 如果没有找到日期范围，尝试其他可能的选择器
-    if (dateRanges.length === 0) {
-      const alternativeElements = document.querySelectorAll('[data-surface="/am/table/state:range"]');
-      console.log('找到的替代日期范围元素数量:', alternativeElements.length);
-      
-      alternativeElements.forEach(element => {
-        const text = element.textContent?.trim();
-        if (text && text.includes(' - ')) {
-          console.log('找到替代日期范围:', text);
-          dateRanges.push(text);
-        }
-      });
+    const dateRangeElements: HTMLElement | null = document.querySelector('span[data-surface="/am/table/stats_range"] div[role="presentation"]');
+    const rangeElement = dateRangeElements?.nextElementSibling;
+    if (!rangeElement) {
+      console.log('未找到日期范围元素');
+      return [];
     }
+    console.log('找到的日期范围元素:', rangeElement);
     
-    console.log('提取的日期范围:', dateRanges);
+    const dateRanges: string[] = rangeElement.textContent?.trim()?.split('–') || [];
+    
+    if (dateRanges.length > 0) {
+      console.log('找到日期范围:', dateRanges);
+    }
     return dateRanges;
   } catch (error) {
     console.error('提取日期范围错误:', error);

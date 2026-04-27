@@ -5,7 +5,8 @@ import { footerMapping } from './content/manage/config';
 
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/manage/account';
-import { getCurrentDate, generateCacheKey, generateSortInfoKey } from './content/manage/cache';
+import { generateCacheKey, generateSortInfoKey } from './content/manage/cache';
+import { getCurrentDate } from './content/manage/date';
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
@@ -196,6 +197,13 @@ async function loadCachedData(): Promise<void> {
   if (!(window as any).isSyncing) {
     (window as any).isSyncing = true;
     try {
+      // 检查当前DOM日期范围是否有缓存的增加值
+      const shouldLoadModifications = await checkDateRangeForModifications();
+      if (!shouldLoadModifications) {
+        console.log('不需要加载缓存数据');
+        return;
+      }
+      
       // 获取当前页面状态
       const pageState = getCurrentPageState();
       currentPageState = pageState;
@@ -226,9 +234,66 @@ async function loadCachedData(): Promise<void> {
   }
 }
 
+// 检查当前DOM日期范围是否有缓存的增加值
+async function checkDateRangeForModifications(): Promise<boolean> {
+  try {
+    // 提取当前DOM的日期范围
+    const { dateRanges } = await extractAdsFromDom();
+    console.log('当前DOM的日期范围:', dateRanges);
+    
+    // 如果没有日期范围，返回false
+    if (!dateRanges || dateRanges.length === 0) {
+      console.log('当前DOM没有日期范围，无需处理缓存');
+      return false;
+    }
+    
+    // 获取当前日期
+    const currentDate = getCurrentDate();
+    console.log('当前日期:', currentDate);
+    
+    // 检查当前日期是否在DOM的日期范围内
+    for (const dateRange of dateRanges) {
+      const [startStr, endStr] = dateRange.split(' - ');
+      if (startStr && endStr) {
+        const startDate = new Date(startStr);
+        const endDate = new Date(endStr);
+        const targetDate = new Date(currentDate);
+        
+        // 检查目标日期是否在范围内（包括开始和结束日期）
+        if (targetDate >= startDate && targetDate <= endDate) {
+          // 检查是否有对应的缓存数据
+          const modificationsKey = await generateCacheKey('ad_modifications');
+          const modifications = await browserStorage.get(modificationsKey);
+          
+          if (modifications && Array.isArray(modifications) && modifications.length > 0) {
+            console.log('当前日期在DOM日期范围内，且有缓存数据');
+            return true;
+          } else {
+            console.log('当前日期在DOM日期范围内，但没有缓存数据');
+            return false;
+          }
+        }
+      }
+    }
+    
+    console.log('当前日期不在DOM日期范围内，无需处理缓存');
+    return false;
+  } catch (error) {
+    console.error('检查日期范围错误:', error);
+    return false;
+  }
+}
+
 // 应用缓存的修改数据到页面
 async function applyCachedModifications(modifications: any[], totals?: any): Promise<void> {
   try {
+    // 检查当前DOM日期范围是否有缓存的增加值
+    const shouldApplyModifications = await checkDateRangeForModifications();
+    if (!shouldApplyModifications) {
+      console.log('不需要应用缓存修改数据');
+      return;
+    }
+    
     console.log('应用缓存的修改数据到页面，修改数据数量:', modifications?.length || 0);
     if(modifications?.length === 0) {
       console.log('没有修改数据，无需应用');
@@ -553,7 +618,7 @@ function initReportingPageObserver(): void {
         }
         
         // 启动新的防抖计时器
-        debounceTimer = window.setTimeout(() => {
+        debounceTimer = window.setTimeout(async () => {
           // 检测是否是滚动加载（通过检查是否有新的表格行被添加）
           const isScrollLoading = mutations.some(mutation => {
             if (mutation.type === 'childList') {
@@ -576,16 +641,22 @@ function initReportingPageObserver(): void {
             console.log('检测到报表页面表格元素被创建，可能是页面刷新');
           }
           
-          // 显示遮盖层
-          createOverlay();
-          // 等待DOM更新完成后再应用修改数据
-          const waitTime = hasScrollChange || isScrollLoading ? 300 : 2000; // 滚动相关操作等待300ms，页面刷新等待2秒
-          setTimeout(async () => {
-            // 导入reporting模块的updateDomElements函数
-            const { updateDomElements } = await import('./content/reporting/domUpdater');
-            await updateDomElements();
-            removeOverlay();
-          }, waitTime); // 根据场景设置不同的等待时间
+          // 检查当前DOM日期范围是否有缓存的增加值
+          const shouldUpdateDom = await checkDateRangeForModifications();
+          if (shouldUpdateDom) {
+            // 显示遮盖层
+            createOverlay();
+            // 等待DOM更新完成后再应用修改数据
+            const waitTime = hasScrollChange || isScrollLoading ? 300 : 2000; // 滚动相关操作等待300ms，页面刷新等待2秒
+            setTimeout(async () => {
+              // 导入reporting模块的updateDomElements函数
+              const { updateDomElements } = await import('./content/reporting/domUpdater');
+              await updateDomElements();
+              removeOverlay();
+            }, waitTime); // 根据场景设置不同的等待时间
+          } else {
+            console.log('不需要更新DOM元素');
+          }
         }, 100); // 防抖时间100ms
         
         // 如果是表体行的data-surface属性变化，设置节流计时器

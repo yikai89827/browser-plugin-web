@@ -455,9 +455,57 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
 }
 
 // 消息处理函数 - 刷新页面数据
+// 检查当前DOM日期范围是否有缓存的增加值
+async function checkDateRangeForModifications(): Promise<boolean> {
+  try {
+    // 提取当前DOM的日期范围
+    const { dateRanges } = await extractAdsFromDom();
+    console.log('当前DOM的日期范围:', dateRanges);
+    
+    // 如果没有日期范围，返回false
+    if (!dateRanges || dateRanges.length === 0) {
+      console.log('当前DOM没有日期范围，无需处理缓存');
+      return false;
+    }
+    
+    // 获取当前日期
+    const currentDate = new Date().toISOString().split('T')[0];
+    console.log('当前日期:', currentDate);
+    
+    // 检查当前日期是否在DOM的日期范围内
+    for (const dateRange of dateRanges) {
+      const [startStr, endStr] = dateRange.split(' - ');
+      if (startStr && endStr) {
+        const startDate = new Date(startStr);
+        const endDate = new Date(endStr);
+        const targetDate = new Date(currentDate);
+        
+        // 检查目标日期是否在范围内（包括开始和结束日期）
+        if (targetDate >= startDate && targetDate <= endDate) {
+          return true;
+        }
+      }
+    }
+    
+    console.log('当前日期不在DOM日期范围内，无需处理缓存');
+    return false;
+  } catch (error) {
+    console.error('检查日期范围错误:', error);
+    return false;
+  }
+}
+
 export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[]; totals?: any }, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
+      // 检查当前DOM日期范围是否有缓存的增加值
+      const shouldRefreshPage = await checkDateRangeForModifications();
+      if (!shouldRefreshPage) {
+        console.log('不需要刷新页面数据');
+        sendResponse({ success: true, message: '不需要刷新页面数据' });
+        return;
+      }
+      
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
       
       const { modifications, totals } = data;
