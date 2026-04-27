@@ -12,25 +12,25 @@ interface AdData {
   campaign_id: string;
   adset_id: string;
   impressions: number;
-  increase_impressions: number;
+  increase_impressions: number|undefined;
   reach: number;
-  increase_reach: number;
+  increase_reach: number|undefined;
   spend: number;
-  increase_spend: number;
+  increase_spend: number|undefined;
   clicks: number;
-  increase_clicks: number;
+  increase_clicks: number|undefined;
   registrations: number;
-  increase_registrations: number;
+  increase_registrations: number|undefined;
   registration_cost: number;
-  calculated_registration_cost: string;
+  calculated_registration_cost: string|undefined;
   purchases: number;
-  increase_purchases: number;
+  increase_purchases: number|undefined;
   purchase_cost: number;
-  calculated_purchase_cost: string;
+  calculated_purchase_cost: string|undefined;
   results: number;
-  increase_results: number;
+  increase_results: number|undefined;
   costPerResult: number;
-  calculated_costPerResult: string;
+  calculated_costPerResult: string|undefined;
   [key: string]: any;
 }
 
@@ -68,17 +68,18 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
 }
 
 // 从DOM获取广告数据
-async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any, currencySymbol: string }> {
+async function getAdsFromDom(): Promise<{ ads: AdData[], DomColumnMapping: any, sortInfo: any, currencySymbol: string, dateRanges: string[] }> {
   const response = await sendMessageToContent('getAdsFromDom');
   if (response && response.ads) {
     return { 
       ads: response.ads, 
       DomColumnMapping: response.DomColumnMapping || {},
       sortInfo: response.sortInfo || { field: null, direction: null },
-      currencySymbol: response.currencySymbol || '¥'
+      currencySymbol: response.currencySymbol || '$',
+      dateRanges: response.dateRanges || []
     };
   } else {
-    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '¥' };
+    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '$', dateRanges: [] };
   }
 }
 
@@ -105,34 +106,6 @@ const getCurrentDate = () => {
 // 列映射，用于存储从content script返回的列索引信息
 const columnMapping = ref<any>({});
 
-// 其他数据管理项
-// const events = ref([
-//   { id: 'website_clicks', name: '网站点击' },
-//   { id: 'registrations', name: '注册' },
-//   { id: 'registration_cost', name: '注册成本' }
-// ]);
-
-// // 广告账户ID
-// const accountId = '2174042080104706';
-
-// // 获取访问令牌（从存储中提取）
-// const getAccessToken = async (): Promise<string> => {
-//   try {
-//     // 尝试从存储中获取token
-//     const token = await browserStorage.get('lyResponseHeadersToken');
-//     if (token) {
-//       console.log('Using token from storage:', token);
-//       return token;
-//     }
-//     // 如果没有存储的token，使用默认token
-//     console.log('Using default token');
-//     return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
-//   } catch (error) {
-//     console.error('Error getting access token:', error);
-//     // 出错时使用默认token
-//     return 'EAABsbCS1iHgBRHeByWc8NtcYF8lAz97GJ4D685jQBPRZCzQZBBiryjcXTXSZA6PIAcubYngqMIBkbuZAFhxEDZB1hBnZASj5ROda9q2AweEoTWhmS6SDOWZBZCXzbaDNohR5HCETtHZCqTmAePcMDObjZAZBZBnjbrv52qZBKMUfu7QLoprbOooccB9VeaWzrjK4a1WOKhVDk71sOkNY5fQZDZD';
-//   }
-// };
 
 // 获取广告列表
 const fetchAds = async () => {
@@ -145,144 +118,112 @@ const fetchAds = async () => {
     const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
     console.log('当前排序信息:', sortInfo);
     
-    // 从content script获取缓存数据
-    const cachedData = await sendMessageToContent('getCachedData', { date: currentDate });
+    // 总是从DOM获取原始数据
+    const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo, currencySymbol: domCurrencySymbol, dateRanges } = await getAdsFromDom();
+    console.log('从DOM获取广告数据成功:', domAds);
+    console.log('从DOM获取列映射成功:', receivedColumnMapping);
+    console.log('从DOM获取排序信息成功:', receivedSortInfo);
+    console.log('从DOM获取货币符号成功:', domCurrencySymbol);
+    console.log('从DOM获取日期范围成功:', dateRanges);
     
-    if (cachedData && cachedData.ads && cachedData.ads.length > 0) {
-      console.log('从content缓存中读取广告数据:', cachedData.ads);
-      let adsData = cachedData.ads;
+    if (domAds && domAds.length > 0) {
+      // 转换单次费用字段为数字类型
+      const processedAds = domAds.map(ad => {
+        // 处理单次费用字段
+        if (ad.registration_cost) {
+          ad.registration_cost = parseFloat(String(ad.registration_cost).replace(/[^\d.-]/g, '')) || 0;
+        }
+        if (ad.purchase_cost) {
+          ad.purchase_cost = parseFloat(String(ad.purchase_cost).replace(/[^\d.-]/g, '')) || 0;
+        }
+        if (ad.costPerResult) {
+          ad.costPerResult = parseFloat(String(ad.costPerResult).replace(/[^\d.-]/g, '')) || 0;
+        }
+        // 初始化增加的值为空
+        ad.increase_impressions = undefined;
+        ad.increase_reach = undefined;
+        ad.increase_spend = undefined;
+        ad.increase_clicks = undefined;
+        ad.increase_registrations = undefined;
+        ad.increase_purchases = undefined;
+        ad.increase_results = undefined;
+        // 初始化计算结果
+        ad.calculated_registration_cost = undefined;
+        ad.calculated_purchase_cost = undefined;
+        ad.calculated_costPerResult = undefined;
+        return ad;
+      });
       
-      // 如果有排序信息，根据排序信息对数据进行排序
-      if (sortInfo && sortInfo.field && sortInfo.direction) {
-        console.log('根据排序信息对广告数据进行排序:', sortInfo.field, sortInfo.direction);
-        adsData.sort((a: { [x: string]: number; }, b: { [x: string]: number; }) => {
-          const field = sortInfo.field;
-          const valueA = a[field] || 0;
-          const valueB = b[field] || 0;
-          
-          if (sortInfo.direction === 'asc') {
-            return valueA - valueB;
-          } else {
-            return valueB - valueA;
-          }
-        });
-        console.log('排序后的广告数据:', adsData);
+      ads.value = processedAds;
+      columnMapping.value = receivedColumnMapping;
+      
+      // 更新货币符号
+      if (domCurrencySymbol) {
+        currencySymbol = domCurrencySymbol;
       }
       
-      ads.value = adsData;
-      if (cachedData.columnMapping) {
-        columnMapping.value = cachedData.columnMapping;
-      }
+      // 缓存原始数据到content script
+      await sendMessageToContent('saveCachedData', {
+        date: currentDate,
+        ads: processedAds,
+        columnMapping: receivedColumnMapping,
+        sortInfo: receivedSortInfo,
+        currencySymbol: currencySymbol,
+        level: receivedSortInfo?.level,
+      });
+      console.log('缓存广告数据到content成功');
       
-      // 从缓存中加载货币符号
-      if (cachedData.currencySymbol) {
-        currencySymbol = cachedData.currencySymbol;
-        console.log('从缓存中加载货币符号:', currencySymbol);
-      }
-      
-      // 加载并应用修改数据
-      if (cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
+      // 从缓存中加载修改数据（增加值）
+      const cachedData = await sendMessageToContent('getCachedData', { date: currentDate });
+      if (cachedData && cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {
         console.log('从content缓存中读取修改数据:', cachedData.modifications);
         
-        // 如果有排序信息，根据排序信息对修改数据进行排序
-        let sortedModifications = cachedData.modifications;
-        if (sortInfo && sortInfo.field && sortInfo.direction) {
-          console.log('根据排序信息对修改数据进行排序:', sortInfo.field, sortInfo.direction);
-          sortedModifications = [...cachedData.modifications].sort((a, b) => {
-            if (!a || !b || !a.completeData || !b.completeData) return 0;
-            const field = sortInfo.field;
-            const valueA = a.completeData[field] || 0;
-            const valueB = b.completeData[field] || 0;
-            
-            if (sortInfo.direction === 'asc') {
-              return valueA - valueB;
-            } else {
-              return valueB - valueA;
-            }
-          });
-          console.log('排序后的修改数据:', sortedModifications);
-        }
+        // 过滤掉null值，只保留有效的修改数据
+        const validModifications = cachedData.modifications.filter((item: null | undefined) => item !== null && item !== undefined);
+        console.log('过滤后的修改数据:', validModifications);
         
-        ads.value.forEach((ad, index) => {
-          const rowData = sortedModifications[index];
+        // 通过ID匹配修改数据，使用completeData.id
+        ads.value.forEach(ad => {
+          const rowData = validModifications.find((item: { completeData: { id: string; }; }) => 
+            item.completeData && item.completeData.id === ad.id
+          );
+          
           if (rowData && rowData.completeData) {
+            console.log('匹配到修改数据:', ad.id, rowData.completeData);
             // 恢复增加的值
-          if (rowData.completeData.increase_impressions !== undefined) {
-            ad.increase_impressions = rowData.completeData.increase_impressions;
-          }
-          if (rowData.completeData.increase_reach !== undefined) {
-            ad.increase_reach = rowData.completeData.increase_reach;
-          }
-          if (rowData.completeData.increase_spend !== undefined) {
-            ad.increase_spend = rowData.completeData.increase_spend;
-          }
-          if (rowData.completeData.increase_clicks !== undefined) {
-            ad.increase_clicks = rowData.completeData.increase_clicks;
-          }
-          if (rowData.completeData.increase_registrations !== undefined) {
-            ad.increase_registrations = rowData.completeData.increase_registrations;
-          }
-          if (rowData.completeData.increase_purchases !== undefined) {
-            ad.increase_purchases = rowData.completeData.increase_purchases;
-          }
-          if (rowData.completeData.increase_results !== undefined) {
-            ad.increase_results = rowData.completeData.increase_results;
-          }
-          // 恢复计算结果
-          if (rowData.completeData.calculated_registration_cost !== undefined) {
-            ad.calculated_registration_cost = rowData.completeData.calculated_registration_cost;
-          }
-          if (rowData.completeData.calculated_purchase_cost !== undefined) {
-            ad.calculated_purchase_cost = rowData.completeData.calculated_purchase_cost;
-          }
-          if (rowData.completeData.calculated_costPerResult !== undefined) {
-            ad.calculated_costPerResult = rowData.completeData.calculated_costPerResult;
-          }
+            if (rowData.completeData.increase_impressions !== undefined) {
+              ad.increase_impressions = rowData.completeData.increase_impressions;
+            }
+            if (rowData.completeData.increase_reach !== undefined) {
+              ad.increase_reach = rowData.completeData.increase_reach;
+            }
+            if (rowData.completeData.increase_spend !== undefined) {
+              ad.increase_spend = rowData.completeData.increase_spend;
+            }
+            if (rowData.completeData.increase_clicks !== undefined) {
+              ad.increase_clicks = rowData.completeData.increase_clicks;
+            }
+            if (rowData.completeData.increase_registrations !== undefined) {
+              ad.increase_registrations = rowData.completeData.increase_registrations;
+            }
+            if (rowData.completeData.increase_purchases !== undefined) {
+              ad.increase_purchases = rowData.completeData.increase_purchases;
+            }
+            if (rowData.completeData.increase_results !== undefined) {
+              ad.increase_results = rowData.completeData.increase_results;
+            }
+            // 恢复计算结果
+            if (rowData.completeData.calculated_registration_cost !== undefined) {
+              ad.calculated_registration_cost = rowData.completeData.calculated_registration_cost;
+            }
+            if (rowData.completeData.calculated_purchase_cost !== undefined) {
+              ad.calculated_purchase_cost = rowData.completeData.calculated_purchase_cost;
+            }
+            if (rowData.completeData.calculated_costPerResult !== undefined) {
+              ad.calculated_costPerResult = rowData.completeData.calculated_costPerResult;
+            }
           }
         });
-      }
-    } else {
-      // 从DOM获取广告数据
-      const { ads: domAds, DomColumnMapping: receivedColumnMapping, sortInfo: receivedSortInfo, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
-      console.log('从DOM获取广告数据成功:', domAds);
-      console.log('从DOM获取列映射成功:', receivedColumnMapping);
-      console.log('从DOM获取排序信息成功:', receivedSortInfo);
-      console.log('从DOM获取货币符号成功:', domCurrencySymbol);
-      
-      if (domAds && domAds.length > 0) {
-        // 转换单次费用字段为数字类型
-        const processedAds = domAds.map(ad => {
-          // 处理单次费用字段
-          if (ad.registration_cost) {
-            ad.registration_cost = parseFloat(String(ad.registration_cost).replace(/[^\d.-]/g, '')) || 0;
-          }
-          if (ad.purchase_cost) {
-            ad.purchase_cost = parseFloat(String(ad.purchase_cost).replace(/[^\d.-]/g, '')) || 0;
-          }
-          if (ad.costPerResult) {
-            ad.costPerResult = parseFloat(String(ad.costPerResult).replace(/[^\d.-]/g, '')) || 0;
-          }
-          return ad;
-        });
-        
-        ads.value = processedAds;
-        columnMapping.value = receivedColumnMapping;
-        
-        // 更新货币符号
-        if (domCurrencySymbol) {
-          currencySymbol = domCurrencySymbol;
-        }
-        
-        // 缓存数据到content script
-        await sendMessageToContent('saveCachedData', {
-          date: currentDate,
-          ads: processedAds,
-          columnMapping: receivedColumnMapping,
-          sortInfo: receivedSortInfo,
-          currencySymbol: currencySymbol,
-          level: receivedSortInfo?.level,
-        });
-        console.log('缓存广告数据到content成功');
       }
     }
     
@@ -425,21 +366,33 @@ const saveChanges = async () => {
     const totals = calculateTotals();
 
     
-    // 保存更新后的数组到content script
+    // 获取DOM的日期范围
+    const { dateRanges } = await getAdsFromDom();
+    console.log('获取DOM日期范围:', dateRanges);
     
-     await sendMessageToContent('saveModifications', {
+    // 检查选择的日期是否在DOM返回的日期范围内
+    const isDateValid = isDateInRange(currentDate, dateRanges);
+    console.log('选择的日期是否在范围内:', isDateValid);
+    
+    // 保存更新后的数组到content script
+    await sendMessageToContent('saveModifications', {
       date: currentDate,
       modifications: modificationsArray,
       totals: totals,
       currencySymbol: currencySymbol
     });
     
-    // 获取当前排序信息
-    const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
-    console.log('当前排序信息:', sortInfo);
-    
-    // 向content script发送消息，通知页面刷新
-    await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray, totals: totals });
+    // 如果选择的日期在DOM返回的日期范围内，才渲染到原始页面
+    if (isDateValid) {
+      // 获取当前排序信息
+      const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
+      console.log('当前排序信息:', sortInfo);
+      
+      // 向content script发送消息，通知页面刷新
+      await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray, totals: totals });
+    } else {
+      console.log('选择的日期不在DOM返回的日期范围内，不渲染到原始页面');
+    }
     
     // 保存完成后重新渲染页面
     // await fetchAds();
@@ -596,10 +549,35 @@ const formatCurrency = (value: number): string => {
   return currencySymbol + value.toFixed(2);
 };
 
+// 检查日期是否在日期范围内
+const isDateInRange = (dateStr: string, dateRanges: string[]): boolean => {
+  try {
+    const targetDate = new Date(dateStr);
+    
+    for (const dateRange of dateRanges) {
+      const [startStr, endStr] = dateRange.split(' - ');
+      if (startStr && endStr) {
+        const startDate = new Date(startStr);
+        const endDate = new Date(endStr);
+        
+        // 检查目标日期是否在范围内（包括开始和结束日期）
+        if (targetDate >= startDate && targetDate <= endDate) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('检查日期范围错误:', error);
+    return false;
+  }
+};
+
 // 计算单次注册费用
 const calculateRegistrationCost = (ad: AdData): string => {
   // 检查是否有增加值
-  const hasIncrease = ad.increase_spend > 0 || ad.increase_registrations > 0;
+  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_registrations || 0) > 0;
   
   if (!hasIncrease) {
     // 如果没有增加值，显示0
@@ -625,7 +603,7 @@ const calculateRegistrationCost = (ad: AdData): string => {
 // 计算单次购买费用
 const calculatePurchaseCost = (ad: AdData): string => {
   // 检查是否有增加值
-  const hasIncrease = ad.increase_spend > 0 || ad.increase_purchases > 0;
+  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_purchases || 0) > 0;
   
   if (!hasIncrease) {
     // 如果没有增加值，显示0
@@ -651,7 +629,7 @@ const calculatePurchaseCost = (ad: AdData): string => {
 // 计算单次成效费用
 const calculateCostPerResult = (ad: AdData): string => {
   // 检查是否有增加值
-  const hasIncrease = ad.increase_spend > 0 || ad.increase_results > 0;
+  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_results || 0) > 0;
   
   if (!hasIncrease) {
     // 如果没有增加值，显示0

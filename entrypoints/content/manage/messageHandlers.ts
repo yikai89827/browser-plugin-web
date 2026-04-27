@@ -47,7 +47,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
   (async () => {
     try {
       // 从DOM提取数据
-      const { ads, DomColumnMapping, sortInfo, currencySymbol } = await extractAdsFromDom();
+      const { ads, DomColumnMapping, sortInfo, currencySymbol, dateRanges } = await extractAdsFromDom();
       
       // 检测层级关系
       if (ads.length > 0) {
@@ -75,10 +75,11 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
       sendResponse({ 
         success: true, 
         ads: ads, 
-        DomColumnMapping: DomColumnMapping, 
-        sortInfo: sortInfo,
+        DomColumnMapping, 
+        sortInfo,
         level: level,
-        currencySymbol: currencySymbol
+        currencySymbol,
+        dateRanges
       });
     } catch (error: any) {
       console.error('从DOM获取数据错误:', error);

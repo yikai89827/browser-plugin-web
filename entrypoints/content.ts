@@ -436,6 +436,11 @@ async function updateFooterRowByEntity(valuesToUpdate: Record<string, string>, i
 
 // 初始化报表页面变化监听
 function initReportingPageObserver(): void {
+  // 防抖计时器
+  let debounceTimer: number | null = null;
+  // 节流计时器（用于排序切换）
+  let throttleTimer: number | null = null;
+  
   // 使用MutationObserver来拦截页面渲染
   const observer = new MutationObserver((mutations) => {
     // 检查是否有排序变化（通过style变化检测）
@@ -445,6 +450,10 @@ function initReportingPageObserver(): void {
     let hasTableCreated = false;
     // 检查是否有loading状态（可能是点击了刷新按钮）
     let hasLoadingState = false;
+    // 检测是否有滚动变化（通过style变化检测）
+    let hasScrollChange = false;
+    // 检测是否有表体行data-surface属性变化（用于节流判断）
+    let hasBodyRowDataSurfaceChange = false;
     try {
       // 检测表格元素创建或表格内容变化（如滚动加载新行）
       hasTableCreated = mutations.some(mutation => {
@@ -477,37 +486,115 @@ function initReportingPageObserver(): void {
         return false;
       });
 
-      if (hasTableCreated) {
-        // 检测是否是滚动加载（通过检查是否有新的表格行被添加）
-        const isScrollLoading = mutations.some(mutation => {
-          if (mutation.type === 'childList') {
-            return Array.from(mutation.addedNodes).some(node => {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                const element = node as HTMLElement;
-                return element.tagName === 'SPAN' && element.hasAttribute('data-surface');
-              }
-              return false;
-            });
+      // 检测滚动变化（通过style属性变化或data-surface属性变化）
+      hasScrollChange = mutations.some(mutation => {
+        if (mutation.target.nodeType === Node.ELEMENT_NODE) {
+          const element = mutation.target as HTMLElement;
+          // 检查元素是否在表格内
+          let parent = element.parentElement;
+          let isInTable = false;
+          while (parent) {
+            if (parent.getAttribute('role') === 'table'|| parent.querySelector('[role="table"]')) {
+              isInTable = true;
+              break;
+            }
+            parent = parent.parentElement;
           }
-          return false;
-        });
-        
-        if (isScrollLoading) {
-          console.log('检测到报表页面表格滚动加载新行');
-        } else {
-          console.log('检测到报表页面表格元素被创建，可能是页面刷新');
+          
+          if (isInTable) {
+            // 检测style属性变化（滚动条移动）
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+              // 只检测与滚动相关的特定元素的style变化
+              // 排除表头元素的style变化（如hover效果）
+              const isHeaderRow = element.getAttribute('role') === 'row';
+              if (!isHeaderRow) {
+                // 检查元素是否是滚动相关的元素
+                // 可以根据实际的滚动条元素特征进行判断
+                // 例如：滚动条容器、滚动内容容器等
+                const isScrollRelatedElement = element.classList.contains('scrollbar') ||
+                                              element.classList.contains('scroll-container') ||
+                                              element.style.transform !== '' || // 有transform属性变化的元素（可能是滚动时的位置变化）
+                                              element.style.top !== '' || // 有top属性变化的元素（可能是滚动时的位置变化）
+                                              element.style.left !== ''; // 有left属性变化的元素（可能是滚动时的位置变化）
+                if (isScrollRelatedElement) {
+                  return true;
+                }
+              }
+            }
+            // 检测data-surface属性变化（表格行号变化）
+            if (mutation.type === 'attributes' && mutation.attributeName === 'data-surface') {
+              // 检查data-surface属性是否包含table_row
+              const dataSurface = element.getAttribute('data-surface');
+              if (dataSurface && dataSurface.includes('table_row:')) {
+                // 只检测表体行，不检测表头行
+                // 表头行有role="row"属性，表体行没有
+                const isHeaderRow = element.getAttribute('role') === 'row';
+                if (!isHeaderRow) {
+                  hasBodyRowDataSurfaceChange = true;
+                  return true;
+                }
+              }
+            }
+          }
+        }
+        return false;
+      });
+
+      if (hasTableCreated || hasScrollChange) {
+        // 如果是表体行的data-surface属性变化（可能是排序切换），使用节流逻辑
+        if (hasBodyRowDataSurfaceChange && throttleTimer !== null) {
+          console.log('检测到表体行data-surface属性变化，正在节流中，跳过本次处理');
+          return;
         }
         
-        // 显示遮盖层
-        createOverlay();
-        // 等待DOM更新完成后再应用修改数据
-        const waitTime = isScrollLoading ? 300 : 2000; // 滚动加载等待300ms，页面刷新等待2秒
-        setTimeout(async () => {
-          // 导入reporting模块的updateDomElements函数
-          const { updateDomElements } = await import('./content/reporting/domUpdater');
-          await updateDomElements();
-          removeOverlay();
-        }, waitTime); // 根据场景设置不同的等待时间
+        // 清除之前的防抖计时器
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+        
+        // 启动新的防抖计时器
+        debounceTimer = window.setTimeout(() => {
+          // 检测是否是滚动加载（通过检查是否有新的表格行被添加）
+          const isScrollLoading = mutations.some(mutation => {
+            if (mutation.type === 'childList') {
+              return Array.from(mutation.addedNodes).some(node => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                  const element = node as HTMLElement;
+                  return element.tagName === 'SPAN' && element.hasAttribute('data-surface');
+                }
+                return false;
+              });
+            }
+            return false;
+          });
+          
+          if (hasScrollChange) {
+            console.log('检测到报表页面表格滚动变化');
+          } else if (isScrollLoading) {
+            console.log('检测到报表页面表格滚动加载新行');
+          } else {
+            console.log('检测到报表页面表格元素被创建，可能是页面刷新');
+          }
+          
+          // 显示遮盖层
+          createOverlay();
+          // 等待DOM更新完成后再应用修改数据
+          const waitTime = hasScrollChange || isScrollLoading ? 300 : 2000; // 滚动相关操作等待300ms，页面刷新等待2秒
+          setTimeout(async () => {
+            // 导入reporting模块的updateDomElements函数
+            const { updateDomElements } = await import('./content/reporting/domUpdater');
+            await updateDomElements();
+            removeOverlay();
+          }, waitTime); // 根据场景设置不同的等待时间
+        }, 100); // 防抖时间100ms
+        
+        // 如果是表体行的data-surface属性变化，设置节流计时器
+        if (hasBodyRowDataSurfaceChange) {
+          throttleTimer = window.setTimeout(() => {
+            throttleTimer = null;
+            console.log('节流计时器已重置');
+          }, 2000); // 节流时间2秒
+        }
       }
     } catch (error) {
       console.error('检测报表页面状态错误:', error);
@@ -539,7 +626,7 @@ function initReportingPageObserver(): void {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
       attributes: true, // 监听属性变化
-      attributeFilter: ['style'] // 监听style和class变化
+      attributeFilter: ['style', 'data-surface'] // 监听style和data-surface属性变化
     });
     console.log('报表页面变化监听已启动');
   } else {
@@ -548,6 +635,8 @@ function initReportingPageObserver(): void {
     observer.observe(document.body, {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
+      attributes: true, // 监听属性变化
+      attributeFilter: ['style', 'data-surface'] // 监听style和data-surface属性变化
     });
     console.log('在整个文档上启动报表页面变化监听');
   }

@@ -119,6 +119,45 @@ function extractCurrencySymbolFromText(text: string): string {
 
 // 尝试从页面的JavaScript变量中获取表格数据
 
+// 从DOM中提取日期范围
+export function extractDateRange(): string[] {
+  try {
+    // 查找日期范围元素
+    const dateRangeElements = document.querySelectorAll('div.x3afwf span.x120wszb');
+    console.log('找到的日期范围元素数量:', dateRangeElements.length);
+    
+    const dateRanges: string[] = [];
+    
+    dateRangeElements.forEach(element => {
+      const text = element.textContent?.trim();
+      if (text && text.includes(' - ')) {
+        console.log('找到日期范围:', text);
+        dateRanges.push(text);
+      }
+    });
+    
+    // 如果没有找到日期范围，尝试其他可能的选择器
+    if (dateRanges.length === 0) {
+      const alternativeElements = document.querySelectorAll('[data-surface="/am/table/state:range"]');
+      console.log('找到的替代日期范围元素数量:', alternativeElements.length);
+      
+      alternativeElements.forEach(element => {
+        const text = element.textContent?.trim();
+        if (text && text.includes(' - ')) {
+          console.log('找到替代日期范围:', text);
+          dateRanges.push(text);
+        }
+      });
+    }
+    
+    console.log('提取的日期范围:', dateRanges);
+    return dateRanges;
+  } catch (error) {
+    console.error('提取日期范围错误:', error);
+    return [];
+  }
+}
+
 // 从DOM中提取广告数据
 export async function extractAdsFromDom() {
   try {
@@ -127,11 +166,14 @@ export async function extractAdsFromDom() {
     const sortInfo: any = getCurrentPageState() || {};
     let currencySymbol = '$'; // 默认货币符号
     
+    // 提取日期范围
+    const dateRanges = extractDateRange();
+    
     // 找到表格容器
     const tableContainer = await findTableContainer();
     if (!tableContainer) {
       console.log('extractAdsFromDom: 未找到表格容器');
-      return { ads: [], DomColumnMapping: {}, sortInfo, currencySymbol };
+      return { ads: [], DomColumnMapping: {}, sortInfo, currencySymbol, dateRanges };
     }
     
     // 等待表格数据完全渲染，最多等待5秒
@@ -172,10 +214,10 @@ export async function extractAdsFromDom() {
     }
     
     console.log('提取的广告数据:', ads);
-    return { ads, DomColumnMapping, sortInfo, currencySymbol };
+    return { ads, DomColumnMapping, sortInfo, currencySymbol, dateRanges };
   } catch (error) {
     console.error('提取广告数据错误:', error);
-    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '$' };
+    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '$', dateRanges: [] };
   }
 }
 
