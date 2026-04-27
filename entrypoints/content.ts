@@ -446,15 +446,30 @@ function initReportingPageObserver(): void {
     // 检查是否有loading状态（可能是点击了刷新按钮）
     let hasLoadingState = false;
     try {
-      // 检测表格元素创建
+      // 检测表格元素创建或表格内容变化（如滚动加载新行）
       hasTableCreated = mutations.some(mutation => {
         if (mutation.type === 'childList') {
           // 检查是否有新的表格元素被添加
+          // 或表格内部添加了新的行/单元格（滚动加载）
           return Array.from(mutation.addedNodes).some(node => {
             if (node.nodeType === Node.ELEMENT_NODE) {
               const element = node as HTMLElement;
-              return element.getAttribute('role') === 'table' ||
-                     element.querySelector('[role="table"]');
+              // 检测表格元素本身
+              if (element.getAttribute('role') === 'table' ||
+                  element.querySelector('[role="table"]')) {
+                return true;
+              }
+              // 检测表格行或单元格（滚动加载时添加）
+              if ((element.tagName === 'SPAN' && element.hasAttribute('data-surface'))) {
+                // 检查这些元素是否在表格内
+                let parent = element.parentElement;
+                while (parent) {
+                  if (parent.getAttribute('role') === 'table') {
+                    return true;
+                  }
+                  parent = parent.parentElement;
+                }
+              }
             }
             return false;
           });
@@ -462,32 +477,37 @@ function initReportingPageObserver(): void {
         return false;
       });
 
-      // 检测loading状态
-      // hasLoadingState = mutations.some(mutation => {
-      //   if (mutation.target.nodeType === Node.ELEMENT_NODE) {
-      //     const element = mutation.target as HTMLElement;
-      //     // 检查是否有loading相关的元素或类名
-      //     return element.classList.contains('loading') ||
-      //            element.querySelector('.loading') ||
-      //            element.classList.contains('spinner') ||
-      //            element.querySelector('.spinner') ||
-      //            element.getAttribute('aria-busy') === 'true' ||
-      //            element.querySelector('[aria-busy="true"]');
-      //   }
-      //   return false;
-      // });
-
       if (hasTableCreated) {
-        console.log('检测到报表页面表格元素被创建，可能是页面刷新');
+        // 检测是否是滚动加载（通过检查是否有新的表格行被添加）
+        const isScrollLoading = mutations.some(mutation => {
+          if (mutation.type === 'childList') {
+            return Array.from(mutation.addedNodes).some(node => {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                const element = node as HTMLElement;
+                return element.tagName === 'SPAN' && element.hasAttribute('data-surface');
+              }
+              return false;
+            });
+          }
+          return false;
+        });
+        
+        if (isScrollLoading) {
+          console.log('检测到报表页面表格滚动加载新行');
+        } else {
+          console.log('检测到报表页面表格元素被创建，可能是页面刷新');
+        }
+        
         // 显示遮盖层
         createOverlay();
         // 等待DOM更新完成后再应用修改数据
+        const waitTime = isScrollLoading ? 300 : 2000; // 滚动加载等待300ms，页面刷新等待2秒
         setTimeout(async () => {
           // 导入reporting模块的updateDomElements函数
           const { updateDomElements } = await import('./content/reporting/domUpdater');
           await updateDomElements();
           removeOverlay();
-        }, 2000); // 等待2秒让新数据加载完成
+        }, waitTime); // 根据场景设置不同的等待时间
       }
     } catch (error) {
       console.error('检测报表页面状态错误:', error);
