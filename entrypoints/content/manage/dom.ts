@@ -161,7 +161,7 @@ export async function extractAdsFromDom() {
       return { ads: [], DomColumnMapping: {}, sortInfo, currencySymbol, dateRanges };
     }
     
-    // 等待表格数据完全渲染，最多等待5秒
+    // 等待表格数据完全渲染，最多等待500毫秒
     let rowPairs: Array<{ fixed: HTMLElement; scrollable: HTMLElement }> = [];
     for (let i = 0; i < 10; i++) {
       rowPairs = getTableDataRows(tableContainer);

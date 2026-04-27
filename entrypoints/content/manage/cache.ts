@@ -20,6 +20,13 @@ export async function generateSortInfoKey() {
   return `sortInfo_${accountId}_${date}_${level}`;
 }
 
+// 生成指定日期的缓存键
+export async function generateCacheKeyForDate(prefix: string, date: string) {
+  const {level} = getCurrentPageState();
+  const accountId = await getSavedAccountId();
+  return `${prefix}_${accountId}_${date}_${level}`;
+}
+
 // 预加载缓存数据
 export async function loadCachedData() {
   if (!(window as any).isSyncing) {
