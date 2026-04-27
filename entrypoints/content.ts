@@ -28,8 +28,8 @@ let overlayElement: HTMLElement | null = null;
 // 当前页面状态
 let currentPageState = {
   tab: '', // 当前tab分类
-  sortField: null, // 当前排序字段
-  sortDirection: null, // 当前排序方向
+  field: null, // 当前排序字段
+  direction: null, // 当前排序方向
   level: '' // 当前层级（竞选活动、广告组、广告）
 };
 
@@ -540,15 +540,18 @@ function initPageObserver(): void {
     // 检查是否有排序变化
     let hasSortChange = false;
     try {
-      const { field: sortField, direction: sortDirection, level } = getCurrentPageState() || {};
-      console.log('当前排序字段:', sortField, '排序方向:', sortDirection, '上次排序信息:', lastSortInfo);
-      if (sortField && sortDirection) {
-        if (sortField !== lastSortInfo.field || sortDirection !== lastSortInfo.direction || level !== lastSortInfo.level) {
-          lastSortInfo = { field: sortField, direction: sortDirection, level };
-          hasSortChange = true;
-          console.log('检测到排序或者tab变更:', lastSortInfo);
-          createOverlay();
-        }
+      const pageState = getCurrentPageState() || {};
+      const field = pageState.field;
+      const direction = pageState.direction;
+      const level = pageState.level;
+      console.log('当前排序字段:', field, '排序方向:', direction, '上次排序信息:', lastSortInfo);
+      
+      // 无论是否有排序字段，都检查是否与上次排序信息不同
+      if (field !== lastSortInfo.field || direction !== lastSortInfo.direction || level !== lastSortInfo.level) {
+        lastSortInfo = { field, direction, level };
+        hasSortChange = true;
+        console.log('检测到排序或者tab变更:', lastSortInfo);
+        createOverlay();
       }
     } catch (error) {
       console.error('检测排序信息错误:', error);

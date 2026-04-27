@@ -345,9 +345,9 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
   try {
     // 获取当前页面状态和排序信息
     const pageState = getCurrentPageState();
-    const { sortField, sortDirection } = pageState;
+    const { field, direction } = pageState;
     
-    if (!sortField) {
+    if (!field) {
       console.log('没有排序字段，跳过排序');
       return;
     }
@@ -401,14 +401,14 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
         ads.push({
           id: adId,
           increaseValues: {},
-          [sortField]: '—' // 设置排序字段为'—'，表示没有数值
+          [field]: '—' // 设置排序字段为'—'，表示没有数值
         });
       }
     });
     
     console.log('排序前的广告id数组:', JSON.stringify(ads?.map((ad: any) => ad.id)));
     // 获取排序后的广告id数组
-    const sortedAdIds = await sortCacheIds(modifications, ads, sortField, sortDirection as string);
+    const sortedAdIds = await sortCacheIds(modifications, ads, field, direction as string);
     console.log('排序后的广告id数组:', JSON.stringify(sortedAdIds));
     
     // 计算基准translate值，按照行索引生成

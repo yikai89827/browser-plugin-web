@@ -125,7 +125,7 @@ export async function extractAdsFromDom() {
     const ads = [];
     const DomColumnMapping = await getColumnIndices();
     const sortInfo: any = getCurrentPageState() || {};
-    let currencySymbol = '¥'; // 默认货币符号
+    let currencySymbol = '$'; // 默认货币符号
     
     // 找到表格容器
     const tableContainer = await findTableContainer();
@@ -175,7 +175,7 @@ export async function extractAdsFromDom() {
     return { ads, DomColumnMapping, sortInfo, currencySymbol };
   } catch (error) {
     console.error('提取广告数据错误:', error);
-    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '¥' };
+    return { ads: [], DomColumnMapping: {}, sortInfo: { field: null, direction: null }, currencySymbol: '$' };
   }
 }
 
@@ -424,6 +424,9 @@ export function detectSortInfo() {
   } catch (error) {
     console.error('Error detecting sort info:', error);
   }
+  
+  // 如果没有找到排序信息，返回默认值
+  return { field: null, direction: null };
 }
 
 // 获取当前页面状态
@@ -432,8 +435,8 @@ export function getCurrentPageState() {
   if (typeof window === 'undefined' || !window.location) {
     return {
       level: 'Campaigns',
-      sortField: null,
-      sortDirection: null
+      field: null,
+      direction: null
     };
   }
 
@@ -452,12 +455,14 @@ export function getCurrentPageState() {
   }
 
   // 获取当前排序状态
-  const { field: sortField, direction: sortDirection } = detectSortInfo() || {};
+  const sortInfo = detectSortInfo() || {};
+  const field = sortInfo.field || null;
+  const direction = sortInfo.direction || null;
 
   return {
     level,
-    sortField,
-    sortDirection
+    field,
+    direction
   };
 }
 
