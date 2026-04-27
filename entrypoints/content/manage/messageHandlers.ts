@@ -294,6 +294,22 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
   
   // 对广告数据进行排序
   ads.sort((a: any, b: any) => {
+    // 检查排序字段是否有数值
+    const originalValueA = a[sortField];
+    const originalValueB = b[sortField];
+    const hasValueA = originalValueA !== undefined && originalValueA !== null && originalValueA !== '—' && originalValueA !== '';
+    const hasValueB = originalValueB !== undefined && originalValueB !== null && originalValueB !== '—' && originalValueB !== '';
+    
+    // 处理没有数值的行，永远排在有数值的行的后面
+    if (!hasValueA && hasValueB) {
+      return 1; // a 没有数值，b 有数值，a 排在后面
+    } else if (hasValueA && !hasValueB) {
+      return -1; // a 有数值，b 没有数值，a 排在前面
+    } else if (!hasValueA && !hasValueB) {
+      return 0; // 两者都没有数值，保持原始顺序
+    }
+    
+    // 对有数值的行进行排序
     let valueA = 0;
     let valueB = 0;
     
@@ -312,6 +328,7 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
     if (b.increaseValues && b.increaseValues[sortField]) {
       valueB += b.increaseValues[sortField];
     }
+    
     if (sortDirection === 'desc') {
       return valueB - valueA;
     } else {
@@ -342,21 +359,6 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
       return;
     }
     
-    // 获取缓存数据
-    const adsKey = await generateCacheKey('ads');
-    const adsData = await browserStorage.get(adsKey);
-    
-    if (!adsData || !adsData.cacheData || !adsData.cacheData.ads) {
-      console.warn('排序表格行: 未找到缓存数据');
-      return;
-    }
-    
-    let ads = adsData.cacheData.ads;
-    console.log('排序前的广告id数组:', JSON.stringify(ads?.map((ad: any) => ad.id)));
-    // 获取排序后的广告id数组
-    const sortedAdIds = await sortCacheIds(modifications, ads, sortField, sortDirection as string);
-    console.log('排序后的广告id数组:', JSON.stringify(sortedAdIds));
-    
     // 获取tableBody中的span子元素
     const spanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
     console.log('找到的span元素数量:', spanElements.length);
@@ -379,6 +381,35 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
         console.log(`行 ${index} adId: ${adId}, originalIndex: ${index}, translateElement: ${translateElement}`);
       }
     });
+    
+    // 获取缓存数据
+    const adsKey = await generateCacheKey('ads');
+    const adsData = await browserStorage.get(adsKey);
+    
+    let ads: any[] = [];
+    if (adsData && adsData.cacheData && adsData.cacheData.ads) {
+      ads = adsData.cacheData.ads;
+    }
+    
+    // 确保所有span元素都有对应的广告数据
+    const allAdIds = spanInfoArray.map(info => info.adId);
+    const existingAdIds = new Set(ads.map(ad => ad.id));
+    
+    // 为没有缓存数据的span元素创建默认广告数据
+    allAdIds.forEach(adId => {
+      if (!existingAdIds.has(adId)) {
+        ads.push({
+          id: adId,
+          increaseValues: {},
+          [sortField]: '—' // 设置排序字段为'—'，表示没有数值
+        });
+      }
+    });
+    
+    console.log('排序前的广告id数组:', JSON.stringify(ads?.map((ad: any) => ad.id)));
+    // 获取排序后的广告id数组
+    const sortedAdIds = await sortCacheIds(modifications, ads, sortField, sortDirection as string);
+    console.log('排序后的广告id数组:', JSON.stringify(sortedAdIds));
     
     // 计算基准translate值，按照行索引生成
     const baseTranslateValues: string[] = [];
