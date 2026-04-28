@@ -7,7 +7,56 @@ import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey,getMerge
 import { footerMapping } from './config';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom, extractDateRange } from './dom';
 
-
+/**
+ * 计算合并后的合计增加值
+ * @param modifications 合并后的修改数据
+ * @param originalTotals 原始合计数据
+ * @returns 合并后的合计数据（包含增加值）
+ */
+export function calculateMergedTotals(modifications: any[], originalTotals: any): any {
+  if (!modifications || modifications.length === 0) {
+    return originalTotals || {};
+  }
+  
+  // 需要累加的字段列表
+  const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases', 'results'];
+  
+  // 计算所有修改项的增加值总和
+  const totalIncreases: Record<string, number> = {};
+  
+  for (const modification of modifications) {
+    if (!modification || !modification.modifiedFields) continue;
+    
+    for (const [field, value] of Object.entries(modification.modifiedFields)) {
+      if (numericFields.includes(field)) {
+        const numValue = parseFloat(String(value)) || 0;
+        totalIncreases[field] = (totalIncreases[field] || 0) + numValue;
+      } else if (field.startsWith('increase_')) {
+        const baseField = field.replace('increase_', '');
+        if (numericFields.includes(baseField)) {
+          const numValue = parseFloat(String(value)) || 0;
+          totalIncreases[baseField] = (totalIncreases[baseField] || 0) + numValue;
+        }
+      }
+    }
+  }
+  
+  // 创建合并后的合计数据
+  const mergedTotals = { ...originalTotals };
+  
+  // 将计算的增加值添加到合计数据中
+  for (const [field, value] of Object.entries(totalIncreases)) {
+    mergedTotals[`increase_${field}`] = value;
+    
+    // 如果原始合计中存在该字段，计算合并后的值
+    if (originalTotals && originalTotals[field] !== undefined) {
+      const originalValue = parseFloat(String(originalTotals[field]).replace(/[^\d.-]/g, '')) || 0;
+      mergedTotals[field] = Number((originalValue + value).toFixed(2));
+    }
+  }
+  
+  return mergedTotals;
+}
 
 // 更新合计行数据
 export async function updateFooterData(totals: any, currencySymbol: string): Promise<void> {
@@ -508,10 +557,11 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
       
-      const { modifications, totals } = data;
+      const { totals } = data;
 
-    const mergedModifications = await getMergedModificationsForDateRange();
-    console.log('合并后的修改项:', mergedModifications);
+      // 根据日期范围获取合并后的修改数据（已按字段求和）
+      const mergedModifications = await getMergedModificationsForDateRange();
+      console.log('合并后的修改项:', mergedModifications);
       
       // 找到表体
       const tableBody = findTableBody();
@@ -535,10 +585,14 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       const pageState = getCurrentPageState();
       const currentLevel = pageState.level || 'Campaigns';
       
-      // 按照DOM顺序处理修改数据
+      // 计算合并后的合计增加值
+      const mergedTotals = calculateMergedTotals(mergedModifications, totals);
+      console.log('合并后的合计数据:', mergedTotals);
+      
+      // 按照DOM顺序处理修改数据（使用合并后的数据）
       for (const ad of currentAds) {
-        // 找到对应广告的修改项
-        const modification = modifications.find(mod => {
+        // 找到对应广告的修改项（使用合并后的修改数据）
+        const modification = mergedModifications.find(mod => {
           if (!mod || !mod.completeData) return false;
           
           // 根据当前层级选择正确的ID进行匹配
@@ -559,7 +613,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           const id = completeData.id;
           // 保存货币符号
           currencySymbol = completeData.currencySymbol || '$';
-          // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果，
+          // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果
           const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
             if (completeData.hasOwnProperty(key)) {
               // 将字符串转换为数字，去除货币符号和逗号等分隔符
@@ -617,12 +671,13 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
           successCount++;
         }
       }
-      console.log(`更新合计行数据`,modifications, totals);
-      // 更新合计行数据
-      await updateFooterData(totals, currencySymbol);
       
-      // 对表格行进行排序
-      await sortTableRows(modifications);
+      // 更新合计行数据（使用合并后的合计值）
+      console.log('更新合计行数据:', mergedTotals);
+      await updateFooterData(mergedTotals, currencySymbol);
+      
+      // 对表格行进行排序（使用合并后的数据）
+      await sortTableRows(mergedModifications);
       
       console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
       sendResponse({ success: true, successCount, failCount });

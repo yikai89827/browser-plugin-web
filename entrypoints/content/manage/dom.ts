@@ -250,6 +250,9 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   const nameDiv = rowPair.fixed.querySelector('div');
   let name = nameDiv?.textContent?.trim() || '';
   
+  // 移除名字中包含的特殊字符和文本
+  name = name.replace(/(复制|打开|下拉菜单)/g, '').trim();
+  
   // 计算固定列长度
   fixedColumnLength = rowPair.fixed.children[0]?.children?.length - 1 || 0;
   

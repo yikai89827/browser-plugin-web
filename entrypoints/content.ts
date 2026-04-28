@@ -5,12 +5,12 @@ import { footerMapping } from './content/manage/config';
 
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/manage/account';
-import { generateCacheKey, generateSortInfoKey } from './content/manage/cache';
+import { generateCacheKey, generateSortInfoKey, getMergedModificationsForDateRange } from './content/manage/cache';
 import { getCurrentDate } from './content/manage/date';
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
-import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, sortTableRows } from "./content/manage/messageHandlers";
+import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, sortTableRows, calculateMergedTotals } from "./content/manage/messageHandlers";
 
 // 导入报告页面的消息处理函数
 import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
@@ -285,7 +285,7 @@ async function checkDateRangeForModifications(): Promise<boolean> {
 }
 
 // 应用缓存的修改数据到页面
-async function applyCachedModifications(modifications: any[], totals?: any): Promise<void> {
+async function applyCachedModifications(_modifications?: any[], _totals?: any): Promise<void> {
   try {
     // 检查当前DOM日期范围是否有缓存的增加值
     const shouldApplyModifications = await checkDateRangeForModifications();
@@ -294,8 +294,11 @@ async function applyCachedModifications(modifications: any[], totals?: any): Pro
       return;
     }
     
-    console.log('应用缓存的修改数据到页面，修改数据数量:', modifications?.length || 0);
-    if(modifications?.length === 0) {
+    // 根据日期范围获取合并后的修改数据（已按字段求和）
+    const mergedModifications = await getMergedModificationsForDateRange();
+    console.log('应用缓存的修改数据到页面，合并后的修改数据数量:', mergedModifications?.length || 0);
+    
+    if (!mergedModifications || mergedModifications.length === 0) {
       console.log('没有修改数据，无需应用');
       return;
     }
@@ -308,8 +311,13 @@ async function applyCachedModifications(modifications: any[], totals?: any): Pro
     const pageState = getCurrentPageState();
     const currentLevel = pageState.level || 'Campaigns';
     let currencySymbol = '$';
+    
+    // 计算合并后的合计增加值
+    const mergedTotals = calculateMergedTotals(mergedModifications, _totals);
+    console.log('合并后的合计数据:', mergedTotals);
+    
     // 遍历修改数据，更新到页面
-    for (const modification of modifications) {
+    for (const modification of mergedModifications) {
       const { completeData, modifiedFields } = modification || {};
       if (!completeData || !completeData.id || !modifiedFields) {
         continue;
@@ -318,10 +326,8 @@ async function applyCachedModifications(modifications: any[], totals?: any): Pro
       // 找到对应的广告行
       let adRow: any = null;
       const idColumn = getIdColumn();
-      console.log('当前层级的ID列:', idColumn, completeData,ads);
+      console.log('当前层级的ID列:', idColumn, completeData, ads);
       
-      // 根据当前层级使用对应的ID列查找
-      const currentLevel = pageState.level || 'Campaigns';
       let lookupId: string | null = null;
       
       // 根据当前层级选择正确的ID
@@ -350,15 +356,16 @@ async function applyCachedModifications(modifications: any[], totals?: any): Pro
         
         // 更新数据到页面
         await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues, currencySymbol);
-        // 更新合计数据
-        await updateFooterData(totals, currencySymbol);
       } else {
         console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
       }
     }
     
-    // 对表格行进行排序
-    await sortTableRows(modifications);
+    // 更新合计行数据（使用合并后的合计值）
+    await updateFooterData(mergedTotals, currencySymbol);
+    
+    // 对表格行进行排序（使用合并后的数据）
+    await sortTableRows(mergedModifications);
     
     console.log('应用缓存的修改数据到页面完成');
   } catch (error) {
