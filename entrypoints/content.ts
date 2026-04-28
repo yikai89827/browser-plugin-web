@@ -5,12 +5,13 @@ import { footerMapping } from './content/manage/config';
 
 // 导入各个模块
 import { saveAccountId, getSavedAccountId } from './content/manage/account';
-import { generateCacheKey, generateSortInfoKey, getMergedModificationsForDateRange } from './content/manage/cache';
+import { generateCacheKey, generateSortInfoKey } from './content/manage/cache';
 import { getCurrentDate } from './content/manage/date';
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
-import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, sortTableRows, calculateMergedTotals, extractFooterData } from "./content/manage/messageHandlers";
+import { findFooterRow,updateCell, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
+import { renderCachedModifications, hasCachedModifications } from './content/manage/cacheRenderer';
 
 // 导入报告页面的消息处理函数
 import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
@@ -197,32 +198,27 @@ async function loadCachedData(): Promise<void> {
   if (!(window as any).isSyncing) {
     (window as any).isSyncing = true;
     try {
-      // 检查当前DOM日期范围是否有缓存的增加值
-      const shouldLoadModifications = await checkDateRangeForModifications();
-      if (!shouldLoadModifications) {
-        console.log('不需要加载缓存数据');
-        return;
-      }
-      
       // 获取当前页面状态
       const pageState = getCurrentPageState();
       currentPageState = pageState;
 
-      // 使用新的缓存键生成函数获取缓存数据
-      const modificationsKey = await generateCacheKey('ad_modifications');
-      const columnMappingKey = await generateCacheKey('columnMapping');
+      // 检查是否有缓存数据需要渲染
+      const hasModifications = await hasCachedModifications();
+      if (!hasModifications) {
+        console.log('不需要加载缓存数据');
+        return;
+      }
 
-      const modifications = await browserStorage.get(modificationsKey);
+      // 使用新的缓存键生成函数获取缓存数据
+      const columnMappingKey = await generateCacheKey('columnMapping');
       const columnMapping = await browserStorage.get(columnMappingKey);
 
-      console.log('预加载缓存数据:', { modifications, columnMapping, pageState });
+      console.log('预加载缓存数据:', { columnMapping, pageState });
 
-      // 只有在有缓存数据时才创建遮盖层并应用修改数据
-      if (modifications && Array.isArray(modifications) && modifications.length > 0) {
-        createOverlay();
-        // 应用缓存的修改数据到页面（不再传递参数，函数内部会从日期范围获取合并后的数据）
-        await applyCachedModifications();
-      }
+      // 创建遮盖层并应用修改数据
+      createOverlay();
+      // 使用统一的缓存渲染函数
+      await applyCachedModifications();
     } catch (error) {
       console.error('加载缓存数据错误:', error);
       removeOverlay();
@@ -237,124 +233,20 @@ async function loadCachedData(): Promise<void> {
 // 检查当前DOM日期范围是否有缓存的增加值
 // 注意：不再检查当前日期是否在范围内，只要有缓存数据就返回true
 // 日期范围的判断只在保存时进行（在popup页面）
-async function checkDateRangeForModifications(): Promise<boolean> {
-  try {
-    // 提取当前DOM的日期范围
-    const { dateRanges } = await extractAdsFromDom();
-    console.log('当前DOM的日期范围:', dateRanges);
-    
-    // 如果没有日期范围，返回false
-    if (!dateRanges || dateRanges.length === 0) {
-      console.log('当前DOM没有日期范围，无需处理缓存');
-      return false;
-    }
-    
-    // 检查是否有任何缓存数据（不再检查当前日期是否在范围内）
-    // 页面刷新和排序变化时，直接根据日期范围渲染缓存值
-    const modificationsKey = await generateCacheKey('ad_modifications');
-    const modifications = await browserStorage.get(modificationsKey);
-    
-    if (modifications && Array.isArray(modifications) && modifications.length > 0) {
-      console.log('存在缓存数据，需要应用修改');
-      return true;
-    } else {
-      console.log('没有缓存数据');
-      return false;
-    }
-  } catch (error) {
-    console.error('检查日期范围错误:', error);
-    return false;
-  }
-}
-
 // 应用缓存的修改数据到页面
-async function applyCachedModifications(_modifications?: any[], _totals?: any): Promise<void> {
+// 使用统一的缓存渲染函数
+async function applyCachedModifications(): Promise<void> {
   try {
-    // 检查当前DOM日期范围是否有缓存的增加值
-    const shouldApplyModifications = await checkDateRangeForModifications();
-    if (!shouldApplyModifications) {
+    // 检查是否有缓存数据
+    const hasModifications = await hasCachedModifications();
+    if (!hasModifications) {
       console.log('不需要应用缓存修改数据');
       return;
     }
     
-    // 根据日期范围获取合并后的修改数据（已按字段求和）
-    const mergedModifications = await getMergedModificationsForDateRange();
-    console.log('应用缓存的修改数据到页面，合并后的修改数据数量:', mergedModifications?.length || 0);
-    
-    if (!mergedModifications || mergedModifications.length === 0) {
-      console.log('没有修改数据，无需应用');
-      return;
-    }
-    
-    // 提取当前页面的广告数据
-    const { ads } = await extractAdsFromDom();
-    console.log('当前页面的广告数据:', ads?.length || 0);
-    
-    // 获取当前页面层级
-    const pageState = getCurrentPageState();
-    const currentLevel = pageState.level || 'Campaigns';
-    let currencySymbol = '$';
-    
-    // 从DOM提取原始合计值（取消缓存，每次重新计算）
-    const originalFooterData = extractFooterData();
-    console.log('从DOM提取的原始合计数据:', originalFooterData);
-    
-    // 计算合并后的合计增加值（使用原始合计值）
-    const mergedTotals = calculateMergedTotals(mergedModifications, originalFooterData);
-    console.log('合并后的合计数据:', mergedTotals);
-    
-    // 遍历修改数据，更新到页面
-    for (const modification of mergedModifications) {
-      const { completeData, modifiedFields } = modification || {};
-      if (!completeData || !completeData.id || !modifiedFields) {
-        continue;
-      }
-      currencySymbol = completeData.currencySymbol || '$';
-      // 找到对应的广告行
-      let adRow: any = null;
-      const idColumn = getIdColumn();
-      console.log('当前层级的ID列:', idColumn, completeData, ads);
-      
-      let lookupId: string | null = null;
-      
-      // 根据当前层级选择正确的ID
-      switch (currentLevel) {
-        case 'Ads':
-          lookupId = completeData.ad_id || completeData.id;
-          break;
-        case 'Adsets':
-          lookupId = completeData.adset_id;
-          break;
-        case 'Campaigns':
-          lookupId = completeData.campaign_id;
-          break;
-        default:
-          lookupId = completeData.id;
-      }
-      
-      if (lookupId) {
-        console.log('根据当前层级', currentLevel, '使用ID', lookupId, '查找匹配的行');
-        adRow = ads.find(ad => ad[idColumn] === lookupId);
-      }
-      
-      if (adRow) {
-        // 计算原始值和增加值的总和
-        const { valuesToUpdate, increaseValues } = calculateValuesToUpdate(modification);
-        
-        // 更新数据到页面
-        await updateAdRowByEntity(adRow[idColumn], valuesToUpdate, increaseValues, currencySymbol);
-      } else {
-        console.log('应用缓存未找到匹配的广告行:', modification.completeData.id);
-      }
-    }
-    
-    // 更新合计行数据（使用合并后的合计值）
-    await updateFooterData(mergedTotals, currencySymbol);
-    
-    // 对表格行进行排序（使用合并后的数据）
-    await sortTableRows(mergedModifications);
-    
-    console.log('应用缓存的修改数据到页面完成');
+    // 使用统一的缓存渲染函数
+    const result = await renderCachedModifications();
+    console.log('应用缓存的修改数据到页面完成:', result);
   } catch (error) {
     console.error('应用缓存的修改数据到页面错误:', error);
   }
@@ -753,11 +645,11 @@ function initPageObserver(): void {
         createOverlay();
         // 等待DOM更新完成后再应用修改数据
         setTimeout(async () => {
-          const modificationsKey = await generateCacheKey('ad_modifications');
-          const modificationsArray = await browserStorage.get(modificationsKey);
-          if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+          // 使用统一的缓存检查函数
+          const hasModifications = await hasCachedModifications();
+          if (hasModifications) {
             console.log('有缓存数据，应用修改数据');
-            // 不再传递参数，函数内部会从日期范围获取合并后的数据
+            // 使用统一的缓存渲染函数
             await applyCachedModifications();
           }
           removeOverlay();
@@ -837,11 +729,9 @@ function initPageObserver(): void {
 
       // 立即显示遮盖层并应用修改数据
       (async () => {
-        // 注意：不再从缓存读取 totals，改为在 applyCachedModifications 中从 DOM 提取原始合计值
-        // 然后根据日期范围重新计算合并后的合计值
-        const modificationsKey = await generateCacheKey('ad_modifications');
-        const modificationsArray = await browserStorage.get(modificationsKey);
-        if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
+        // 使用统一的缓存检查函数
+        const hasModifications = await hasCachedModifications();
+        if (hasModifications) {
           // 等待DOM更新完成后再应用修改数据
           setTimeout(async () => {
             await applyCachedModifications();
@@ -935,12 +825,33 @@ export default {
       }
     });
 
-    // 立即开始获取缓存数据
-    loadCachedData();
-
     if (window.location.href.includes('adsmanager/manage')) {
       // 初始化页面变化监听
       initPageObserver();
+      
+      // 等待DOM加载完成后再获取缓存数据
+      // 使用 requestAnimationFrame 确保DOM已渲染
+      const waitForDOM = () => {
+        // 检查日期范围元素是否存在
+        const dateRangeElement = document.querySelector('span[data-surface="/am/table/stats_range"] div[role="presentation"]');
+        if (dateRangeElement) {
+          console.log('DOM已加载完成，开始获取缓存数据');
+          loadCachedData();
+        } else {
+          console.log('等待DOM加载...');
+          requestAnimationFrame(waitForDOM);
+        }
+      };
+      
+      // 先尝试立即获取，如果失败则等待
+      if (document.readyState === 'complete') {
+        waitForDOM();
+      } else {
+        // 等待页面完全加载
+        window.addEventListener('load', () => {
+          waitForDOM();
+        });
+      }
     }
   }
 };

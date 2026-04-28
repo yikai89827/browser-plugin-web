@@ -131,7 +131,9 @@ export function extractDateRange(): string[] {
     }
     console.log('找到的日期范围元素:', rangeElement);
     
-    const dateRanges: string[] = rangeElement.textContent?.trim()?.split('–') || [];
+    // 处理多种可能的分隔符：长破折号(–)、短破折号(-)、中文破折号(—)
+    const textContent = rangeElement.textContent?.trim() || '';
+    const dateRanges: string[] = textContent.split(/[–\-—]/) || [];
     
     if (dateRanges.length > 0) {
       console.log('找到日期范围:', dateRanges);

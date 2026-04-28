@@ -2,6 +2,7 @@ import { browserStorage } from '../../../utils/storage';
 import { getCurrentDate } from './date';
 import { getSavedAccountId } from './account';
 import { extractDateRange, getCurrentPageState } from './dom';
+import { getCachedModifications } from './cacheRenderer';
 
 // 生成缓存键（不包含排序信息，排序信息使用独立的key存储）
 export async function generateCacheKey(prefix: string) {
@@ -96,13 +97,23 @@ export function getDatesInRange(startDate: Date, endDate: Date): string[] {
 export async function getMergedModificationsForDateRange(): Promise<any[]> {
   try {
     const dateRanges = extractDateRange();
-    // console.log('当前DOM的日期范围:', dateRanges);
-        // 解析开始日期
+    console.log('当前DOM的日期范围:', dateRanges);
+    
+    // 检查日期范围是否有效
+    if (!dateRanges || dateRanges.length < 2) {
+      console.log('日期范围无效，尝试使用当前日期');
+      // 使用当前日期作为默认值
+      const currentDate = getCurrentDate();
+      return await getCachedModifications(currentDate);
+    }
+    
+    // 解析开始日期
     const start = parseChineseDate(dateRanges[0]);
     
     // 解析结束日期并设置为当天的23:59:59
     const end = parseChineseDate(dateRanges[1]);
     end.setHours(23, 59, 59, 999);
+    
     // 获取日期范围内的所有日期
     const datesInRange = getDatesInRange(start, end);
     console.log('日期范围内的所有日期:', datesInRange);

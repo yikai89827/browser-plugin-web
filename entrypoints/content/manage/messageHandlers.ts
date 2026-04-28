@@ -3,9 +3,10 @@
 
 import { browserStorage } from '../../../utils/storage';
 import { hierarchyManager } from './hierarchy';
-import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey,getMergedModificationsForDateRange, parseChineseDate } from './cache';
+import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey } from './cache';
 import { footerMapping } from './config';
-import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom, extractDateRange } from './dom';
+import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, findInnermostElement, extractAdsFromDom } from './dom';
+import { renderCachedModifications, hasCachedModifications, saveModificationsToCache } from './cacheRenderer';
 
 /**
  * 计算合并后的合计增加值
@@ -62,16 +63,16 @@ export function calculateMergedTotals(modifications: any[], originalTotals: any)
   // 计算合计行的单次费用字段
   // 获取合并后的已花费金额
   const totalSpend = mergedTotals.spend || (parseFloat(String(originalTotals?.spend).replace(/[^\d.-]/g, '')) || 0);
-  
   // 获取合并后的注册次数
   const totalRegistrations = mergedTotals.registrations || (parseFloat(String(originalTotals?.registrations).replace(/[^\d.-]/g, '')) || 0);
-  
   // 获取合并后的购买次数
   const totalPurchases = mergedTotals.purchases || (parseFloat(String(originalTotals?.purchases).replace(/[^\d.-]/g, '')) || 0);
-  
   // 获取合并后的成效次数
   const totalResults = mergedTotals.results || (parseFloat(String(originalTotals?.results).replace(/[^\d.-]/g, '')) || 0);
-  
+  console.log('totalSpend', totalSpend);
+  console.log('totalRegistrations', totalRegistrations);
+  console.log('totalPurchases', totalPurchases);
+  console.log('totalResults', totalResults);
   // 计算单次费用
   mergedTotals.registration_cost = totalRegistrations > 0 && totalSpend > 0 
     ? Number((totalSpend / totalRegistrations).toFixed(2)) 
@@ -171,7 +172,7 @@ export function handleGetAdsFromDom(sendResponse: (response: any) => void): bool
 }
 
 // 查找表格容器和表体
-function findTableBody(): HTMLElement | null {
+export function findTableBody(): HTMLElement | null {
   const tableContainer = findTableContainer();
   if (!tableContainer) {
     console.warn('刷新页面数据: 未找到表格容器');
@@ -250,153 +251,8 @@ export function extractFooterData(): Record<string, number> {
   return footerData;
 }
 
-// 计算单次注册费用 = 已花费金额 / 注册次数
-// 计算单次购买费用 = 已花费金额 / 购买次数
-// 计算单次成效费用 = 已花费金额 / 成效次数
-function calculatePerCost(spend: number, perCount: number): number {
-  if (perCount === 0 || spend <= 0) {
-    return 0;
-  }
-  return Number((spend / perCount).toFixed(2));
-}
-
-// 检查是否需要计算单次费用
-function needsCostCalculation(modifiedFields: Record<string, number>): boolean {
-  return modifiedFields.spend !== undefined || 
-         modifiedFields.registrations !== undefined || 
-         modifiedFields.purchases !== undefined || 
-         modifiedFields.results !== undefined;
-}
-
-// 计算单次费用字段
-function calculateCostFields(completeData: any, increaseFields: Record<string, number>): Record<string, number> {
-  const costFields: Record<string, number> = {};
-  
-  // 获取已花费金额（原始值 + 增加值）
-  const totalSpend = (parseFloat(String(completeData.spend)) || 0) + (increaseFields.spend || 0);
-  
-  // 获取注册次数（原始值 + 增加值）
-  const totalRegistrations = (parseFloat(String(completeData.registrations)) || 0) + (increaseFields.registrations || 0);
-  
-  // 获取购买次数（原始值 + 增加值）
-  const totalPurchases = (parseFloat(String(completeData.purchases)) || 0) + (increaseFields.purchases || 0);
-  
-  // 获取成效次数（原始值 + 增加值）
-  const totalResults = (parseFloat(String(completeData.results)) || 0) + (increaseFields.results || 0);
-  
-  // 计算单次费用
-  costFields.registration_cost = calculatePerCost(totalSpend, totalRegistrations);
-  costFields.purchase_cost = calculatePerCost(totalSpend, totalPurchases);
-  costFields.costPerResult = calculatePerCost(totalSpend, totalResults);
-  
-  return costFields;
-}
-
-// 应用修改数据到表格行
-async function applyModificationsToRows(
-  mergedModifications: any[], 
-  currentAds: any[], 
-  filteredRows: Array<HTMLElement>, 
-  currentLevel: string
-): Promise<{ success: boolean; successCount: number; failCount: number; currency: string }> {
-  let successCount = 0;
-  let failCount = 0;
-  let currencySymbol = '$';
-  
-  for (const ad of currentAds) {
-    // 找到对应广告的修改项（使用合并后的修改数据）
-    const modification = mergedModifications.find(mod => {
-      if (!mod || !mod.completeData) return false;
-      
-      // 根据当前层级选择正确的ID进行匹配
-      switch (currentLevel) {
-        case 'Ads':
-          return mod.completeData.ad_id === ad.ad_id || mod.completeData.id === ad.ad_id;
-        case 'Adsets':
-          return mod.completeData.adset_id === ad.adset_id || mod.completeData.id === ad.adset_id;
-        case 'Campaigns':
-          return mod.completeData.campaign_id === ad.campaign_id || mod.completeData.id === ad.campaign_id;
-        default:
-          return mod.completeData.id === ad.id;
-      }
-    });
-    
-    if (modification && modification.completeData) {
-      const { completeData, modifiedFields } = modification;
-      const id = completeData.id;
-      // 保存货币符号
-      currencySymbol = completeData.currencySymbol || '$';
-      
-      // 构建增加值字段
-      const increaseFields: Record<string, number> = {};
-      Object.keys(modifiedFields).forEach(key => {
-        increaseFields[key] = parseFloat(String(modifiedFields[key]).replace(/[^\d.-]/g, '')) || 0;
-      });
-      
-      // 计算单次费用字段（如果有相关字段的修改）
-      const costFields = needsCostCalculation(increaseFields) ? calculateCostFields(completeData, increaseFields) : {};
-      
-      // 过滤出需要保存的字段，只保存 completeData 中存在的字段，且value值是相加后的结果
-      const saveFields = Object.keys(modifiedFields).reduce((acc: Record<string, number>, key: string) => {
-        if (completeData.hasOwnProperty(key)) {
-          // 将字符串转换为数字，去除货币符号和逗号等分隔符
-          const originalValue = parseFloat(String(completeData[key]).replace(/[^\d.-]/g, '')) || 0;
-          const increaseValue = parseFloat(String(modifiedFields[key]).replace(/[^\d.-]/g, '')) || 0;
-          acc[key] = Number((Number(originalValue) + Number(increaseValue)).toFixed(2));
-        }
-        return acc;
-      }, {});
-      
-      // 添加计算的单次费用字段
-      Object.assign(saveFields, costFields);
-      
-      if (!id || !saveFields || Object.keys(saveFields).length === 0) {
-        console.warn('刷新页面数据: 修改项缺少id或saveFields');
-        failCount++;
-        continue;
-      }
-      
-      // 查找匹配的行
-      let foundRow = null;
-      let lookupId = '';
-      
-      // 根据当前层级选择正确的ID
-      switch (currentLevel) {
-        case 'Ads':
-          lookupId = ad.ad_id || id;
-          break;
-        case 'Adsets':
-          lookupId = ad.adset_id || id;
-          break;
-        case 'Campaigns':
-          lookupId = ad.campaign_id || id;
-          break;
-        default:
-          lookupId = ad.id || id;
-      }
-      
-      if (lookupId) {
-        foundRow = findRowById(filteredRows, lookupId);
-      }
-      
-      if (!foundRow) {
-        console.warn(`刷新页面数据: 未找到匹配的行: ${lookupId}`);
-        failCount++;
-        continue;
-      }
-      
-      // 更新行数据，传递货币符号和增加值字段
-      await updateRowData(foundRow.scrollable, foundRow.fixed, saveFields, increaseFields, currencySymbol);
-      console.log(`已刷新页面数据行: ${id}`, saveFields);
-      successCount++;
-    }
-  }
-  
-  return { success: true, successCount, failCount, currency: currencySymbol };
-}
-
 // 根据ID查找行
-function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; fixed: HTMLElement; scrollable: HTMLElement } | null {
+export function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; fixed: HTMLElement; scrollable: HTMLElement } | null {
   console.log(`查找ID为 ${id} 的行`);
   console.log(`  → 行数量: ${rows.length}`, rows);
   
@@ -473,7 +329,7 @@ export function updateCell(cell: Element, field: string, value: number, increase
 }
 
 // 更新行数据
-async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>, increaseFields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
+export async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement, fields: Record<string, number>, increaseFields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
   // 获取列索引
   const columnIndices = await getColumnIndices();
   
@@ -726,49 +582,11 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
 }
 
 // 消息处理函数 - 刷新页面数据
-// 检查当前DOM日期范围是否有缓存的增加值
-async function checkDateRangeForModifications(dateString: string): Promise<boolean> {
-  try {
-    // 提取当前DOM的日期范围
-    // 提取日期范围
-    const dateRanges = extractDateRange();
-    console.log('当前DOM的日期范围:', dateRanges);
-    
-    // 如果没有日期范围，返回false
-    if (!dateRanges || dateRanges.length === 0) {
-      console.log('当前DOM没有日期范围，无需处理缓存');
-      return false;
-    }
-    // 检查当前日期是否在DOM的日期范围内
-    const targetDate = new Date(dateString);
-    console.log('检查日期:', targetDate, dateRanges);
-    // 检查目标日期是否在范围内（包括开始和结束日期）
-    
-    // 解析开始日期
-    const startDate = parseChineseDate(dateRanges[0]).getTime();
-    
-    // 解析结束日期并设置为当天的23:59:59
-    const endDate = parseChineseDate(dateRanges[1]);
-    endDate.setHours(23, 59, 59, 999);
-
-    const currentDate = new Date(targetDate).getTime();
-    if (startDate <= currentDate && currentDate <= endDate.getTime()) {
-      return true;
-    }
-    
-    console.log('当前日期不在DOM日期范围内，无需处理缓存');
-    return false;
-  } catch (error) {
-    console.error('检查日期范围错误:', error);
-    return false;
-  }
-}
-
 export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[]; }, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       // 检查当前DOM日期范围是否有缓存的增加值
-      const shouldRefreshPage = await checkDateRangeForModifications(data?.date || '');
+      const shouldRefreshPage = await hasCachedModifications();
       if (!shouldRefreshPage) {
         console.log('不需要刷新页面数据');
         sendResponse({ success: true, message: '不需要刷新页面数据' });
@@ -777,58 +595,9 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
 
-      // 根据日期范围获取合并后的修改数据（已按字段求和）
-      const mergedModifications = await getMergedModificationsForDateRange();
-      console.log('合并后的修改项:', mergedModifications);
-      
-      // 找到表体
-      const tableBody = findTableBody();
-      if (!tableBody) {
-        sendResponse({ success: false, error: '未找到表格结构' });
-        return;
-      }
-      
-      // 过滤有效的行
-      const filteredRows = getFilteredRows(tableBody);
-      
-      // 处理每个修改项
-      let successCount = 0;
-      let failCount = 0;
-      let currencySymbol = '$';
-      
-      // 从DOM中提取当前数据，确保按照DOM顺序处理
-      const { ads: currentAds } = await extractAdsFromDom();
-      
-      // 获取当前页面层级
-      const pageState = getCurrentPageState();
-      const currentLevel = pageState.level || 'Campaigns';
-      
-      // 从DOM提取原始合计值（取消缓存，每次重新计算）
-      const originalFooterData = extractFooterData();
-      console.log('从DOM提取的原始合计数据:', originalFooterData);
-      
-      // 计算合并后的合计增加值（使用原始合计值）
-      const mergedTotals = calculateMergedTotals(mergedModifications, originalFooterData);
-      console.log('合并后的合计数据:', mergedTotals);
-      
-      // 应用修改数据到表格行
-      const { success: applySuccess, successCount: appliedCount, failCount: failedCount, currency: appliedCurrency } = 
-        await applyModificationsToRows(mergedModifications, currentAds, filteredRows, currentLevel);
-      successCount += appliedCount;
-      failCount += failedCount;
-      if (appliedCurrency) {
-        currencySymbol = appliedCurrency;
-      }
-      
-      // 更新合计行数据（使用合并后的合计值）
-      console.log('更新合计行数据:', mergedTotals);
-      await updateFooterData(mergedTotals, currencySymbol);
-      
-      // 对表格行进行排序（使用合并后的数据）
-      await sortTableRows(mergedModifications);
-      
-      console.log(`刷新页面数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
-      sendResponse({ success: true, successCount, failCount });
+      // 使用统一的缓存渲染函数
+      const result = await renderCachedModifications();
+      sendResponse(result);
     } catch (error: any) {
       console.error('刷新页面数据错误:', error);
       sendResponse({ success: false, error: error.message });
@@ -914,72 +683,14 @@ export function handleSaveCachedData(data: { date: string; ads: any; columnMappi
   return true;
 }
 
-// 处理修改数据，建立层级关系
-function processModifications(modifications: any[], currentLevel: string) {
-  return modifications.map(item => {
-    if (item && item.completeData) {
-      const completeData = item.completeData;
-      
-      // 根据当前层级建立parentId关系
-      let parentId: string | undefined;
-      let itemId: string = '';
-      
-      // 根据当前层级选择正确的ID
-      switch (currentLevel) {
-        case 'Ads':
-          itemId = completeData?.ad_id || completeData?.id || '';
-          parentId = completeData?.adset_id || '';
-          break;
-        case 'Adsets':
-          itemId = completeData?.adset_id || completeData?.id || '';
-          parentId = completeData?.campaign_id || '';
-          break;
-        case 'Campaigns':
-          itemId = completeData?.campaign_id || completeData?.id || '';
-          break;
-        default:
-          itemId = completeData?.id || '';
-      }
-      
-      return { 
-        ...item, 
-        level: currentLevel,
-        parentId: parentId,
-        id: itemId,
-        campaign_id: completeData?.campaign_id || '',
-        adset_id: completeData?.adset_id || '',
-        ad_id: completeData?.ad_id || ''
-      };
-    }
-    // 如果completeData为null，跳过这个修改项
-    return null;
-  }).filter(item => item !== null);
-}
-
 // 消息处理函数 - 保存修改数据
 export function handleSaveModifications(data: { date: string; modifications: any[]; currencySymbol: string; tabType: string }, sendResponse: (response: any) => void): boolean {
   const { date, modifications, currencySymbol } = data; 
   (async () => {
     try {
-      // 获取当前页面状态和层级
-      const pageState = getCurrentPageState() || {};
-      const currentLevel = pageState.level || 'Campaigns';
-      
-      // 处理修改数据，建立层级关系
-      const modificationsWithId = processModifications(modifications, currentLevel);
-      
-      const modificationsKey = await generateCacheKeyForDate('ad_modifications', date);
-      const sortInfoKey = await generateSortInfoKey();
-      
-      // 保存修改数据
-      await Promise.all([
-        browserStorage.set(modificationsKey, modificationsWithId),
-        browserStorage.set(sortInfoKey, pageState || {})
-      ]);
-      
-      console.log('保存修改成功，当前层级:', currentLevel);
-      
-      sendResponse({ success: true, isFirstSave: true });
+      // 使用统一的缓存保存函数
+      const result = await saveModificationsToCache(date, modifications, currencySymbol);
+      sendResponse({ ...result, isFirstSave: true });
     } catch (error: any) {
       console.error('保存修改数据错误:', error);
       sendResponse({ success: false, error: error.message });
