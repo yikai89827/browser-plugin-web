@@ -50,7 +50,17 @@ export function calculateMergedTotals(modifications: any[], originalTotals: any)
     
     // 如果原始合计中存在该字段，计算合并后的值
     if (originalTotals && originalTotals[field] !== undefined) {
-      const originalValue = parseFloat(String(originalTotals[field]).replace(/[^\d.-]/g, '')) || 0;
+      // 提取原始值（去除货币符号和逗号）
+      let originalValue = parseFloat(String(originalTotals[field]).replace(/[^\d.-]/g, '')) || 0;
+      
+      // 如果 originalTotals 中已经包含了之前的增加值，需要先减去它
+      // 以获取真正的原始值，然后再加上新的合并增加值
+      if (originalTotals[`increase_${field}`] !== undefined) {
+        const previousIncrease = parseFloat(String(originalTotals[`increase_${field}`])) || 0;
+        originalValue = originalValue - previousIncrease;
+      }
+      
+      // 计算合并后的值：原始值 + 合并后的增加值
       mergedTotals[field] = Number((originalValue + value).toFixed(2));
     }
   }
