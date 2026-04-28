@@ -191,7 +191,7 @@ export async function extractAdsFromDom() {
     }
     
     for (const rowPair of rowPairs) {
-      console.log(`  → 处理行对: `,rowPair);
+      // console.log(`  → 处理行对: `,rowPair);
       const adData = extractAdDataFromRowPair(rowPair, DomColumnMapping);
       if (adData) {
         ads.push(adData);
@@ -232,7 +232,7 @@ function extractAdDataFromRowPair(rowPair: { fixed: HTMLElement; scrollable: HTM
       }
     }
     
-    console.log(`  → 提取到的广告数据: ${JSON.stringify(adData)}`);
+    // console.log(`  → 提取到的广告数据: ${JSON.stringify(adData)}`);
     return adData;
   } catch (error) {
     console.error('从行对提取广告数据错误:', error);

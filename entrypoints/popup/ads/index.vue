@@ -173,6 +173,7 @@ const fetchAds = async () => {
       });
       console.log('缓存广告数据到content成功');
       
+      console.log('从缓存中加载修改数据（增加值） 当前日期:', currentDate);
       // 从缓存中加载修改数据（增加值）
       const cachedData = await sendMessageToContent('getCachedData', { date: currentDate });
       if (cachedData && cachedData.modifications && Array.isArray(cachedData.modifications) && ads.value.length > 0) {

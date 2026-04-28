@@ -3,7 +3,7 @@
 
 import { browserStorage } from '../../../utils/storage';
 import { hierarchyManager } from './hierarchy';
-import { generateCacheKey, generateSortInfoKey } from './cache';
+import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey } from './cache';
 import { footerMapping } from './config';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom } from './dom';
 
@@ -638,7 +638,7 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
     try {
       // 获取当前 tab 的缓存数据
       const adsKey = await generateCacheKey('ads');
-      const modificationsKey = await generateCacheKey('ad_modifications');
+      const modificationsKey = await generateCacheKeyForDate('ad_modifications', date);
       
       const [adsData, modifications] = await Promise.all([
         browserStorage.get(adsKey),
@@ -752,7 +752,7 @@ function processModifications(modifications: any[], currentLevel: string) {
 
 // 消息处理函数 - 保存修改数据
 export function handleSaveModifications(data: { date: string; modifications: any[]; totals?: any; currencySymbol: string; tabType: string }, sendResponse: (response: any) => void): boolean {
-  const { modifications, totals } = data;
+  const { date, modifications, totals } = data;
   (async () => {
     try {
       // 获取当前页面状态和层级
@@ -762,7 +762,7 @@ export function handleSaveModifications(data: { date: string; modifications: any
       // 处理修改数据，建立层级关系
       const modificationsWithId = processModifications(modifications, currentLevel);
       
-      const modificationsKey = await generateCacheKey('ad_modifications');
+      const modificationsKey = await generateCacheKeyForDate('ad_modifications', date);
       const sortInfoKey = await generateSortInfoKey();
       const totalsKey = await generateCacheKey('ad_totals');
       
