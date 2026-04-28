@@ -49,16 +49,10 @@ export function calculateMergedTotals(modifications: any[], originalTotals: any)
     mergedTotals[`increase_${field}`] = value;
     
     // 如果原始合计中存在该字段，计算合并后的值
+    // 注意：originalTotals 现在是从DOM提取的原始值，不包含之前的增加值
     if (originalTotals && originalTotals[field] !== undefined) {
       // 提取原始值（去除货币符号和逗号）
-      let originalValue = parseFloat(String(originalTotals[field]).replace(/[^\d.-]/g, '')) || 0;
-      
-      // 如果 originalTotals 中已经包含了之前的增加值，需要先减去它
-      // 以获取真正的原始值，然后再加上新的合并增加值
-      if (originalTotals[`increase_${field}`] !== undefined) {
-        const previousIncrease = parseFloat(String(originalTotals[`increase_${field}`])) || 0;
-        originalValue = originalValue - previousIncrease;
-      }
+      const originalValue = parseFloat(String(originalTotals[field]).replace(/[^\d.-]/g, '')) || 0;
       
       // 计算合并后的值：原始值 + 合并后的增加值
       mergedTotals[field] = Number((originalValue + value).toFixed(2));
@@ -191,6 +185,45 @@ export function findFooterRow(): HTMLElement | null {
   return footerRow as HTMLElement;
 }
 
+// 从DOM提取原始合计值
+export function extractFooterData(): Record<string, number> {
+  const footerRow = findFooterRow();
+  if (!footerRow) {
+    console.warn('提取合计数据: 未找到合计行');
+    return {};
+  }
+  
+  const footerData: Record<string, number> = {};
+  const cells = footerRow.children?.[1]?.children[0]?.children || [];
+  
+  if (!cells || cells.length === 0) {
+    console.warn('提取合计数据: 未找到可滚动列部分');
+    return {};
+  }
+  
+  const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases', 'results'];
+  
+  for (const field of numericFields) {
+    const cellnode = Array.from(cells).find(cell => (cell as HTMLElement)?.dataset?.surface?.trim()?.includes(footerMapping[field]));
+    if (cellnode) {
+      const valueStr = cellnode.textContent?.trim() || '';
+      const displayedValue = parseFloat(valueStr.replace(/[^\d.-]/g, '')) || 0;
+      
+      // 检查单元格是否有 data-add-value 属性（存储了之前添加的增加值）
+      const addValueAttr = (cellnode as HTMLElement)?.dataset?.addValue;
+      const addValue = parseFloat(String(addValueAttr)) || 0;
+      
+      // 如果有增加值属性，需要减去增加值才能得到原始值
+      const originalValue = displayedValue - addValue;
+      
+      footerData[field] = originalValue;
+      console.log(`提取合计数据: ${field} = ${displayedValue} (显示值) - ${addValue} (增加值) = ${originalValue} (原始值)`);
+    }
+  }
+  
+  return footerData;
+}
+
 // 根据ID查找行
 function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; fixed: HTMLElement; scrollable: HTMLElement } | null {
   console.log(`查找ID为 ${id} 的行`);
@@ -319,8 +352,14 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
     }
     if (cellnode) {
       const increaseValue = increaseFields[field] || 0;
-      const currentValue = Number((Number(value) + Number(increaseValue)).toFixed(2));
+      // 注意：value 已经是原始值 + 增加值（在 calculateMergedTotals 中计算的）
+      // 不需要再加上 increaseValue，否则会加两次
+      const currentValue = Number(value.toFixed(2));
       updateCell(cellnode, field, currentValue, increaseValue, currencySymbol);  
+      
+      // 添加 data-add-value 属性，存储增加值（日期范围内所有增加值的和）
+      (cellnode as HTMLElement).dataset.addValue = String(increaseValue);
+      console.log(`更新合计行数据: ${field} = ${currentValue} (原始值+增加值), data-add-value=${increaseValue}`);
     }
   }
   console.log('已更新合计行数据');
@@ -554,7 +593,7 @@ async function checkDateRangeForModifications(dateString: string): Promise<boole
   }
 }
 
-export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[]; totals?: any }, sendResponse: (response: any) => void): boolean {
+export function handleRefreshPageWithData(data: { sortInfo: any; date: string; modifications: any[]; }, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       // 检查当前DOM日期范围是否有缓存的增加值
@@ -566,8 +605,6 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       }
       
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
-      
-      const { totals } = data;
 
       // 根据日期范围获取合并后的修改数据（已按字段求和）
       const mergedModifications = await getMergedModificationsForDateRange();
@@ -595,8 +632,12 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       const pageState = getCurrentPageState();
       const currentLevel = pageState.level || 'Campaigns';
       
-      // 计算合并后的合计增加值
-      const mergedTotals = calculateMergedTotals(mergedModifications, totals);
+      // 从DOM提取原始合计值（取消缓存，每次重新计算）
+      const originalFooterData = extractFooterData();
+      console.log('从DOM提取的原始合计数据:', originalFooterData);
+      
+      // 计算合并后的合计增加值（使用原始合计值）
+      const mergedTotals = calculateMergedTotals(mergedModifications, originalFooterData);
       console.log('合并后的合计数据:', mergedTotals);
       
       // 按照DOM顺序处理修改数据（使用合并后的数据）

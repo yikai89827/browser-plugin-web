@@ -10,7 +10,7 @@ import { getCurrentDate } from './content/manage/date';
 import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
-import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, sortTableRows, calculateMergedTotals } from "./content/manage/messageHandlers";
+import { findFooterRow,updateCell,updateFooterData, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, sortTableRows, calculateMergedTotals, extractFooterData } from "./content/manage/messageHandlers";
 
 // 导入报告页面的消息处理函数
 import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
@@ -312,8 +312,12 @@ async function applyCachedModifications(_modifications?: any[], _totals?: any): 
     const currentLevel = pageState.level || 'Campaigns';
     let currencySymbol = '$';
     
-    // 计算合并后的合计增加值
-    const mergedTotals = calculateMergedTotals(mergedModifications, _totals);
+    // 从DOM提取原始合计值（取消缓存，每次重新计算）
+    const originalFooterData = extractFooterData();
+    console.log('从DOM提取的原始合计数据:', originalFooterData);
+    
+    // 计算合并后的合计增加值（使用原始合计值）
+    const mergedTotals = calculateMergedTotals(mergedModifications, originalFooterData);
     console.log('合并后的合计数据:', mergedTotals);
     
     // 遍历修改数据，更新到页面
