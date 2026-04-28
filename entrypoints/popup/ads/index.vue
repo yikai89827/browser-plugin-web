@@ -106,7 +106,24 @@ const getCurrentDate = () => {
 // 列映射，用于存储从content script返回的列索引信息
 const columnMapping = ref<any>({});
 
-
+//初始化 增值数据
+const initIncreaseData = () => {
+  // 初始化增加的值为空
+  ads.value.forEach(ad => {
+    // 初始化增加的值为空
+    ad.increase_impressions = undefined;
+    ad.increase_reach = undefined;
+    ad.increase_spend = undefined;
+    ad.increase_clicks = undefined;
+    ad.increase_registrations = undefined;
+    ad.increase_purchases = undefined;
+    ad.increase_results = undefined;
+    // 初始化计算结果
+    ad.calculated_registration_cost = undefined;
+    ad.calculated_purchase_cost = undefined;
+    ad.calculated_costPerResult = undefined;
+  });
+};
 // 获取广告列表
 const fetchAds = async () => {
   loading.value = true;
@@ -139,22 +156,12 @@ const fetchAds = async () => {
         if (ad.costPerResult) {
           ad.costPerResult = parseFloat(String(ad.costPerResult).replace(/[^\d.-]/g, '')) || 0;
         }
-        // 初始化增加的值为空
-        ad.increase_impressions = undefined;
-        ad.increase_reach = undefined;
-        ad.increase_spend = undefined;
-        ad.increase_clicks = undefined;
-        ad.increase_registrations = undefined;
-        ad.increase_purchases = undefined;
-        ad.increase_results = undefined;
-        // 初始化计算结果
-        ad.calculated_registration_cost = undefined;
-        ad.calculated_purchase_cost = undefined;
-        ad.calculated_costPerResult = undefined;
         return ad;
       });
       
       ads.value = processedAds;
+      // 初始化增加值数据
+      initIncreaseData();
       columnMapping.value = receivedColumnMapping;
       
       // 更新货币符号
@@ -562,7 +569,7 @@ const parseChineseDate = (dateStr: string): Date => {
   }
   return new Date(dateStr);
 };
-
+// 检查日期是否在日期范围内
 const isDateInRange = (dateStr: string, dateRanges: string[]): boolean => {
   try {
     const targetDate = new Date(dateStr);
@@ -595,6 +602,12 @@ const isDateInRange = (dateStr: string, dateRanges: string[]): boolean => {
   }
 };
 
+// 处理日期选择器变化
+const handleDateChange = (date: string) => {
+  console.log('选择的日期:', date);
+  // 初始化增加值数据
+  initIncreaseData();
+};
 // 计算单次注册费用
 const calculateRegistrationCost = (ad: AdData): string => {
   // 检查是否有增加值
@@ -830,10 +843,11 @@ onUnmounted(() => {
     <div class="action-bar">
       <div class="action-bar-left">
         <div class="date-picker">
-          <input 
+          <input
             type="date" 
-            v-model="selectedDate" 
+            :value="selectedDate"
             class="date-input"
+            @input="(e) => handleDateChange((e.target as HTMLInputElement).value)"
           />
         </div>
         <button 

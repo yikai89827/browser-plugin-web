@@ -639,6 +639,7 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       // 获取当前 tab 的缓存数据
       const adsKey = await generateCacheKey('ads');
       const modificationsKey = await generateCacheKeyForDate('ad_modifications', date);
+      console.log(`从缓存中加载修改数据（增加值） 当前键值: ${modificationsKey}`);
       
       const [adsData, modifications] = await Promise.all([
         browserStorage.get(adsKey),
@@ -655,7 +656,7 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       if (ads.length > 0) {
         hierarchyManager.detectHierarchy(ads);
       }
-      
+      console.log(`当前页面的广告数据: ${ads?.length || 0}`, ads, modifications);
       sendResponse({ ads, columnMapping, level, sortInfo, currencySymbol, modifications });
     } catch (error) {
       console.error('获取缓存数据错误:', error);
