@@ -3,9 +3,11 @@
 
 import { browserStorage } from '../../../utils/storage';
 import { hierarchyManager } from './hierarchy';
-import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey } from './cache';
+import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey,getMergedModificationsForDateRange, parseChineseDate } from './cache';
 import { footerMapping } from './config';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom, extractDateRange } from './dom';
+
+
 
 // 更新合计行数据
 export async function updateFooterData(totals: any, currencySymbol: string): Promise<void> {
@@ -153,7 +155,7 @@ function findRowById(rows: Array<HTMLElement>, id: string): { row: HTMLElement; 
   
   for (const row of rows) {
     const children = row.children;
-    console.log(`  → 子元素数量: ${children.length}`, children);
+    // console.log(`  → 子元素数量: ${children.length}`, children);
     if (children.length === 1) {
       const firstChild = children[0] as HTMLElement;
       const grandchildren = firstChild.children;
@@ -373,7 +375,7 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
       // 修改正则表达式，确保能正确匹配 adId
       const adIdMatch = surface.match(/(?<=table_row:)(\d+)(?=unit)/);
       const adId = adIdMatch ? adIdMatch[1] : null;
-      console.log(`行 ${index} surface: ${surface}, adId: ${adId}`);
+      // console.log(`行 ${index} surface: ${surface}, adId: ${adId}`);
       if (adId) {
         // 找到带有translate样式的子元素（span的唯一子元素）
         let translateElement: Element | null = span.firstElementChild;
@@ -468,22 +470,6 @@ async function checkDateRangeForModifications(dateString: string): Promise<boole
       console.log('当前DOM没有日期范围，无需处理缓存');
       return false;
     }
-  
-    console.log('当前日期:', dateString);
-    
-    // 解析中文日期
-    const parseChineseDate = (dateStr: string): Date => {
-      const cleaned = dateStr.trim();
-      const match = cleaned.match(/(\d+)年(\d+)月(\d+)日/);
-      if (match) {
-        const year = parseInt(match[1], 10);
-        const month = parseInt(match[2], 10) - 1;
-        const day = parseInt(match[3], 10);
-        return new Date(year, month, day);
-      }
-      return new Date(dateStr);
-    };
-    
     // 检查当前日期是否在DOM的日期范围内
     const targetDate = new Date(dateString);
     console.log('检查日期:', targetDate, dateRanges);
@@ -497,8 +483,6 @@ async function checkDateRangeForModifications(dateString: string): Promise<boole
     endDate.setHours(23, 59, 59, 999);
 
     const currentDate = new Date(targetDate).getTime();
-    console.log('检查日期范围1:', startDate, currentDate, endDate.getTime());
-    console.log('检查日期范围2:', startDate <= currentDate && currentDate <= endDate.getTime());
     if (startDate <= currentDate && currentDate <= endDate.getTime()) {
       return true;
     }
@@ -525,6 +509,9 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
       console.log(`[${new Date().toISOString()}] 刷新页面数据:`, data);
       
       const { modifications, totals } = data;
+
+    const mergedModifications = await getMergedModificationsForDateRange();
+    console.log('合并后的修改项:', mergedModifications);
       
       // 找到表体
       const tableBody = findTableBody();
