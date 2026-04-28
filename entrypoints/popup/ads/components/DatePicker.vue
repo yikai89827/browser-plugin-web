@@ -326,7 +326,7 @@ watch(() => props.modelValue, (newVal) => {
 }
 
 .day.today {
-  background: #1890ff;
+  background: #181;
   color: #fff;
 }
 

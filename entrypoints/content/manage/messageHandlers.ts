@@ -5,7 +5,7 @@ import { browserStorage } from '../../../utils/storage';
 import { hierarchyManager } from './hierarchy';
 import { generateCacheKey, generateCacheKeyForDate, generateSortInfoKey } from './cache';
 import { footerMapping } from './config';
-import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom } from './dom';
+import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, getFilteredRows, findInnermostElement, extractAdsFromDom, extractDateRange } from './dom';
 
 // 更新合计行数据
 export async function updateFooterData(totals: any, currencySymbol: string): Promise<void> {
@@ -456,10 +456,11 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
 
 // 消息处理函数 - 刷新页面数据
 // 检查当前DOM日期范围是否有缓存的增加值
-async function checkDateRangeForModifications(): Promise<boolean> {
+async function checkDateRangeForModifications(dateString: string): Promise<boolean> {
   try {
     // 提取当前DOM的日期范围
-    const { dateRanges } = await extractAdsFromDom();
+    // 提取日期范围
+    const dateRanges = extractDateRange();
     console.log('当前DOM的日期范围:', dateRanges);
     
     // 如果没有日期范围，返回false
@@ -467,24 +468,39 @@ async function checkDateRangeForModifications(): Promise<boolean> {
       console.log('当前DOM没有日期范围，无需处理缓存');
       return false;
     }
+  
+    console.log('当前日期:', dateString);
     
-    // 获取当前日期
-    const currentDate = new Date().toISOString().split('T')[0];
-    console.log('当前日期:', currentDate);
+    // 解析中文日期
+    const parseChineseDate = (dateStr: string): Date => {
+      const cleaned = dateStr.trim();
+      const match = cleaned.match(/(\d+)年(\d+)月(\d+)日/);
+      if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1;
+        const day = parseInt(match[3], 10);
+        return new Date(year, month, day);
+      }
+      return new Date(dateStr);
+    };
     
     // 检查当前日期是否在DOM的日期范围内
-    for (const dateRange of dateRanges) {
-      const [startStr, endStr] = dateRange.split(' - ');
-      if (startStr && endStr) {
-        const startDate = new Date(startStr);
-        const endDate = new Date(endStr);
-        const targetDate = new Date(currentDate);
-        
-        // 检查目标日期是否在范围内（包括开始和结束日期）
-        if (targetDate >= startDate && targetDate <= endDate) {
-          return true;
-        }
-      }
+    const targetDate = new Date(dateString);
+    console.log('检查日期:', targetDate, dateRanges);
+    // 检查目标日期是否在范围内（包括开始和结束日期）
+    
+    // 解析开始日期
+    const startDate = parseChineseDate(dateRanges[0]).getTime();
+    
+    // 解析结束日期并设置为当天的23:59:59
+    const endDate = parseChineseDate(dateRanges[1]);
+    endDate.setHours(23, 59, 59, 999);
+
+    const currentDate = new Date(targetDate).getTime();
+    console.log('检查日期范围1:', startDate, currentDate, endDate.getTime());
+    console.log('检查日期范围2:', startDate <= currentDate && currentDate <= endDate.getTime());
+    if (startDate <= currentDate && currentDate <= endDate.getTime()) {
+      return true;
     }
     
     console.log('当前日期不在DOM日期范围内，无需处理缓存');
@@ -499,7 +515,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
   (async () => {
     try {
       // 检查当前DOM日期范围是否有缓存的增加值
-      const shouldRefreshPage = await checkDateRangeForModifications();
+      const shouldRefreshPage = await checkDateRangeForModifications(data?.date || '');
       if (!shouldRefreshPage) {
         console.log('不需要刷新页面数据');
         sendResponse({ success: true, message: '不需要刷新页面数据' });
