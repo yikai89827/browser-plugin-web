@@ -155,7 +155,7 @@ export async function extractAdsFromDom() {
     const dateRanges = extractDateRange();
     
     // 找到表格容器
-    const tableContainer = await findTableContainer();
+    const tableContainer = findTableContainer();
     if (!tableContainer) {
       console.log('extractAdsFromDom: 未找到表格容器');
       return { ads: [], DomColumnMapping: {}, sortInfo, currencySymbol, dateRanges };

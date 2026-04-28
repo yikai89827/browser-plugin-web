@@ -22,16 +22,10 @@ interface AdData {
   increase_clicks: number|undefined;
   registrations: number;
   increase_registrations: number|undefined;
-  registration_cost: number;
-  calculated_registration_cost: string|undefined;
   purchases: number;
   increase_purchases: number|undefined;
-  purchase_cost: number;
-  calculated_purchase_cost: string|undefined;
   results: number;
   increase_results: number|undefined;
-  costPerResult: number;
-  calculated_costPerResult: string|undefined;
   [key: string]: any;
 }
 
@@ -115,10 +109,6 @@ const initIncreaseData = () => {
     ad.increase_registrations = undefined;
     ad.increase_purchases = undefined;
     ad.increase_results = undefined;
-    // 初始化计算结果
-    ad.calculated_registration_cost = undefined;
-    ad.calculated_purchase_cost = undefined;
-    ad.calculated_costPerResult = undefined;
   });
 };
 // 获取广告列表
@@ -141,20 +131,7 @@ const fetchAds = async () => {
     console.log('从DOM获取日期范围成功:', dateRanges);
     
     if (domAds && domAds.length > 0) {
-      // 转换单次费用字段为数字类型
-      const processedAds = domAds.map(ad => {
-        // 处理单次费用字段
-        if (ad.registration_cost) {
-          ad.registration_cost = parseFloat(String(ad.registration_cost).replace(/[^\d.-]/g, '')) || 0;
-        }
-        if (ad.purchase_cost) {
-          ad.purchase_cost = parseFloat(String(ad.purchase_cost).replace(/[^\d.-]/g, '')) || 0;
-        }
-        if (ad.costPerResult) {
-          ad.costPerResult = parseFloat(String(ad.costPerResult).replace(/[^\d.-]/g, '')) || 0;
-        }
-        return ad;
-      });
+      const processedAds = domAds;
       
       ads.value = processedAds;
       // 初始化增加值数据
@@ -216,16 +193,6 @@ const fetchAds = async () => {
             }
             if (rowData.completeData.increase_results !== undefined) {
               ad.increase_results = rowData.completeData.increase_results;
-            }
-            // 恢复计算结果
-            if (rowData.completeData.calculated_registration_cost !== undefined) {
-              ad.calculated_registration_cost = rowData.completeData.calculated_registration_cost;
-            }
-            if (rowData.completeData.calculated_purchase_cost !== undefined) {
-              ad.calculated_purchase_cost = rowData.completeData.calculated_purchase_cost;
-            }
-            if (rowData.completeData.calculated_costPerResult !== undefined) {
-              ad.calculated_costPerResult = rowData.completeData.calculated_costPerResult;
             }
           }
         });
@@ -320,11 +287,6 @@ const saveChanges = async () => {
           .replace(/\s*\-\s*\d+$/, '')
           .trim();
         
-        // 确保计算结果已更新
-        calculateRegistrationCost(ad);
-        calculatePurchaseCost(ad);
-        calculateCostPerResult(ad);
-        
         const rowData = {
           completeData: {
             id: ad.id,
@@ -342,16 +304,10 @@ const saveChanges = async () => {
             increase_clicks: ad.increase_clicks || 0,
             registrations: ad.registrations || 0,
             increase_registrations: ad.increase_registrations || 0,
-            registration_cost: ad.registration_cost || 0,
-            calculated_registration_cost: ad.calculated_registration_cost || currencySymbol + '0.00',
             purchases: ad.purchases || 0,
             increase_purchases: ad.increase_purchases || 0,
-            purchase_cost: ad.purchase_cost || 0,
-            calculated_purchase_cost: ad.calculated_purchase_cost || currencySymbol + '0.00',
             results: ad.results || 0,
             increase_results: ad.increase_results || 0,
-            costPerResult: ad.costPerResult || 0,
-            calculated_costPerResult: ad.calculated_costPerResult || currencySymbol + '0.00',
             currencySymbol: currencySymbol,
           },
           modifiedFields: modifiedFields
@@ -459,16 +415,6 @@ const checkCacheOnMount = async () => {
             if (rowData.completeData.increase_results !== undefined) {
               ad.increase_results = rowData.completeData.increase_results;
             }
-            // 恢复计算结果
-            if (rowData.completeData.calculated_registration_cost !== undefined) {
-              ad.calculated_registration_cost = rowData.completeData.calculated_registration_cost;
-            }
-            if (rowData.completeData.calculated_purchase_cost !== undefined) {
-              ad.calculated_purchase_cost = rowData.completeData.calculated_purchase_cost;
-            }
-            if (rowData.completeData.calculated_costPerResult !== undefined) {
-              ad.calculated_costPerResult = rowData.completeData.calculated_costPerResult;
-            }
           }
         });
       }
@@ -555,82 +501,6 @@ const handleDateChange = (date: string) => {
   ads.value = [];
   columnMapping.value = {};
   error.value = '';
-};
-// 计算单次注册费用
-const calculateRegistrationCost = (ad: AdData): string => {
-  // 检查是否有增加值
-  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_registrations || 0) > 0;
-  
-  if (!hasIncrease) {
-    // 如果没有增加值，显示0
-    return currencySymbol + '0.00';
-  }
-  
-  const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
-  const totalRegistrations = (ad.registrations || 0) + (ad.increase_registrations || 0);
-  
-  let costStr = currencySymbol + '0.00';
-  if (totalRegistrations !== 0) {
-    const cost = totalSpend / totalRegistrations;
-    if (!isNaN(cost)) {
-      costStr = currencySymbol + cost.toFixed(2);
-    }
-  }
-  
-  // 缓存计算结果
-  ad.calculated_registration_cost = costStr;
-  return costStr;
-};
-
-// 计算单次购买费用
-const calculatePurchaseCost = (ad: AdData): string => {
-  // 检查是否有增加值
-  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_purchases || 0) > 0;
-  
-  if (!hasIncrease) {
-    // 如果没有增加值，显示0
-    return currencySymbol + '0.00';
-  }
-  
-  const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
-  const totalPurchases = (ad.purchases || 0) + (ad.increase_purchases || 0);
-  
-  let costStr = currencySymbol + '0.00';
-  if (totalPurchases !== 0) {
-    const cost = totalSpend / totalPurchases;
-    if (!isNaN(cost)) {
-      costStr = currencySymbol + cost.toFixed(2);
-    }
-  }
-  
-  // 缓存计算结果
-  ad.calculated_purchase_cost = costStr;
-  return costStr;
-};
-
-// 计算单次成效费用
-const calculateCostPerResult = (ad: AdData): string => {
-  // 检查是否有增加值
-  const hasIncrease = (ad.increase_spend || 0) > 0 || (ad.increase_results || 0) > 0;
-  
-  if (!hasIncrease) {
-    // 如果没有增加值，显示0
-    return currencySymbol + '0.00';
-  } 
-  const totalSpend = (ad.spend || 0) + (ad.increase_spend || 0);
-  const totalResults = (ad.results || 0) + (ad.increase_results || 0);
-  
-  let costStr = currencySymbol + '0.00';
-  if (totalResults !== 0) {
-    const cost = totalSpend / totalResults;
-    if (!isNaN(cost)) {
-      costStr = currencySymbol + cost.toFixed(2);
-    }
-  }
-  
-  // 缓存计算结果
-  ad.calculated_costPerResult = costStr;
-  return costStr;
 };
 
 // 初始化
@@ -726,15 +596,9 @@ onMounted(() => {
             <th>增加</th>
             <th>注册次数</th>
             <th>增加</th>
-            <th>单次注册</th>
-            <th>增加</th>
             <th>购买次数</th>
             <th>增加</th>
-            <th>单次购买</th>
-            <th>增加</th>
             <th>成效</th>
-            <th>增加</th>
-            <th>单次成效</th>
             <th>增加</th>
           </tr>
         </thead>
@@ -799,12 +663,6 @@ onMounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="String(ad.registration_cost || '-')">  
-              {{ formatCurrency(ad.registration_cost || 0) }}
-            </td>
-            <td>
-              {{ ad.calculated_registration_cost || calculateRegistrationCost(ad) }}
-            </td>
             <td class="ellipsis-cell" :title="String(ad.purchases || '-')">  
               {{ ad.purchases || '0' }}
             </td>
@@ -815,12 +673,6 @@ onMounted(() => {
                 class="editable-input"
                 min="0"
               />
-            </td>
-            <td class="ellipsis-cell" :title="String(ad.purchase_cost || '-')">  
-              {{ formatCurrency(ad.purchase_cost || 0) }}
-            </td>
-            <td>
-              {{ ad.calculated_purchase_cost || calculatePurchaseCost(ad) }}
             </td>
             <td class="ellipsis-cell" :title="String(ad.results || '-')">  
               {{ ad.results || '0' }}
@@ -833,15 +685,9 @@ onMounted(() => {
                 min="0"
               />
             </td>
-            <td class="ellipsis-cell" :title="String(ad.costPerResult || '-')">  
-              {{ formatCurrency(ad.costPerResult || 0) }}
-            </td>
-            <td>
-              {{ ad.calculated_costPerResult || calculateCostPerResult(ad) }}
-            </td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
-            <td colspan="21" class="empty-state">
+            <td colspan="16" class="empty-state">
               暂无广告数据，请点击"获取数据"按钮加载
             </td>
           </tr>
