@@ -210,7 +210,7 @@ export async function renderCachedModifications(): Promise<RenderResult> {
     
     // 6. 从DOM提取原始合计值
     const originalFooterData = extractFooterData();
-    console.log('从DOM提取的原始合计数据:', originalFooterData);
+    // console.log('从DOM提取的原始合计数据:', originalFooterData);
     
     // 7. 计算合并后的合计增加值
     const mergedTotals = calculateMergedTotals(mergedModifications, originalFooterData);
@@ -221,7 +221,7 @@ export async function renderCachedModifications(): Promise<RenderResult> {
       await applyModificationsToRows(mergedModifications, currentAds, filteredRows, currentLevel);
     
     // 9. 更新合计行数据
-    console.log('更新合计行数据:', mergedTotals);
+    // console.log('更新合计行数据:', mergedTotals);
     await updateFooterData(mergedTotals, currencySymbol);
     
     // 10. 对表格行进行排序
@@ -300,7 +300,7 @@ export async function saveModificationsToCache(
     const modificationsKey = await generateCacheKeyForDate('ad_modifications', date);
     const sortInfoKey = await generateCacheKey('ad_sort_info');
     
-    console.log('保存修改数据 - 缓存键:', modificationsKey);
+    // console.log('保存修改数据 - 缓存键:', modificationsKey);
     
     // 保存修改数据
     await Promise.all([
@@ -311,7 +311,7 @@ export async function saveModificationsToCache(
     console.log('保存修改成功，当前层级:', currentLevel);
     
     // 保存成功后立即渲染到页面
-    console.log('保存后立即渲染缓存数据到页面');
+    // console.log('保存后立即渲染缓存数据到页面');
     const renderResult = await renderCachedModifications();
     console.log('渲染结果:', renderResult);
     
