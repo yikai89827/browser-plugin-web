@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from "vue";
 import { browser } from "wxt/browser";
+import DatePicker from "./components/DatePicker.vue";
 // import axios from "axios";
 // import { browserStorage } from "../../../utils/storage";
 
@@ -605,8 +606,11 @@ const isDateInRange = (dateStr: string, dateRanges: string[]): boolean => {
 // 处理日期选择器变化
 const handleDateChange = (date: string) => {
   console.log('选择的日期:', date);
-  // 初始化增加值数据
-  initIncreaseData();
+  // 清空表格数据和相关状态
+  ads.value = [];
+  totals.value = null;
+  columnMapping.value = {};
+  error.value = '';
 };
 // 计算单次注册费用
 const calculateRegistrationCost = (ad: AdData): string => {
@@ -843,11 +847,9 @@ onUnmounted(() => {
     <div class="action-bar">
       <div class="action-bar-left">
         <div class="date-picker">
-          <input
-            type="date" 
-            :value="selectedDate"
-            class="date-input"
-            @input="(e) => handleDateChange((e.target as HTMLInputElement).value)"
+          <DatePicker 
+            v-model="selectedDate" 
+            @change="handleDateChange"
           />
         </div>
         <button 
