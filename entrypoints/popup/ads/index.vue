@@ -371,28 +371,21 @@ const saveChanges = async () => {
     const { dateRanges } = await getAdsFromDom();
     console.log('获取DOM日期范围:', dateRanges);
     
-    // 检查选择的日期是否在DOM返回的日期范围内
-    const isDateValid = isDateInRange(currentDate, dateRanges);
-    console.log('选择的日期是否在范围内:', isDateValid);
-    
-    // 保存更新后的数组到content script
+    // 保存更新后的数组到content script（所有数据都保存，不管日期是否在范围内）
     await sendMessageToContent('saveModifications', {
       date: currentDate,
       modifications: modificationsArray,
       currencySymbol
     });
     
-    // 如果选择的日期在DOM返回的日期范围内，才渲染到原始页面
-    if (isDateValid) {
-      // 获取当前排序信息
-      const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
-      console.log('当前排序信息:', sortInfo);
-      
-      // 向content script发送消息，通知页面刷新
-      await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray});
-    } else {
-      console.log('选择的日期不在DOM返回的日期范围内，不渲染到原始页面');
-    }
+    // 总是通知页面刷新，由页面自己根据日期范围决定如何渲染数据
+    // 获取当前排序信息
+    const sortInfo = await sendMessageToContent('getSortInfo', { date: currentDate });
+    console.log('当前排序信息:', sortInfo);
+    
+    // 向content script发送消息，通知页面刷新
+    await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray});
+    console.log('已通知页面刷新，页面将根据日期范围渲染数据');
     
     // 保存完成后重新渲染页面
     // await fetchAds();
