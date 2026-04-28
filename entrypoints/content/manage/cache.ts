@@ -57,7 +57,7 @@ export async function loadCachedData() {
 }
 // 解析中文日期
 export const parseChineseDate = (dateStr: string): Date => {
-  const cleaned = dateStr.trim();
+  const cleaned = dateStr?.trim() || '';
   const match = cleaned.match(/(\d+)年(\d+)月(\d+)日/);
   if (match) {
     const year = parseInt(match[1], 10);

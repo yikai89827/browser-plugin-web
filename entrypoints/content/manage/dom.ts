@@ -100,8 +100,8 @@ function extractCurrencySymbolFromText(text: string): string {
       // 尝试从文本中提取货币符号
       // 匹配开头的非数字、非逗号字符
       const currencyMatch = text.match(/^([^\d,]+)/);
-      if (currencyMatch && currencyMatch[1].trim()) {
-        return currencyMatch[1].trim();
+      if (currencyMatch && currencyMatch[1]?.trim()) {
+        return currencyMatch[1]?.trim();
       }
       
       // 特殊处理美元符号（可能在数字前面）
@@ -253,7 +253,7 @@ export function extractRowData(rowPair: { fixed: HTMLElement; scrollable: HTMLEl
   let name = nameDiv?.textContent?.trim() || '';
   
   // 移除名字中包含的特殊字符和文本
-  name = name.replace(/(复制|打开|下拉菜单)/g, '').trim();
+  name = name.replace(/(复制|打开|下拉菜单)/g, '')?.trim() || '';
   
   // 计算固定列长度
   fixedColumnLength = rowPair.fixed.children[0]?.children?.length - 1 || 0;
@@ -340,7 +340,7 @@ function getColumnIndicesBase(isSync: boolean = false): Record<string, number> {
 
     headerCells.forEach((cell, index) => {
       // 获取单元格的文本内容，转换为小写进行匹配
-      const text = cell.textContent?.trim().toLowerCase();
+      const text = cell.textContent?.trim()?.toLowerCase() || '';
       if (text) {
         if (!isSync) {
           // console.log(`[${new Date().toISOString()}] 表头列 ${index}: ${text}`);
@@ -424,7 +424,7 @@ export function detectSortInfo() {
       // 如果找到排序属性
       if (sortingAttr) {
         // 从元素文本中提取字段名
-        const fieldName = element.textContent?.trim().toLowerCase() || '';
+        const fieldName = element.textContent?.trim()?.toLowerCase() || '';
 
         // 尝试映射字段名到标准字段名
         for (const { field, labels } of fieldMappingConfig) {
@@ -438,8 +438,8 @@ export function detectSortInfo() {
         if (!sortField) {
           sortField = fieldName
             .replace(/[^a-z0-9\s]/g, '') // 移除特殊字符
-            .trim()
-            .replace(/\s+/g, '_'); // 将空格替换为下划线
+            ?.trim()
+            ?.replace(/\s+/g, '_') || ''; // 将空格替换为下划线
         }
 
         // 设置排序方向
