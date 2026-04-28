@@ -220,8 +220,8 @@ async function loadCachedData(): Promise<void> {
       // 只有在有缓存数据时才创建遮盖层并应用修改数据
       if (modifications && Array.isArray(modifications) && modifications.length > 0) {
         createOverlay();
-        // 应用缓存的修改数据到页面
-        await applyCachedModifications(modifications);
+        // 应用缓存的修改数据到页面（不再传递参数，函数内部会从日期范围获取合并后的数据）
+        await applyCachedModifications();
       }
     } catch (error) {
       console.error('加载缓存数据错误:', error);
@@ -235,6 +235,8 @@ async function loadCachedData(): Promise<void> {
 }
 
 // 检查当前DOM日期范围是否有缓存的增加值
+// 注意：不再检查当前日期是否在范围内，只要有缓存数据就返回true
+// 日期范围的判断只在保存时进行（在popup页面）
 async function checkDateRangeForModifications(): Promise<boolean> {
   try {
     // 提取当前DOM的日期范围
@@ -247,37 +249,18 @@ async function checkDateRangeForModifications(): Promise<boolean> {
       return false;
     }
     
-    // 获取当前日期
-    const currentDate = getCurrentDate();
-    console.log('当前日期:', currentDate);
+    // 检查是否有任何缓存数据（不再检查当前日期是否在范围内）
+    // 页面刷新和排序变化时，直接根据日期范围渲染缓存值
+    const modificationsKey = await generateCacheKey('ad_modifications');
+    const modifications = await browserStorage.get(modificationsKey);
     
-    // 检查当前日期是否在DOM的日期范围内
-    for (const dateRange of dateRanges) {
-      const [startStr, endStr] = dateRange.split(' - ');
-      if (startStr && endStr) {
-        const startDate = new Date(startStr);
-        const endDate = new Date(endStr);
-        const targetDate = new Date(currentDate);
-        
-        // 检查目标日期是否在范围内（包括开始和结束日期）
-        if (targetDate >= startDate && targetDate <= endDate) {
-          // 检查是否有对应的缓存数据
-          const modificationsKey = await generateCacheKey('ad_modifications');
-          const modifications = await browserStorage.get(modificationsKey);
-          
-          if (modifications && Array.isArray(modifications) && modifications.length > 0) {
-            console.log('当前日期在DOM日期范围内，且有缓存数据');
-            return true;
-          } else {
-            console.log('当前日期在DOM日期范围内，但没有缓存数据');
-            return false;
-          }
-        }
-      }
+    if (modifications && Array.isArray(modifications) && modifications.length > 0) {
+      console.log('存在缓存数据，需要应用修改');
+      return true;
+    } else {
+      console.log('没有缓存数据');
+      return false;
     }
-    
-    console.log('当前日期不在DOM日期范围内，无需处理缓存');
-    return false;
   } catch (error) {
     console.error('检查日期范围错误:', error);
     return false;
@@ -798,14 +781,14 @@ function initPageObserver(): void {
 
       // 立即显示遮盖层并应用修改数据
       (async () => {
+        // 注意：不再从缓存读取 totals，改为在 applyCachedModifications 中从 DOM 提取原始合计值
+        // 然后根据日期范围重新计算合并后的合计值
         const modificationsKey = await generateCacheKey('ad_modifications');
-        const totalsKey = await generateCacheKey('ad_totals');
         const modificationsArray = await browserStorage.get(modificationsKey);
-        const totals = await browserStorage.get(totalsKey);
         if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
           // 等待DOM更新完成后再应用修改数据
           setTimeout(async () => {
-            await applyCachedModifications(modificationsArray, totals);
+            await applyCachedModifications();
             removeOverlay();
           }, 100);
         } else {
@@ -864,7 +847,8 @@ function initPageObserver(): void {
           const modificationsArray = await browserStorage.get(modificationsKey);
           if (modificationsArray && Array.isArray(modificationsArray) && modificationsArray.length > 0) {
             console.log('有缓存数据，应用修改数据');
-            await applyCachedModifications(modificationsArray);
+            // 不再传递参数，函数内部会从日期范围获取合并后的数据
+            await applyCachedModifications();
           }
           removeOverlay();
         }, 2000); // 等待2秒让新数据加载完成
