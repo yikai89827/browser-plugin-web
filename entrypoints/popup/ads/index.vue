@@ -90,10 +90,6 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref('');
 const selectedDate = ref(new Date().toISOString().split('T')[0]);
-// const dataProtectionEnabled = ref(true);
-const dropdownOpen = ref<Record<string, boolean>>({});
-const dropdownRefs = ref<Record<string, HTMLElement>>({});
-const totals = ref<any>(null);
 
 // 获取日期，优先使用选择的日期，无选择时使用当天日期
 const getCurrentDate = () => {
@@ -371,10 +367,6 @@ const saveChanges = async () => {
       }
     }
     
-    // 计算并保存合计数据
-    const totals = calculateTotals();
-
-    
     // 获取DOM的日期范围
     const { dateRanges } = await getAdsFromDom();
     console.log('获取DOM日期范围:', dateRanges);
@@ -387,8 +379,7 @@ const saveChanges = async () => {
     await sendMessageToContent('saveModifications', {
       date: currentDate,
       modifications: modificationsArray,
-      totals: totals,
-      currencySymbol: currencySymbol
+      currencySymbol
     });
     
     // 如果选择的日期在DOM返回的日期范围内，才渲染到原始页面
@@ -398,7 +389,7 @@ const saveChanges = async () => {
       console.log('当前排序信息:', sortInfo);
       
       // 向content script发送消息，通知页面刷新
-      await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray, totals: totals });
+      await sendMessageToContent('refreshPageWithData', { sortInfo, date: currentDate, modifications: modificationsArray});
     } else {
       console.log('选择的日期不在DOM返回的日期范围内，不渲染到原始页面');
     }
@@ -491,52 +482,13 @@ const checkCacheOnMount = async () => {
     } else {
       console.log('没有缓存数据，跳过加载');
     }
-    
-    // 加载合计数据
-    if (cachedData && cachedData.totals) {
-      console.log('从缓存中加载合计数据:', cachedData.totals);
-      // 存储合计数据到响应式变量中
-      totals.value = cachedData.totals;
-    }
   } catch (error) {
     console.error('检查缓存数据错误:', error);
   }
 };
 
-// 点击弹窗以外关闭弹窗
-const handleClickOutside = (event: MouseEvent) => {
-  // 检查点击目标是否在弹窗内或在触发按钮内
-  const target = event.target as HTMLElement;
-  let isClickInside = false;
-  
-  // 检查是否点击在弹窗内
-  Object.keys(dropdownOpen.value).forEach(adId => {
-    if (dropdownOpen.value[adId]) {
-      const dropdown = dropdownRefs.value[adId];
-      if (dropdown && dropdown.contains(target)) {
-        isClickInside = true;
-      }
-    }
-  });
-  
-  // 检查是否点击在触发按钮内
-  const eventButtons = document.querySelectorAll('.event-dropdown');
-  eventButtons.forEach(button => {
-    if (button.contains(target)) {
-      isClickInside = true;
-    }
-  });
-  
-  // 如果点击在弹窗以外，关闭所有弹窗
-  if (!isClickInside) {
-    Object.keys(dropdownOpen.value).forEach(adId => {
-      dropdownOpen.value[adId] = false;
-    });
-  }
-};
-
 // 从DOM中提取货币符号
-let currencySymbol = '¥'; // 默认货币符号
+let currencySymbol = '$'; // 默认货币符号
 
 // 从DOM获取货币符号的函数
 const getCurrencySymbol = async () => {
@@ -608,7 +560,6 @@ const handleDateChange = (date: string) => {
   console.log('选择的日期:', date);
   // 清空表格数据和相关状态
   ads.value = [];
-  totals.value = null;
   columnMapping.value = {};
   error.value = '';
 };
@@ -689,122 +640,6 @@ const calculateCostPerResult = (ad: AdData): string => {
   return costStr;
 };
 
-// 计算合计数据
-const calculateTotals = () => {
-  const calculatedTotals = {
-    impressions: 0,
-    increase_impressions: 0,
-    reach: 0,
-    increase_reach: 0,
-    spend: 0,
-    increase_spend: 0,
-    clicks: 0,
-    increase_clicks: 0,
-    registrations: 0,
-    increase_registrations: 0,
-    purchases: 0,
-    increase_purchases: 0,
-    results: 0,
-    increase_results: 0
-  };
-  
-  // 计算各字段合计
-  ads.value.forEach(ad => {
-    // 处理非数字值，将其转换为0
-    const getValue = (val: any): number => {
-      if (val === undefined || val === null || val === '-') {
-        return 0;
-      }
-      // 清理字符串，去除货币符号和逗号
-      const cleanedVal = String(val).replace(/[^\d.-]/g, '');
-      const numVal = parseFloat(cleanedVal);
-      if (isNaN(numVal)) {
-        return 0;
-      }
-      return numVal;
-    };
-    
-    calculatedTotals.impressions += getValue(ad.impressions);
-    calculatedTotals.increase_impressions += getValue(ad.increase_impressions);
-    calculatedTotals.reach += getValue(ad.reach);
-    calculatedTotals.increase_reach += getValue(ad.increase_reach);
-    calculatedTotals.spend += getValue(ad.spend);
-    calculatedTotals.increase_spend += getValue(ad.increase_spend);
-    calculatedTotals.clicks += getValue(ad.clicks);
-    calculatedTotals.increase_clicks += getValue(ad.increase_clicks);
-    calculatedTotals.registrations += getValue(ad.registrations);
-    calculatedTotals.increase_registrations += getValue(ad.increase_registrations);
-    calculatedTotals.purchases += getValue(ad.purchases);
-    calculatedTotals.increase_purchases += getValue(ad.increase_purchases);
-    calculatedTotals.results += getValue(ad.results);
-    calculatedTotals.increase_results += getValue(ad.increase_results);
-  });
-  
-  // 计算原始单次费用合计
-  let originalRegistrationCost = currencySymbol + '0.00';
-  if (calculatedTotals.registrations !== 0) {
-    originalRegistrationCost = currencySymbol + (calculatedTotals.spend / calculatedTotals.registrations).toFixed(2);
-  }
-  
-  let originalPurchaseCost = currencySymbol + '0.00';
-  if (calculatedTotals.purchases !== 0) {
-    originalPurchaseCost = currencySymbol + (calculatedTotals.spend / calculatedTotals.purchases).toFixed(2);
-  }
-  
-  let originalCostPerResult = currencySymbol + '0.00';
-  if (calculatedTotals.results !== 0) {
-    originalCostPerResult = currencySymbol + (calculatedTotals.spend / calculatedTotals.results).toFixed(2);
-  }
-  
-  // 计算单次增加值合计
-  let registrationCostIncrease = currencySymbol + '0.00';
-  let purchaseCostIncrease = currencySymbol + '0.00';
-  let costPerResultIncrease = currencySymbol + '0.00';
-  
-  // 检查是否有增加值
-  const hasIncrease = calculatedTotals.increase_spend > 0 || 
-                     calculatedTotals.increase_registrations > 0 || 
-                     calculatedTotals.increase_purchases > 0 || 
-                     calculatedTotals.increase_results > 0;
-  
-  if (hasIncrease) {
-    const totalSpendIncrease = calculatedTotals.spend + calculatedTotals.increase_spend;
-    const totalRegistrationsIncrease = calculatedTotals.registrations + calculatedTotals.increase_registrations;
-    if (totalRegistrationsIncrease !== 0) {
-      registrationCostIncrease = currencySymbol + (totalSpendIncrease / totalRegistrationsIncrease).toFixed(2);
-    }
-    
-    const totalPurchasesIncrease = calculatedTotals.purchases + calculatedTotals.increase_purchases;
-    if (totalPurchasesIncrease !== 0) {
-      purchaseCostIncrease = currencySymbol + (totalSpendIncrease / totalPurchasesIncrease).toFixed(2);
-    }
-    
-    const totalResultsIncrease = calculatedTotals.results + calculatedTotals.increase_results;
-    if (totalResultsIncrease !== 0) {
-      costPerResultIncrease = currencySymbol + (totalSpendIncrease / totalResultsIncrease).toFixed(2);
-    }
-  } else {
-    // 如果没有增加值，显示0
-    registrationCostIncrease = currencySymbol + '0.00';
-    purchaseCostIncrease = currencySymbol + '0.00';
-    costPerResultIncrease = currencySymbol + '0.00';
-  }
-  
-  const result = {
-    ...calculatedTotals,
-    originalRegistrationCost,
-    originalPurchaseCost,
-    originalCostPerResult,
-    registrationCost: registrationCostIncrease,
-    purchaseCost: purchaseCostIncrease,
-    costPerResult: costPerResultIncrease
-  };
-  
-  // 存储到响应式变量中
-  totals.value = result;
-  return result;
-};
-
 // 初始化
 onMounted(() => {
   // 获取货币符号
@@ -812,14 +647,6 @@ onMounted(() => {
   
   // 执行缓存检查
   checkCacheOnMount();
-  
-  // 挂载时添加事件监听器
-  document.addEventListener('click', handleClickOutside);
-});
-
-// 卸载时移除事件监听器
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 
@@ -1024,29 +851,6 @@ onUnmounted(() => {
             <td colspan="21" class="empty-state">
               暂无广告数据，请点击"获取数据"按钮加载
             </td>
-          </tr>
-          <tr v-if="ads.length > 0" class="total-row">
-            <td colspan="1" class="total-label">合计</td>
-            <td>{{ calculateTotals().impressions }}</td>
-            <td>{{ calculateTotals().increase_impressions }}</td>
-            <td>{{ calculateTotals().reach }}</td>
-            <td>{{ calculateTotals().increase_reach }}</td>
-            <td>{{ formatCurrency(calculateTotals().spend) }}</td>
-            <td>{{ calculateTotals().increase_spend }}</td>
-            <td>{{ calculateTotals().clicks }}</td>
-            <td>{{ calculateTotals().increase_clicks }}</td>
-            <td>{{ calculateTotals().registrations }}</td>
-            <td>{{ calculateTotals().increase_registrations }}</td>
-            <td>{{ calculateTotals().originalRegistrationCost }}</td>
-            <td>{{ calculateTotals().registrationCost }}</td>
-            <td>{{ calculateTotals().purchases }}</td>
-            <td>{{ calculateTotals().increase_purchases }}</td>
-            <td>{{ calculateTotals().originalPurchaseCost }}</td>
-            <td>{{ calculateTotals().purchaseCost }}</td>
-            <td>{{ calculateTotals().results }}</td>
-            <td>{{ calculateTotals().increase_results }}</td>
-            <td>{{ calculateTotals().originalCostPerResult }}</td>
-            <td>{{ calculateTotals().costPerResult }}</td>
           </tr>
         </tbody>
       </table>
@@ -1313,134 +1117,5 @@ input:checked + .slider:before {
 .ads-table th {
   white-space: nowrap;
   min-width: 100px;
-}
-
-/* 合计行样式 */
-.total-row {
-  background-color: #000;
-  color: #fff;
-  font-weight: bold;
-}
-
-.total-label {
-  text-align: right;
-  padding-right: 10px;
-}
-
-.total-row td {
-  border-top: 2px solid #e8e8e8;
-}
-/*  */
-/* 事件下拉菜单样式 */
-.event-dropdown-cell {
-  position: static;
-  padding: 0;
-  text-align: center;
-}
-
-.event-dropdown {
-  position: relative;
-  display: inline-block;
-}
-
-.event-dropdown-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  transition: background-color 0.2s;
-}
-
-.event-dropdown-btn:hover {
-  background-color: #f0f0f0;
-}
-
-.event-icon {
-  font-size: 16px;
-  font-weight: bold;
-  color: #666;
-  transition: transform 0.2s;
-}
-
-.event-dropdown:hover .event-icon {
-  transform: translateX(2px);
-}
-
-.event-dropdown-menu {
-  background-color: #000;
-  border: 1px solid #e8e8e8;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 250px;
-  z-index: 99999; /* 增加z-index确保悬浮于表格上面 */
-  margin-top: 4px;
-  position: fixed; /* 改为固定定位 */
-  left: 50%;
-  transform: translateX(-50%);
-  top: 200px; /* 顶部距离，使弹窗在表头以下 */
-}
-
-.event-dropdown-item {
-  padding: 8px 4px;
-  transition: background-color 0.2s;
-  color: #fff;
-  border-bottom: 1px solid #fff;
-}
-
-.event-dropdown-item:hover {
-  background-color: #c1c1c1;
-  color: #000;
-}
-
-.event-item-container {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.event-item-label {
-  font-size: 14px;
-  color: #fff;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.event-item-original {
-  font-weight: bold;
-  width: 80px;
-  text-align: right;
-}
-
-.event-item-input {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-  color: #fff;
-}
-
-.event-item-input-field {
-  width: 100px;
-  padding: 4px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  background-color: #fff;
-  color: #000;
-  text-align: left;
-}
-
-.event-item-input-field:focus {
-  outline: none;
-  border-color: #409eff;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
 }
 </style>
