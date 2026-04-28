@@ -441,59 +441,6 @@ const getCurrencySymbol = async () => {
   }
 };
 
-// 格式化货币，保留两位小数并添加货币符号
-const formatCurrency = (value: number): string => {
-  if (value === undefined || value === null || isNaN(value)) {
-    return currencySymbol + '0.00';
-  }
-  return currencySymbol + value.toFixed(2);
-};
-
-// 检查日期是否在日期范围内
-const parseChineseDate = (dateStr: string): Date => {
-  const cleaned = dateStr.trim();
-  const match = cleaned.match(/(\d+)年(\d+)月(\d+)日/);
-  if (match) {
-    const year = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10) - 1;
-    const day = parseInt(match[3], 10);
-    return new Date(year, month, day);
-  }
-  return new Date(dateStr);
-};
-// 检查日期是否在日期范围内
-const isDateInRange = (dateStr: string, dateRanges: string[]): boolean => {
-  try {
-    const targetDate = new Date(dateStr);
-    console.log('检查日期:', targetDate, dateRanges);
-    if (dateRanges.length === 0) {
-      return false;
-    } else {
-      console.log('检查日期范围:', dateRanges);
-        // 检查目标日期是否在范围内（包括开始和结束日期）
-        
-        // 解析开始日期
-        const startDate = parseChineseDate(dateRanges[0]).getTime();
-        
-        // 解析结束日期并设置为当天的23:59:59
-        const endDate = parseChineseDate(dateRanges[1]);
-        endDate.setHours(23, 59, 59, 999);
-
-        const currentDate = new Date(targetDate).getTime();
-        console.log('检查日期范围1:', startDate, currentDate, endDate.getTime());
-        console.log('检查日期范围2:', startDate <= currentDate && currentDate <= endDate.getTime());
-        if (startDate <= currentDate && currentDate <= endDate.getTime()) {
-          return true;
-        }
-    }
-    
-    return false;
-  } catch (error) {
-    console.error('检查日期范围错误:', error);
-    return false;
-  }
-};
-
 // 处理日期选择器变化
 const handleDateChange = (date: string) => {
   console.log('选择的日期:', date);
