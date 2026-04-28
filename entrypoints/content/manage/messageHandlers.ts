@@ -632,8 +632,7 @@ export function handleRefreshPageWithData(data: { sortInfo: any; date: string; m
 }
 
 // 消息处理函数 - 获取缓存数据
-export function handleGetCachedData(data: { date: string; tabType: string }, sendResponse: (response: any) => void): boolean {
-  const { date, tabType } = data;
+export function handleGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
       // 获取当前 tab 的缓存数据
@@ -648,9 +647,9 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       
       let ads = adsData?.cacheData?.ads || [];
       const columnMapping = adsData?.cacheData?.columnMapping || {};
-      const level = adsData?.cacheData?.level || tabType;
+      const level = adsData?.cacheData?.level || 'Campaigns';
       const sortInfo = adsData?.sortInfo || { field: null, direction: null };
-      const currencySymbol = adsData?.cacheData?.currencySymbol || '¥';
+      const currencySymbol = adsData?.cacheData?.currencySymbol || '$';
       
       // 检测层级关系
       if (ads.length > 0) {
@@ -660,7 +659,7 @@ export function handleGetCachedData(data: { date: string; tabType: string }, sen
       sendResponse({ ads, columnMapping, level, sortInfo, currencySymbol, modifications });
     } catch (error) {
       console.error('获取缓存数据错误:', error);
-      sendResponse({ ads: [], columnMapping: {}, level: 'Campaigns', sortInfo: { field: null, direction: null }, currencySymbol: '¥', modifications: [] });
+      sendResponse({ ads: [], columnMapping: {}, level: 'Campaigns', sortInfo: { field: null, direction: null }, currencySymbol: '$', modifications: [] });
     }
   })();
   return true;

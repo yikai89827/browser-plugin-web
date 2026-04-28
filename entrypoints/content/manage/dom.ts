@@ -110,10 +110,10 @@ function extractCurrencySymbolFromText(text: string): string {
         return '$';
       }
     }
-    return '¥'; // 默认货币符号
+    return '$'; // 默认货币符号
   } catch (error) {
     console.error('从文本提取货币符号错误:', error);
-    return '¥'; // 默认货币符号
+    return '$'; // 默认货币符号
   }
 }
 

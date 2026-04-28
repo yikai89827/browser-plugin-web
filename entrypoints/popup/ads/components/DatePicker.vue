@@ -62,6 +62,14 @@ const currentDate = ref(new Date());
 
 const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
 
+// 辅助函数：将日期格式化为 YYYY-MM-DD（使用本地时间）
+const formatDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const currentMonthYear = computed(() => {
   const year = currentDate.value.getFullYear();
   const month = currentDate.value.getMonth() + 1;
@@ -90,17 +98,17 @@ const calendarDays = computed(() => {
     const date = new Date(year, month - 1, day);
     days.push({
       day,
-      dateStr: date.toISOString().split('T')[0],
+      dateStr: formatDate(date),
       isCurrentMonth: false,
       isToday: false
     });
   }
   
   // 本月
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatDate(new Date());
   for (let i = 1; i <= lastDay.getDate(); i++) {
     const date = new Date(year, month, i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatDate(date);
     days.push({
       day: i,
       dateStr,
@@ -115,7 +123,7 @@ const calendarDays = computed(() => {
     const date = new Date(year, month + 1, i);
     days.push({
       day: i,
-      dateStr: date.toISOString().split('T')[0],
+      dateStr: formatDate(date),
       isCurrentMonth: false,
       isToday: false
     });
@@ -157,7 +165,7 @@ const selectDate = (day: { day: number; dateStr: string; isCurrentMonth: boolean
 };
 
 const selectToday = () => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatDate(new Date());
   emit('update:modelValue', today);
   emit('change', today);
   isOpen.value = false;
