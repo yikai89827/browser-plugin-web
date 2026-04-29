@@ -41,13 +41,15 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
       return updatedAd;
     });
   }
-  
+  console.log('排序前的广告数据:', ads);
+  console.log('排序字段:', sortField, sortDirection);
+  console.log('修改数据:', modifications);
   // 对广告数据进行排序
   ads.sort((a: any, b: any) => {
     const originalValueA = a[sortField];
     const originalValueB = b[sortField];
-    const hasValueA = originalValueA !== undefined && originalValueA !== null && originalValueA !== '—' && originalValueA !== '';
-    const hasValueB = originalValueB !== undefined && originalValueB !== null && originalValueB !== '—' && originalValueB !== '';
+    const hasValueA = originalValueA !== undefined && originalValueA !== null && originalValueA !== '—' && originalValueA !== ''&& originalValueA !== '$0.00';
+    const hasValueB = originalValueB !== undefined && originalValueB !== null && originalValueB !== '—' && originalValueB !== ''&& originalValueB !== '$0.00';
     console.log('排序字段值:', originalValueA, originalValueB, hasValueA, hasValueB);
     if (!hasValueA && hasValueB) {
       return 1;
@@ -85,7 +87,7 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
   return sortedAdIds;
 }
 // 排序表格行
-export async function sortTableRows(modifications: any[] = []): Promise<void> {
+export async function sortTableRows(modifications: any[] = [], ads: any[] = []): Promise<void> {
   try {
     // 获取当前页面状态和排序信息
     const pageState = getCurrentPageState();
@@ -126,13 +128,10 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
       }
     });
     
-    // 获取缓存数据
-    const ads: any[] = [];
-    
     // 确保所有span元素都有对应的广告数据
     const allAdIds = spanInfoArray.map(info => info.adId);
     const existingAdIds = new Set(ads.map(ad => ad.id));
-    
+    console.log('已存在的广告id数组:',ads, existingAdIds);
     // 为没有缓存数据的span元素创建默认广告数据
     allAdIds.forEach(adId => {
       if (!existingAdIds.has(adId)) {
@@ -401,7 +400,7 @@ export async function renderCachedModifications(): Promise<RenderResult> {
     await new Promise(resolve => requestAnimationFrame(resolve));
     
     // 11. 对表格行进行排序（基于页面上实际显示的值）
-    await sortTableRows(mergedModifications);
+    await sortTableRows(mergedModifications, currentAds);
     
     console.log(`渲染缓存数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
     return { success: true, successCount, failCount };
