@@ -122,7 +122,7 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
         let translateElement: Element | null = span.firstElementChild;
         
         spanInfoArray.push({ span, adId, translateElement, originalIndex: index });
-        console.log(`行 ${index} adId: ${adId}, originalIndex: ${index}, translateElement: ${translateElement}`);
+        // console.log(`行 ${index} adId: ${adId}, originalIndex: ${index}, translateElement: ${translateElement}`);
       }
     });
     

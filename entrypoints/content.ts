@@ -601,7 +601,7 @@ function initReportingPageObserver(): void {
 
 // 智能检测表格加载完成并应用缓存
 function waitForTableLoadAndApplyCache(): void {
-  const maxRetries = 20; // 最多重试20次
+  const maxRetries = 30; // 最多重试30次
   const retryDelay = 100; // 每次重试间隔100ms
   let retryCount = 0;
   let lastRowCount = -1;
