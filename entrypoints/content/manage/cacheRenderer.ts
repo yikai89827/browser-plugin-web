@@ -8,6 +8,7 @@ import { browserStorage } from "../../../utils/storage";
 import { generateCacheKey, generateCacheKeyForDate, getMergedModificationsForDateRange } from './cache';
 import { findTableBody, findRowById, updateRowData, updateFooterData, extractFooterData, calculateMergedTotals } from './messageHandlers';
 import { getCurrentPageState, extractAdsFromDom, getFilteredRows, getColumnIndices, findInnermostElement } from './dom';
+import { footerMapping } from './config';
 
 // 渲染结果类型
 export interface RenderResult {
@@ -16,25 +17,47 @@ export interface RenderResult {
   failCount: number;
   message?: string;
 }
+// 创建字段名反向映射（从完整字段名到简化字段名）
+function createReverseFieldMapping(): Record<string, string> {
+  const reverseMapping: Record<string, string> = {};
+  for (const [simpleName, fullName] of Object.entries(footerMapping)) {
+    reverseMapping[fullName] = simpleName;
+  }
+  return reverseMapping;
+}
+
 // 排序id逻辑 - 从DOM读取原始值 + 缓存中的增加值进行排序
 async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortField: string, sortDirection: string): Promise<string[]> {
   console.log(`排序字段: ${sortField}, 排序方向: ${sortDirection}`);
   
-  // 创建一个映射，存储每个广告的最新增加值（从modifications中提取）
-  const increaseMap: Record<string, number> = {};
+  // 创建字段名反向映射
+  const reverseFieldMapping = createReverseFieldMapping();
+  
+  // 将完整字段名转换为简化字段名
+  const simplifiedSortField = reverseFieldMapping[sortField] || sortField;
+  console.log(`简化后的排序字段: ${simplifiedSortField}`);
+  
+  // 创建一个映射，存储每个广告的所有字段的增加值（从modifications中提取）
+  const increaseMaps: Record<string, Record<string, number>> = {};
   
   // 合并所有修改数据，计算每个广告的总增加值
   if (modifications && Array.isArray(modifications) && modifications.length > 0) {
     modifications.forEach(mod => {
       const adId = String(mod?.completeData?.id || mod?.completeData?.ad_id || mod?.completeData?.adset_id || mod?.completeData?.campaign_id);
       if (adId) {
-        const increase = parseFloat(String(mod.modifiedFields?.[sortField])) || 0;
-        increaseMap[adId] = (increaseMap[adId] || 0) + increase;
+        if (!increaseMaps[adId]) {
+          increaseMaps[adId] = {};
+        }
+        // 保存所有字段的增加值，不仅仅是排序字段
+        for (const [field, value] of Object.entries(mod.modifiedFields || {})) {
+          const increase = parseFloat(String(value)) || 0;
+          increaseMaps[adId][field] = (increaseMaps[adId][field] || 0) + increase;
+        }
       }
     });
   }
   
-  console.log('增加值映射:', increaseMap);
+  console.log('增加值映射:', increaseMaps);
   
   // 获取列索引映射
   const columnMapping = await getColumnIndices();
@@ -45,9 +68,16 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
   const tableBody = findTableBody();
   
   // 构建所有广告ID到原始值的映射（从DOM中获取所有行，包括没有修改的行）
-  const originalValueMap: Record<string, number> = {};
+  // 对于单次费用列，需要同时获取spend和对应的计数值
+  const originalValueMaps: Record<string, Record<string, number>> = {};
   
-  if (tableBody && fieldIndex !== undefined) {
+  // 单次费用列需要的字段
+  const costFields = ['registration_cost', 'purchase_cost', 'costPerResult'];
+  const requiredFields = costFields.includes(simplifiedSortField) 
+    ? ['spend', simplifiedSortField === 'registration_cost' ? 'registrations' : simplifiedSortField === 'purchase_cost' ? 'purchases' : 'results']
+    : [sortField];
+  
+  if (tableBody) {
     // 使用 getFilteredRows 获取所有行
     const filteredRows = getFilteredRows(tableBody);
     
@@ -65,6 +95,12 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
     // 获取列索引
     const columnIndices = await getColumnIndices();
     const idColumnIndex = columnIndices[idColumn];
+    
+    // 获取需要的字段的列索引
+    const requiredColumnIndices: Record<string, number | undefined> = {};
+    requiredFields.forEach(field => {
+      requiredColumnIndices[field] = columnIndices[field];
+    });
     
     filteredRows.forEach((row) => {
       const children = row.children;
@@ -91,14 +127,22 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
           }
           
           if (adId) {
-            // 获取排序字段的单元格
-            const fieldScrollableIndex = fieldIndex - fixedColumnLength;
-            if (fieldScrollableIndex >= 0 && scrollableCells[fieldScrollableIndex]) {
-              const cell = scrollableCells[fieldScrollableIndex];
-              const innermostElement = findInnermostElement(cell);
-              const textContent = innermostElement.textContent?.trim() || '';
-              const numericValue = parseFloat(textContent.replace(/[^\d.-]/g, '')) || 0;
-              originalValueMap[adId] = numericValue;
+            if (!originalValueMaps[adId]) {
+              originalValueMaps[adId] = {};
+            }
+            
+            // 获取所有需要的字段的值
+            for (const [field, colIndex] of Object.entries(requiredColumnIndices)) {
+              if (colIndex !== undefined) {
+                const fieldScrollableIndex = colIndex - fixedColumnLength;
+                if (fieldScrollableIndex >= 0 && scrollableCells[fieldScrollableIndex]) {
+                  const cell = scrollableCells[fieldScrollableIndex];
+                  const innermostElement = findInnermostElement(cell);
+                  const textContent = innermostElement.textContent?.trim() || '';
+                  const numericValue = parseFloat(textContent.replace(/[^\d.-]/g, '')) || 0;
+                  originalValueMaps[adId][field] = numericValue;
+                }
+              }
             }
           }
         }
@@ -106,25 +150,50 @@ async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortFiel
     });
   }
   
-  console.log('原始值映射:', originalValueMap);
+  console.log('原始值映射:', originalValueMaps);
   
   // 对广告数据进行排序
   ads.sort((a: any, b: any) => {
     const adIdA = String(a.id);
     const adIdB = String(b.id);
     
-    // 原始值（从DOM获取）
-    const originalValueA = originalValueMap[adIdA] || 0;
-    const originalValueB = originalValueMap[adIdB] || 0;
+    let valueA = 0;
+    let valueB = 0;
     
-    // 增加值
-    const increaseA = increaseMap[adIdA] || 0;
-    const increaseB = increaseMap[adIdB] || 0;
-    
-    // 计算总值（原始值 + 增加值）
-    const valueA = originalValueA + increaseA;
-    const valueB = originalValueB + increaseB;
-    
+    // 检查是否为单次费用列
+    if (costFields.includes(simplifiedSortField)) {
+      // 单次费用列需要重新计算
+      const spendA = (originalValueMaps[adIdA]?.spend || 0) + (increaseMaps[adIdA]?.spend || 0);
+      const spendB = (originalValueMaps[adIdB]?.spend || 0) + (increaseMaps[adIdB]?.spend || 0);
+      
+      let countA = 0;
+      let countB = 0;
+      
+      if (simplifiedSortField === 'registration_cost') {
+        countA = (originalValueMaps[adIdA]?.registrations || 0) + (increaseMaps[adIdA]?.registrations || 0);
+        countB = (originalValueMaps[adIdB]?.registrations || 0) + (increaseMaps[adIdB]?.registrations || 0);
+      } else if (simplifiedSortField === 'purchase_cost') {
+        countA = (originalValueMaps[adIdA]?.purchases || 0) + (increaseMaps[adIdA]?.purchases || 0);
+        countB = (originalValueMaps[adIdB]?.purchases || 0) + (increaseMaps[adIdB]?.purchases || 0);
+      } else if (simplifiedSortField === 'costPerResult') {
+        countA = (originalValueMaps[adIdA]?.results || 0) + (increaseMaps[adIdA]?.results || 0);
+        countB = (originalValueMaps[adIdB]?.results || 0) + (increaseMaps[adIdB]?.results || 0);
+      }
+      
+      // 计算单次费用
+      valueA = countA > 0 && spendA > 0 ? spendA / countA : 0;
+      valueB = countB > 0 && spendB > 0 ? spendB / countB : 0;
+    } else {
+      // 普通字段：原始值 + 增加值
+      const originalValueA = originalValueMaps[adIdA]?.[sortField] || 0;
+      const originalValueB = originalValueMaps[adIdB]?.[sortField] || 0;
+      const increaseA = increaseMaps[adIdA]?.[sortField] || 0;
+      const increaseB = increaseMaps[adIdB]?.[sortField] || 0;
+      
+      valueA = originalValueA + increaseA;
+      valueB = originalValueB + increaseB;
+    }
+    console.log('排序字段值:',sortField, valueA, valueB);
     // 检查是否为无数据值（0、""、"-"、"—"等）
     const isEmptyA = valueA === 0 || String(valueA) === '$0.00' || String(valueA) === '' || String(valueA) === '-' || String(valueA) === '—';
     const isEmptyB = valueB === 0 || String(valueB) === '$0.00' || String(valueB) === '' || String(valueB) === '-' || String(valueB) === '—';
