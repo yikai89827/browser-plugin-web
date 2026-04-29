@@ -7,7 +7,7 @@ import { footerMapping } from './content/manage/config';
 import { saveAccountId, getSavedAccountId } from './content/manage/account';
 import { generateCacheKey, generateSortInfoKey } from './content/manage/cache';
 import { getCurrentDate } from './content/manage/date';
-import { getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
+import { findTableContainer,getTablePresentationRows, getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
 import { findFooterRow,updateCell, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
@@ -599,6 +599,103 @@ function initReportingPageObserver(): void {
   }
 }
 
+// 智能检测表格加载完成并应用缓存
+function waitForTableLoadAndApplyCache(): void {
+  const maxRetries = 20; // 最多重试20次
+  const retryDelay = 100; // 每次重试间隔100ms
+  let retryCount = 0;
+  let lastRowCount = -1;
+  let stableCount = 0; // 连续稳定次数
+  
+  const checkTableLoad = async () => {
+    retryCount++;
+    
+    try {
+      // 1. 检查表格元素是否存在
+      const tableElement = findTableContainer();
+      if (!tableElement) {
+        console.log(`表格元素不存在，重试 ${retryCount}/${maxRetries}`);
+        if (retryCount < maxRetries) {
+          setTimeout(checkTableLoad, retryDelay);
+        } else {
+          console.log('表格元素未加载，超时退出');
+          removeOverlay();
+        }
+        return;
+      }
+      
+      // 2. 检查是否还有loading状态
+      const hasLoading = document.querySelector('.loading, .spinner, [aria-busy="true"]');
+      if (hasLoading) {
+        console.log(`仍在加载中，重试 ${retryCount}/${maxRetries}`);
+        if (retryCount < maxRetries) {
+          setTimeout(checkTableLoad, retryDelay);
+        } else {
+          console.log('加载状态未结束，超时退出');
+          removeOverlay();
+        }
+        return;
+      }
+      
+      // 3. 检查表格是否有数据行
+      const tableRows = getTablePresentationRows(tableElement)?.children || [];
+      if (tableRows.length === 0) {
+        console.log(`表格体不存在，重试 ${retryCount}/${maxRetries}`);
+        if (retryCount < maxRetries) {
+          setTimeout(checkTableLoad, retryDelay);
+        } else {
+          console.log('表格体未加载，超时退出');
+          removeOverlay();
+        }
+        return;
+      }
+      
+      // 4. 检查数据行数量是否稳定（连续3次相同表示数据加载完成）
+      const currentRowCount = tableRows.length;
+      
+      if (currentRowCount === lastRowCount) {
+        stableCount++;
+        console.log(`数据稳定次数: ${stableCount}/3, 行数: ${currentRowCount}`);
+        
+        if (stableCount >= 3) {
+          console.log('表格数据加载完成，应用缓存数据');
+          const hasModifications = await hasCachedModifications();
+          if (hasModifications) {
+            await applyCachedModifications();
+          }
+          removeOverlay();
+          return;
+        }
+      } else {
+        stableCount = 0;
+        lastRowCount = currentRowCount;
+      }
+      
+      // 5. 继续重试
+      if (retryCount < maxRetries) {
+        setTimeout(checkTableLoad, retryDelay);
+      } else {
+        console.log('达到最大重试次数，应用缓存数据');
+        const hasModifications = await hasCachedModifications();
+        if (hasModifications) {
+          await applyCachedModifications();
+        }
+        removeOverlay();
+      }
+    } catch (error) {
+      console.error('检测表格加载状态错误:', error);
+      if (retryCount < maxRetries) {
+        setTimeout(checkTableLoad, retryDelay);
+      } else {
+        removeOverlay();
+      }
+    }
+  };
+  
+  // 开始检测
+  checkTableLoad();
+}
+
 // 初始化页面变化监听
 function initPageObserver(): void {
   // 使用MutationObserver来拦截页面渲染
@@ -668,12 +765,29 @@ function initPageObserver(): void {
       const level = pageState.level;
       console.log('当前排序字段:', field, '排序方向:', direction, '上次排序信息:', lastSortInfo);
       
+      // 保存旧的level用于判断是否是tab切换
+      const oldLevel = lastSortInfo.level;
+      let isTabChange = false;
+      
       // 无论是否有排序字段，都检查是否与上次排序信息不同
       if (field !== lastSortInfo.field || direction !== lastSortInfo.direction || level !== lastSortInfo.level) {
         lastSortInfo = { field, direction, level };
         hasSortChange = true;
         console.log('检测到排序或者tab变更:', lastSortInfo);
         createOverlay();
+        
+        // 如果是tab切换（level变化），需要等待DOM加载完成
+        if (level !== oldLevel) {
+          isTabChange = true;
+          console.log('检测到tab切换，开始检测DOM加载状态');
+          // 使用智能检测机制等待表格数据加载完成
+          waitForTableLoadAndApplyCache();
+        }
+      }
+      
+      // 如果是tab切换，跳过后续的排序变化处理，避免重复操作
+      if (isTabChange) {
+        return;
       }
     } catch (error) {
       console.error('检测排序信息错误:', error);
