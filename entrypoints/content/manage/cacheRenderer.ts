@@ -6,8 +6,8 @@
 
 import { browserStorage } from "../../../utils/storage";
 import { generateCacheKey, generateCacheKeyForDate, getMergedModificationsForDateRange } from './cache';
-import { findTableBody, findRowById, updateRowData, updateFooterData, sortTableRows, extractFooterData, calculateMergedTotals } from './messageHandlers';
-import { getCurrentPageState,extractAdsFromDom, getFilteredRows } from './dom';
+import { findTableBody, findRowById, updateRowData, updateFooterData, extractFooterData, calculateMergedTotals } from './messageHandlers';
+import { getCurrentPageState,extractAdsFromDom, getFilteredRows, getColumnIndices } from './dom';
 
 // 渲染结果类型
 export interface RenderResult {
@@ -16,7 +16,186 @@ export interface RenderResult {
   failCount: number;
   message?: string;
 }
-
+// 排序id逻辑
+async function sortCacheIds(modifications: any[] = [], ads: any[] = [], sortField: string, sortDirection: string): Promise<string[]> {
+  // 应用修改数据到广告数据
+  if (modifications && Array.isArray(modifications) && modifications.length > 0) {
+    ads = ads.map((ad: any) => {
+      let updatedAd = { ...ad };
+      if (!updatedAd.increaseValues) {
+        updatedAd.increaseValues = {};
+      }
+      const modification = modifications.find(mod => {
+        return mod?.completeData?.id?.toString() === ad.id || 
+                mod?.completeData?.ad_id?.toString() === ad.id || 
+                mod?.completeData?.adset_id?.toString() === ad.id || 
+                mod?.completeData?.campaign_id?.toString() === ad.id;
+      });
+      
+      if (modification) {
+        for (const [field, value] of Object.entries(modification.modifiedFields)) {
+          updatedAd.increaseValues[field] = (updatedAd.increaseValues[field] || 0) + value;
+        }
+      }
+      
+      return updatedAd;
+    });
+  }
+  
+  // 对广告数据进行排序
+  ads.sort((a: any, b: any) => {
+    const originalValueA = a[sortField];
+    const originalValueB = b[sortField];
+    const hasValueA = originalValueA !== undefined && originalValueA !== null && originalValueA !== '—' && originalValueA !== '';
+    const hasValueB = originalValueB !== undefined && originalValueB !== null && originalValueB !== '—' && originalValueB !== '';
+    console.log('排序字段值:', originalValueA, originalValueB, hasValueA, hasValueB);
+    if (!hasValueA && hasValueB) {
+      return 1;
+    } else if (hasValueA && !hasValueB) {
+      return -1;
+    } else if (!hasValueA && !hasValueB) {
+      return 0;
+    }
+    
+    let valueA = 0;
+    let valueB = 0;
+    
+    if (a[sortField] !== undefined) {
+      valueA = parseFloat(String(a[sortField]).replace(/[^\d.-]/g, '')) || 0;
+    }
+    if (b[sortField] !== undefined) {
+      valueB = parseFloat(String(b[sortField]).replace(/[^\d.-]/g, '')) || 0;
+    }
+    
+    if (a.increaseValues && a.increaseValues[sortField]) {
+      valueA += a.increaseValues[sortField];
+    }
+    if (b.increaseValues && b.increaseValues[sortField]) {
+      valueB += b.increaseValues[sortField];
+    }
+    
+    if (sortDirection === 'desc') {
+      return valueB - valueA;
+    } else {
+      return valueA - valueB;
+    }
+  });
+  
+  const sortedAdIds = ads.map((ad: any) => ad.id);
+  return sortedAdIds;
+}
+// 排序表格行
+export async function sortTableRows(modifications: any[] = []): Promise<void> {
+  try {
+    // 获取当前页面状态和排序信息
+    const pageState = getCurrentPageState();
+    const { field, direction } = pageState;
+    
+    if (!field) {
+      console.log('没有排序字段，跳过排序');
+      return;
+    }
+    
+    // 找到表体
+    const tableBody = findTableBody();
+    if (!tableBody) {
+      console.warn('排序表格行: 未找到表体');
+      return;
+    }
+    
+    // 获取tableBody中的span子元素
+    const spanElements = Array.from(tableBody.children).filter((child: Element) => child.tagName === 'SPAN');
+    console.log('找到的span元素数量:', spanElements.length);
+    
+    // 收集所有span元素及其translate值
+    const spanInfoArray: Array<{ span: Element; adId: string; translateElement: Element | null; originalIndex: number }> = [];
+    
+    spanElements.forEach((span, index) => {
+      // 获取span的adId
+      const surface = span.getAttribute('data-surface') || '';
+      // 修改正则表达式，确保能正确匹配 adId
+      const adIdMatch = surface.match(/(?<=table_row:)(\d+)(?=unit)/);
+      const adId = adIdMatch ? adIdMatch[1] : null;
+      // console.log(`行 ${index} surface: ${surface}, adId: ${adId}`);
+      if (adId) {
+        // 找到带有translate样式的子元素（span的唯一子元素）
+        let translateElement: Element | null = span.firstElementChild;
+        
+        spanInfoArray.push({ span, adId, translateElement, originalIndex: index });
+        console.log(`行 ${index} adId: ${adId}, originalIndex: ${index}, translateElement: ${translateElement}`);
+      }
+    });
+    
+    // 获取缓存数据
+    const adsKey = await generateCacheKey('ads');
+    const adsData = await browserStorage.get(adsKey);
+    
+    let ads: any[] = [];
+    if (adsData && adsData.cacheData && adsData.cacheData.ads) {
+      ads = adsData.cacheData.ads;
+    }
+    
+    // 确保所有span元素都有对应的广告数据
+    const allAdIds = spanInfoArray.map(info => info.adId);
+    const existingAdIds = new Set(ads.map(ad => ad.id));
+    
+    // 为没有缓存数据的span元素创建默认广告数据
+    allAdIds.forEach(adId => {
+      if (!existingAdIds.has(adId)) {
+        ads.push({
+          id: adId,
+          increaseValues: {},
+          [field]: '—' // 设置排序字段为'—'，表示没有数值
+        });
+      }
+    });
+    
+    console.log('排序前的广告id数组:', JSON.stringify(ads?.map((ad: any) => ad.id)));
+    // 获取排序后的广告id数组
+    const sortedAdIds = await sortCacheIds(modifications, ads, field, direction as string);
+    console.log('排序后的广告id数组:', JSON.stringify(sortedAdIds));
+    
+    // 计算基准translate值，按照行索引生成
+    const baseTranslateValues: string[] = [];
+    spanElements.forEach((_, index) => {
+      // 每行的translate值为 0px, 46px, 92px, 138px, ...
+      const translateValue = `${index * 46}px`;
+      baseTranslateValues.push(translateValue);
+    });
+    console.log('基准translate值列表:', baseTranslateValues);
+    console.log('排序后的广告id数组:', sortedAdIds);
+    
+    // 为每个排序后的adId分配对应的translate值
+    sortedAdIds.forEach((adId, index) => {
+      if (index < baseTranslateValues.length) {
+        // 找到对应的span信息
+        const spanInfo = spanInfoArray.find(info => info.adId === adId);
+        
+        if (spanInfo && spanInfo.translateElement) {
+          const newTranslate = baseTranslateValues[index];
+          (spanInfo.translateElement as HTMLElement).style.transform = `translate(0px, ${newTranslate})`;
+          // 验证修改是否成功
+          const updatedTransform = (spanInfo.translateElement as HTMLElement).style.transform;
+          console.log(`更新广告行 ${adId} 的translate值为: ${newTranslate}, 更新后transform: ${updatedTransform}`);
+        } else {
+          console.warn(`未找到广告行 ${adId} 的translate元素`);
+        }
+      }
+    });
+    
+    // 保存translate值和行id到缓存
+    const translateCache = sortedAdIds.map((adId, index) => ({
+      adId,
+      translate: baseTranslateValues[index] || ''
+    }));
+    browserStorage.set('adTranslateValues', translateCache);
+    console.log('已保存translate值到StorageManager:', translateCache.length, '个值');
+    
+    console.log('表格行排序完成');
+  } catch (error) {
+    console.error('排序表格行错误:', error);
+  }
+}
 // 通用单次费用计算函数
 function calculatePerCost(spend: number, perCount: number): number {
   if (perCount === 0 || spend <= 0) {
@@ -224,7 +403,10 @@ export async function renderCachedModifications(): Promise<RenderResult> {
     // console.log('更新合计行数据:', mergedTotals);
     await updateFooterData(mergedTotals, currencySymbol);
     
-    // 10. 对表格行进行排序
+    // 10. 等待DOM更新完成后再进行排序
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    
+    // 11. 对表格行进行排序（基于页面上实际显示的值）
     await sortTableRows(mergedModifications);
     
     console.log(`渲染缓存数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
