@@ -10,18 +10,9 @@ export let columnIndices: Record<string, number> = {};
 
 // 找到表格容器
 export function findTableContainer(): HTMLElement | null {
-  const selectors = [
-    'div[role="table"]',
-    'div[data-surface="//int/table"]',
-    'div[class*="table"]',
-    'div[style*="table"]'
-  ];
-
-  for (const selector of selectors) {
-    const container = document.querySelector(selector);
-    if (container) {
-      return container as HTMLElement;
-    }
+  const container = document.querySelector('[role="table"]');
+  if (container) {
+    return container as HTMLElement;
   }
   
   console.log('未找到任何匹配的表格容器');

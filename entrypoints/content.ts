@@ -624,21 +624,8 @@ function waitForTableLoadAndApplyCache(): void {
         return;
       }
       
-      // 2. 检查是否还有loading状态
-      const hasLoading = document.querySelector('.loading, .spinner, [aria-busy="true"]');
-      if (hasLoading) {
-        console.log(`仍在加载中，重试 ${retryCount}/${maxRetries}`);
-        if (retryCount < maxRetries) {
-          setTimeout(checkTableLoad, retryDelay);
-        } else {
-          console.log('加载状态未结束，超时退出');
-          removeOverlay();
-        }
-        return;
-      }
-      
-      // 3. 检查表格是否有数据行
-      const tableRows = getTablePresentationRows(tableElement)?.children || [];
+      // 2 检查表格是否有数据行
+      const tableRows = getTablePresentationRows(tableElement) || [];
       if (tableRows.length === 0) {
         console.log(`表格体不存在，重试 ${retryCount}/${maxRetries}`);
         if (retryCount < maxRetries) {
@@ -650,7 +637,7 @@ function waitForTableLoadAndApplyCache(): void {
         return;
       }
       
-      // 4. 检查数据行数量是否稳定（连续3次相同表示数据加载完成）
+      // 3. 检查数据行数量是否稳定（连续3次相同表示数据加载完成）
       const currentRowCount = tableRows.length;
       
       if (currentRowCount === lastRowCount) {
@@ -660,6 +647,7 @@ function waitForTableLoadAndApplyCache(): void {
         if (stableCount >= 3) {
           console.log('表格数据加载完成，应用缓存数据');
           const hasModifications = await hasCachedModifications();
+          console.log(`是否有缓存修改: ${hasModifications}`);
           if (hasModifications) {
             await applyCachedModifications();
           }
@@ -671,12 +659,13 @@ function waitForTableLoadAndApplyCache(): void {
         lastRowCount = currentRowCount;
       }
       
-      // 5. 继续重试
+      // 4. 继续重试
       if (retryCount < maxRetries) {
         setTimeout(checkTableLoad, retryDelay);
       } else {
         console.log('达到最大重试次数，应用缓存数据');
         const hasModifications = await hasCachedModifications();
+        console.log(`是否有缓存修改: ${hasModifications}`);
         if (hasModifications) {
           await applyCachedModifications();
         }
