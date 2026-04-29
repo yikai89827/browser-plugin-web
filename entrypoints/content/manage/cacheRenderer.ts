@@ -127,13 +127,7 @@ export async function sortTableRows(modifications: any[] = []): Promise<void> {
     });
     
     // 获取缓存数据
-    const adsKey = await generateCacheKey('ads');
-    const adsData = await browserStorage.get(adsKey);
-    
-    let ads: any[] = [];
-    if (adsData && adsData.cacheData && adsData.cacheData.ads) {
-      ads = adsData.cacheData.ads;
-    }
+    const ads: any[] = [];
     
     // 确保所有span元素都有对应的广告数据
     const allAdIds = spanInfoArray.map(info => info.adId);
