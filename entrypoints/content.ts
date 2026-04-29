@@ -911,6 +911,8 @@ export default {
           return handleReportingGetDataFromDom(sendResponse);
         } else if (message.action === 'saveReportingModifications') {
           return handleReportingRefresh(message, sendResponse);
+        } else if (message.action === 'getReportingCachedData') {
+          return handleReportingGetCachedData(message, sendResponse);
         } else if (message.action === 'reporting_init') {
           return handleReportingInit(sendResponse);
         }

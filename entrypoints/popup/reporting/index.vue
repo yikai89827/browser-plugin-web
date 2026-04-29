@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from "vue";
 import { browser } from "wxt/browser";
+import DatePicker from "../components/DatePicker.vue";
 
 // 广告数据类型定义
 interface AdData {
@@ -269,6 +270,15 @@ const fetchAds = async () => {
   }
 };
 
+// 处理日期变化
+const handleDateChange = (date: string) => {
+  console.log('日期选择变化:', date);
+  // 清空表格数据
+  ads.value = [];
+  columnMapping.value = {};
+  console.log('已清空表格数据，等待重新获取');
+};
+
 /**
  * 保存修改的函数
  * @description 1. 将修改后的数据保存到本地存储
@@ -313,9 +323,10 @@ const saveChanges = async () => {
     }
   }
     
-    // 保存修改数据
+    // 保存修改数据（包含当前选择的日期）
     await sendMessageToContent('saveReportingModifications', {
-      modifications: modifications
+      modifications: modifications,
+      date: getCurrentDate()
     });
     
     // 保存完成
@@ -569,10 +580,9 @@ onUnmounted(() => {
     <div class="action-bar">
       <div class="action-bar-left">
         <div class="date-picker">
-          <input 
-            type="date" 
+          <DatePicker 
             v-model="selectedDate" 
-            class="date-input"
+            @change="handleDateChange"
           />
         </div>
         <button 

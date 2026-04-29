@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted } from "vue";
 import { browser } from "wxt/browser";
-import DatePicker from "./components/DatePicker.vue";
+import DatePicker from "../components/DatePicker.vue";
 // import axios from "axios";
 // import { browserStorage } from "../../../utils/storage";
 

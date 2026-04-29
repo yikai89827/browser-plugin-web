@@ -8,12 +8,17 @@ import { getCurrentDate } from '../manage/date';
 // 缓存键前缀
 const CACHE_PREFIX = 'reporting_data_';
 
-// 生成缓存键
 // 生成缓存键（不包含排序信息，排序信息使用独立的key存储）
 export async function generateCacheKey(prefix: string) {
   const date = getCurrentDate();
   const accountId = await getSavedAccountId();
   
+  return `${prefix}_${accountId}_${date}`;
+}
+
+// 生成指定日期的缓存键
+export async function generateCacheKeyForDate(prefix: string, date: string) {
+  const accountId = await getSavedAccountId();
   return `${prefix}_${accountId}_${date}`;
 }
 
@@ -30,14 +35,14 @@ export async function getDataFromCache(): Promise<any | null> {
 }
 
 // 保存修改的数据
-export async function saveModifiedData(modifiedData: any): Promise<void> {
-  const key = await generateCacheKey('modified');
+export async function saveModifiedData(modifiedData: any, date?: string): Promise<void> {
+  const key = date ? await generateCacheKeyForDate('modified', date) : await generateCacheKey('modified');
   await browserStorage.set(key, modifiedData);
 }
 
 // 获取修改的数据
-export async function getModifiedData(): Promise<any | null> {
-  const key = await generateCacheKey('modified');
+export async function getModifiedData(date?: string): Promise<any | null> {
+  const key = date ? await generateCacheKeyForDate('modified', date) : await generateCacheKey('modified');
   return await browserStorage.get(key);
 }
 

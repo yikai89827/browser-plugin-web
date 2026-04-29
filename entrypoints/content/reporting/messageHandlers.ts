@@ -2,7 +2,7 @@
 // 负责处理来自popup的消息
 
 import { browserStorage } from '../../../utils/storage';
-import { generateCacheKey as generateManageCacheKey } from '../reporting/cache';
+import { generateCacheKey, generateCacheKeyForDate } from '../reporting/cache';
 import { extractDataFromDom } from './dom';
 import { saveModifiedData, getModifiedData } from './cache';
 import { updateDomElements } from './domUpdater';
@@ -46,7 +46,7 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
       });
       
       // 生成缓存键
-      const dataKey = await generateManageCacheKey('reporting_data');
+      const dataKey = await generateCacheKey('reporting_data');
       
       // 保存原始数据到缓存
       const cacheData = { 
@@ -81,16 +81,17 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       console.log('刷新报告页面数据:', message);
       
       // 处理刷新逻辑
-      const { modifications } = message;
+      const { modifications, date } = message;
       console.log('修改数据:', modifications);
+      console.log('日期:', date);
       
       let successCount = 0;
       let failCount = 0;
       
-      // 保存修改数据
-      const existingModifiedData = await getModifiedData() || {};
+      // 保存修改数据（使用日期参数）
+      const existingModifiedData = await getModifiedData(date) || {};
       const updatedModifiedData = { ...existingModifiedData, ...modifications };
-      await saveModifiedData(updatedModifiedData);
+      await saveModifiedData(updatedModifiedData, date);
       console.log('保存修改后的数据:', updatedModifiedData);
       
       // 从DOM重新提取数据，确保包含所有行（包括滚动后可见的行）和ID字段
@@ -98,7 +99,7 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       console.log('重新提取的报表数据:', data);
       
       // 生成缓存键
-      const dataKey = await generateManageCacheKey('reporting_data');
+      const dataKey = await generateCacheKey('reporting_data');
       
       // 保存更新后的数据到缓存
       const cacheData = { 
@@ -126,14 +127,17 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
 }
 
 // 消息处理函数 - 获取缓存数据
-export function handleReportingGetCachedData(date: string, sendResponse: (response: any) => void): boolean {
+export function handleReportingGetCachedData(message: any, sendResponse: (response: any) => void): boolean {
   (async () => {
     try {
-      const dataKey = await generateManageCacheKey('reporting_data');
+      const { date } = message;
+      console.log('获取缓存数据，日期:', date);
+      
+      const dataKey = await generateCacheKey('reporting_data');
       const cachedData = await browserStorage.get(dataKey);
       
-      // 获取修改的数据（增加值）
-      const modifiedData = await getModifiedData() || {};
+      // 获取修改的数据（增加值，使用日期参数）
+      const modifiedData = await getModifiedData(date) || {};
       console.log('获取的修改数据（增加值）:', modifiedData);
       
       if (cachedData && cachedData.data) {
