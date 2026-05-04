@@ -511,12 +511,16 @@ export async function renderCachedModifications(): Promise<RenderResult> {
     // 8. 应用修改数据到表格行
     const { success: applySuccess, successCount, failCount, currency: currencySymbol } = 
       await applyModificationsToRows(mergedModifications, currentAds, filteredRows, currentLevel);
-    // 9. 更新合计行数据
-    await updateFooterData(mergedTotals, currencySymbol);
-    // 10. 等待DOM更新完成后再进行排序
+    
+    // 9. 等待DOM更新完成后再进行排序
     await new Promise(resolve => requestAnimationFrame(resolve));
-    // 11. 对表格行进行排序（基于页面上实际显示的值）
+    
+    // 10. 对表格行进行排序（基于页面上实际显示的值）
     await sortTableRows(mergedModifications, currentAds);
+    
+    // 11. 更新合计行数据（放在排序之后，避免排序影响）
+    await updateFooterData(mergedTotals, currencySymbol);
+    
     console.log(`渲染缓存数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
     return { success: true, successCount, failCount };
     

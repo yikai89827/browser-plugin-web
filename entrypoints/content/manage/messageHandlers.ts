@@ -8,6 +8,24 @@ import { footerMapping } from './config';
 import { getCurrentPageState, findTableContainer, getColumnIndices, getColumnIndicesSync, findInnermostElement, extractAdsFromDom } from './dom';
 import { renderCachedModifications, hasCachedModifications, saveModificationsToCache } from './cacheRenderer';
 
+// 标记是否点击了刷新按钮（data-pagelet="AdsRefreshAndPublishButtons"）
+let isRefreshButtonClicked = false;
+
+// 重置刷新按钮标记
+export function resetRefreshButtonFlag(): void {
+  isRefreshButtonClicked = false;
+}
+
+// 设置刷新按钮标记
+export function setRefreshButtonFlag(): void {
+  isRefreshButtonClicked = true;
+}
+
+// 检查是否点击了刷新按钮
+export function isRefreshButtonWasClicked(): boolean {
+  return isRefreshButtonClicked;
+}
+
 /**
  * 计算合并后的合计增加值
  * @param modifications 合并后的修改数据
@@ -228,6 +246,12 @@ export function extractFooterData(): Record<string, number> {
     return {};
   }
   
+  // 如果点击了刷新按钮，直接读取DOM值，不需要判断 data-add-value 属性
+  const isRefreshClicked = isRefreshButtonWasClicked();
+  if (isRefreshClicked) {
+    console.log('刷新按钮已点击，直接读取DOM原始值');
+  }
+  
   const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases', 'results'];
   
   for (const field of numericFields) {
@@ -236,17 +260,30 @@ export function extractFooterData(): Record<string, number> {
       const valueStr = cellnode.textContent?.trim() || '';
       const displayedValue = parseFloat(valueStr.replace(/[^\d.-]/g, '')) || 0;
       
-      // 检查单元格是否有 data-add-value 属性（存储了之前添加的增加值）
-      const addValueAttr = (cellnode as HTMLElement)?.dataset?.addValue;
-      const addValue = parseFloat(String(addValueAttr)) || 0;
+      let originalValue = displayedValue;
       
-      // 如果有增加值属性，需要减去增加值才能得到原始值
-      const originalValue = displayedValue - addValue;
+      // 如果点击了刷新按钮，直接使用显示值作为原始值
+      // 否则，按照原有逻辑判断是否有 data-add-value 属性
+      if (!isRefreshClicked) {
+        const addValueAttr = (cellnode as HTMLElement)?.dataset?.footerAddValue;
+        if (addValueAttr) {
+          const addValue = parseFloat(addValueAttr);
+          if (!isNaN(addValue) && addValue > 0) {
+            originalValue = displayedValue - addValue;
+            console.log(` 合计行 → ${field} 有增加值属性(${addValue}), 显示值(${displayedValue}) - 增加值(${addValue}) = 原始值(${originalValue})`);
+          }
+        }
+      } else {
+        console.log(` 合计行 → ${field} 刷新按钮点击，直接使用显示值(${displayedValue})作为原始值`);
+      }
       
       footerData[field] = originalValue;
-      console.log(`提取合计数据: ${field} = ${displayedValue} (显示值) - ${addValue} (增加值) = ${originalValue} (原始值)`);
+      console.log(`提取合计数据: ${field} = ${originalValue} (原始值)`);
     }
   }
+  
+  // 重置刷新按钮标记
+  resetRefreshButtonFlag();
   
   return footerData;
 }
@@ -355,6 +392,8 @@ export async function updateRowData(scrollable: HTMLElement, fixed: HTMLElement,
 
 // 更新合计行数据
 async function updateFooterRow(fields: Record<string, number>, increaseFields: Record<string, number>, currencySymbol: string = '$'): Promise<void> {
+ console.log('updateFooterRow 更新合计行数据入参:', fields, increaseFields);
+  
   // 查找合计行
   const footerRow = findFooterRow();
   if (!footerRow) {
@@ -385,8 +424,8 @@ async function updateFooterRow(fields: Record<string, number>, increaseFields: R
       updateCell(cellnode, field, currentValue, increaseValue, currencySymbol);  
       
       // 添加 data-add-value 属性，存储增加值（日期范围内所有增加值的和）
-      (cellnode as HTMLElement).dataset.addValue = String(increaseValue);
-      console.log(`更新合计行数据: ${field} = ${currentValue} (原始值+增加值), data-add-value=${increaseValue}`);
+      (cellnode as HTMLElement).dataset.footerAddValue = String(increaseValue);
+      console.log(`更新合计行数据: ${field} = ${currentValue} (原始值+增加值), data-footer-add-value=${increaseValue}`);
     }
   }
   console.log('已更新合计行数据');

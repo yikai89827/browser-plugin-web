@@ -10,7 +10,7 @@ import { getCurrentDate } from './content/manage/date';
 import { findTableContainer,getTablePresentationRows, getCurrentPageState, getColumnIndices, getColumnIndicesSync,createOverlay,removeOverlay,extractAdsFromDom,getIdColumn,getAdRowElement,findInnermostElement } from './content/manage/dom';
 import { dataExtractor } from './content/manage/dataExtractor';
 import { hierarchyManager } from './content/manage/hierarchy';
-import { findFooterRow,updateCell, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo } from "./content/manage/messageHandlers";
+import { findFooterRow,updateCell, handleGetAdsFromDom, handleRefreshPageWithData, handleGetCachedData, handleSaveCachedData, handleSaveModifications, handleGetSortInfo, setRefreshButtonFlag } from "./content/manage/messageHandlers";
 import { renderCachedModifications, hasCachedModifications } from './content/manage/cacheRenderer';
 
 // 导入报告页面的消息处理函数
@@ -859,7 +859,7 @@ function initPageObserver(): void {
       childList: true, // 监听子节点变化
       subtree: true, // 监听子树变化
       attributes: true, // 监听属性变化
-      attributeFilter: ['sorting'] // 只监听特定属性变化
+      attributeFilter: ['sorting', 'data-footer-add-value'] // 只监听特定属性变化
     });
     console.log('页面变化监听已启动');
   } else {
@@ -933,6 +933,28 @@ export default {
     if (window.location.href.includes('adsmanager/manage')) {
       // 初始化页面变化监听
       initPageObserver();
+      
+      // 设置刷新按钮点击监听
+      const setupRefreshButtonListener = () => {
+        const refreshButton = document.querySelector('[data-pagelet="AdsRefreshAndPublishButtons"]');
+        if (refreshButton) {
+          refreshButton.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            // 检查点击的元素或其祖先是否有 data-pagelet="AdsRefreshAndPublishButtons"
+            const isRefreshButton = target.closest('[data-pagelet="AdsRefreshAndPublishButtons"]');
+            if (isRefreshButton) {
+              console.log('检测到刷新按钮点击');
+              // 同步设置标记，确保在合计行更新之前设置
+              setRefreshButtonFlag();
+            }
+          });
+          console.log('刷新按钮监听已设置');
+        } else {
+          // 如果还没找到刷新按钮，继续等待
+          requestAnimationFrame(setupRefreshButtonListener);
+        }
+      };
+      setupRefreshButtonListener();
       
       // 等待DOM加载完成后再获取缓存数据
       // 使用 requestAnimationFrame 确保DOM已渲染
