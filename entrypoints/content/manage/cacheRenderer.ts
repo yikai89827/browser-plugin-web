@@ -480,58 +480,43 @@ async function applyModificationsToRows(
  */
 export async function renderCachedModifications(): Promise<RenderResult> {
   console.log(`[${new Date().toISOString()}] 开始渲染缓存修改数据`);
-  
   try {
     // 1. 获取日期范围内的合并修改数据
     console.log('开始获取日期范围内的合并修改数据');
     const mergedModifications = await getMergedModificationsForDateRange();
     console.log('合并后的修改项:', mergedModifications);
     console.log('合并后的修改项数量:', mergedModifications?.length || 0);
-    
     if (!mergedModifications || mergedModifications.length === 0) {
       console.log('没有缓存的修改数据需要渲染');
       return { success: true, successCount: 0, failCount: 0, message: '没有缓存数据' };
     }
-    
     // 2. 找到表体
     const tableBody = findTableBody();
     if (!tableBody) {
       console.error('渲染缓存数据: 未找到表格结构');
       return { success: false, successCount: 0, failCount: 0, message: '未找到表格结构' };
     }
-    
     // 3. 过滤有效的行
     const filteredRows = getFilteredRows(tableBody);
-    
     // 4. 从DOM中提取当前数据，确保按照DOM顺序处理
     const { ads: currentAds } = await extractAdsFromDom();
-    
     // 5. 获取当前页面层级
     const pageState = getCurrentPageState();
     const currentLevel = pageState.level || 'Campaigns';
-    
     // 6. 从DOM提取原始合计值
     const originalFooterData = extractFooterData();
-    // console.log('从DOM提取的原始合计数据:', originalFooterData);
-    
     // 7. 计算合并后的合计增加值
     const mergedTotals = calculateMergedTotals(mergedModifications, originalFooterData);
     console.log('合并后的合计数据:', mergedTotals);
-    
     // 8. 应用修改数据到表格行
     const { success: applySuccess, successCount, failCount, currency: currencySymbol } = 
       await applyModificationsToRows(mergedModifications, currentAds, filteredRows, currentLevel);
-    
     // 9. 更新合计行数据
-    // console.log('更新合计行数据:', mergedTotals);
     await updateFooterData(mergedTotals, currencySymbol);
-    
     // 10. 等待DOM更新完成后再进行排序
     await new Promise(resolve => requestAnimationFrame(resolve));
-    
     // 11. 对表格行进行排序（基于页面上实际显示的值）
     await sortTableRows(mergedModifications, currentAds);
-    
     console.log(`渲染缓存数据完成: 成功 ${successCount} 条, 失败 ${failCount} 条`);
     return { success: true, successCount, failCount };
     
