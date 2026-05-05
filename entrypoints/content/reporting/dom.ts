@@ -412,9 +412,24 @@ function getRowType(item: any): string {
 // 获取指定字段的数值
 function getFieldValue(item: any, field: string): number {
   const value = item[field];
-  if (value !== undefined && value !== null && !isNaN(Number(value))) {
-    return Number(value);
+  if (value === undefined || value === null) {
+    return 0;
   }
+  
+  // 处理字符串值
+  const stringValue = String(value).trim();
+  
+  // 处理空值、破折号、"—"、"--"等表示空值的情况
+  if (stringValue === '' || stringValue === '-' || stringValue === '—' || stringValue === '--' || stringValue === '---') {
+    return 0;
+  }
+  
+  // 尝试转换为数字
+  const numValue = Number(stringValue);
+  if (!isNaN(numValue)) {
+    return numValue;
+  }
+  
   return 0;
 }
 
@@ -437,27 +452,6 @@ function sortReportData(data: any[]): any[] {
   const sortField = sortConfig.field;
   const sortDirection = sortConfig.direction;
   
-  // 获取排序用的键（用于比较是否属于同一层级）
-  function getCampaignKey(item: any): string {
-    return item.campaign_id || '';
-  }
-
-  function getAdsetKey(item: any): string {
-    return item.adset_id || '';
-  }
-
-  function getAdKey(item: any): string {
-    return item.ad_id || '';
-  }
-
-  // ID比较函数：确保合计行（ID为空）排在前面
-  function compareId(a: string, b: string): number {
-    if (a === '' && b === '') return 0;
-    if (a === '') return -1;  // 空ID排在前面
-    if (b === '') return 1;
-    return a.localeCompare(b);
-  }
-
   // 排序逻辑
   return [...data].sort((a, b) => {
     // 首先按账户ID排序（确保同一账户的数据在一起）
@@ -466,27 +460,65 @@ function sortReportData(data: any[]): any[] {
       return accountCompare;
     }
 
-    // 然后按campaign_id排序（确保同一系列的数据在一起），空ID排在前面
-    const campaignCompare = compareId(getCampaignKey(a), getCampaignKey(b));
+    // 获取行类型
+    const typeA = getRowType(a);
+    const typeB = getRowType(b);
+
+    // 账户合计行（只有account_id）排在最前面
+    if (typeA === 'account' && typeB !== 'account') {
+      return -1;
+    }
+    if (typeA !== 'account' && typeB === 'account') {
+      return 1;
+    }
+
+    // 同一账户内，按campaign_id排序
+    const campaignA = a.campaign_id || '';
+    const campaignB = b.campaign_id || '';
+    
+    // 如果一个有campaign_id，一个没有，没有的（账户合计）已经在上面对处理了
+    // 这里处理同系列或系列合计的情况
+    
+    // 系列合计行（有campaign_id，没有adset_id和ad_id）排在该系列的组和广告前面
+    if (typeA === 'campaign' && typeB !== 'campaign') {
+      // 检查是否属于同一系列
+      if (b.campaign_id === a.campaign_id) {
+        return -1;
+      }
+    }
+    if (typeA !== 'campaign' && typeB === 'campaign') {
+      if (a.campaign_id === b.campaign_id) {
+        return 1;
+      }
+    }
+
+    // 按campaign_id排序
+    const campaignCompare = campaignA.localeCompare(campaignB);
     if (campaignCompare !== 0) {
       return campaignCompare;
     }
 
-    // 然后按adset_id排序（确保同一组的数据在一起），空ID排在前面
-    const adsetCompare = compareId(getAdsetKey(a), getAdsetKey(b));
+    // 组合计行（有campaign_id和adset_id，没有ad_id）排在该组的广告前面
+    if (typeA === 'adset' && typeB === 'ad') {
+      if (b.adset_id === a.adset_id) {
+        return -1;
+      }
+    }
+    if (typeA === 'ad' && typeB === 'adset') {
+      if (a.adset_id === b.adset_id) {
+        return 1;
+      }
+    }
+
+    // 按adset_id排序
+    const adsetA = a.adset_id || '';
+    const adsetB = b.adset_id || '';
+    const adsetCompare = adsetA.localeCompare(adsetB);
     if (adsetCompare !== 0) {
       return adsetCompare;
     }
 
-    // 然后按行类型优先级排序（合计行在前，广告统计行在后）
-    const typeA = getRowType(a);
-    const typeB = getRowType(b);
-    const typeCompare = rowTypePriority[typeA] - rowTypePriority[typeB];
-    if (typeCompare !== 0) {
-      return typeCompare;
-    }
-
-    // 最后按指定字段排序
+    // 最后按指定字段排序（同一组内的广告）
     const valueA = getFieldValue(a, sortField);
     const valueB = getFieldValue(b, sortField);
 
