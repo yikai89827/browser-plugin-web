@@ -376,6 +376,48 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
 }
 
 // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
+// 从URL参数获取排序配置
+function getSortConfig(): { field: string; direction: 'asc' | 'desc' } {
+  const urlParams = new URLSearchParams(window.location.search);
+  const sortSpec = urlParams.get('sort_spec');
+  
+  if (sortSpec) {
+    const [field, direction] = sortSpec.split('~');
+    return {
+      field: field || 'impressions',
+      direction: (direction === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc'
+    };
+  }
+  
+  // 默认排序：展示次数倒序
+  return { field: 'impressions', direction: 'desc' };
+}
+
+// 判断行类型
+function getRowType(item: any): string {
+  const hasAdId = item.ad_id && item.ad_id.trim() !== '';
+  const hasAdsetId = item.adset_id && item.adset_id.trim() !== '';
+  const hasCampaignId = item.campaign_id && item.campaign_id.trim() !== '';
+  
+  if (hasAdId) {
+    return 'ad';
+  } else if (hasAdsetId) {
+    return 'adset';
+  } else if (hasCampaignId) {
+    return 'campaign';
+  }
+  return 'account';
+}
+
+// 获取指定字段的数值
+function getFieldValue(item: any, field: string): number {
+  const value = item[field];
+  if (value !== undefined && value !== null && !isNaN(Number(value))) {
+    return Number(value);
+  }
+  return 0;
+}
+
 // 按层级排序数据：账户合计 → 系列合计 → 组合计 → 广告统计
 function sortReportData(data: any[]): any[] {
   if (!data || data.length === 0) {
@@ -390,40 +432,10 @@ function sortReportData(data: any[]): any[] {
     ad: 3         // 广告统计（有ad_id）
   };
   
-  // 判断行类型
-  function getRowType(item: any): string {
-    const hasAdId = item.ad_id && item.ad_id.trim() !== '';
-    const hasAdsetId = item.adset_id && item.adset_id.trim() !== '';
-    const hasCampaignId = item.campaign_id && item.campaign_id.trim() !== '';
-    
-    if (hasAdId) {
-      return 'ad';
-    } else if (hasAdsetId) {
-      return 'adset';
-    } else if (hasCampaignId) {
-      return 'campaign';
-    }
-    return 'account';
-  }
-  
-  // 获取排序键（用于保持同一账户的数据在一起）
-  function getSortKey(item: any): string {
-    const parts: string[] = [];
-    
-    // 账户ID（确保同一账户的数据在一起）
-    parts.push(item.account_id || item.accountName || '');
-    
-    // 系列ID（确保同一系列的数据在一起）
-    parts.push(item.campaign_id || item.campaignName || '');
-    
-    // 组ID（确保同一组的数据在一起）
-    parts.push(item.adset_id || item.adSetName || '');
-    
-    // 广告ID（用于广告统计行排序）
-    parts.push(item.ad_id || item.adName || '');
-    
-    return parts.join('_');
-  }
+  // 获取排序配置
+  const sortConfig = getSortConfig();
+  const sortField = sortConfig.field;
+  const sortDirection = sortConfig.direction;
   
   // 排序逻辑
   return [...data].sort((a, b) => {
@@ -431,6 +443,18 @@ function sortReportData(data: any[]): any[] {
     const accountCompare = (a.account_id || a.accountName || '').localeCompare(b.account_id || b.accountName || '');
     if (accountCompare !== 0) {
       return accountCompare;
+    }
+    
+    // 然后按系列ID排序（确保同一系列的数据在一起）
+    const campaignCompare = (a.campaign_id || a.campaignName || '').localeCompare(b.campaign_id || b.campaignName || '');
+    if (campaignCompare !== 0) {
+      return campaignCompare;
+    }
+    
+    // 然后按组ID排序（确保同一组的数据在一起）
+    const adsetCompare = (a.adset_id || a.adSetName || '').localeCompare(b.adset_id || b.adSetName || '');
+    if (adsetCompare !== 0) {
+      return adsetCompare;
     }
     
     // 然后按行类型优先级排序（合计行在前，广告统计行在后）
@@ -441,8 +465,14 @@ function sortReportData(data: any[]): any[] {
       return typeCompare;
     }
     
-    // 最后按排序键排序（保持同一层级内的顺序）
-    return getSortKey(a).localeCompare(getSortKey(b));
+    // 最后按指定字段排序
+    const valueA = getFieldValue(a, sortField);
+    const valueB = getFieldValue(b, sortField);
+    
+    if (sortDirection === 'desc') {
+      return valueB - valueA; // 倒序
+    }
+    return valueA - valueB; // 升序
   });
 }
 
