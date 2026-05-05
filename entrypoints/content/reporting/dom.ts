@@ -474,11 +474,19 @@ function sortReportData(data: any[]): any[] {
       return accountCompare;
     }
 
+    // 然后按campaign_id排序（确保同一系列的数据在一起）
+    const campaignA = a.campaign_id || '';
+    const campaignB = b.campaign_id || '';
+    const campaignCompare = campaignA.localeCompare(campaignB);
+    if (campaignCompare !== 0) {
+      return campaignCompare;
+    }
+
     // 获取行类型
     const typeA = getRowType(a);
     const typeB = getRowType(b);
 
-    // 账户合计行（只有account_id）排在最前面
+    // 账户合计行排在最前面
     if (typeA === 'account' && typeB !== 'account') {
       return -1;
     }
@@ -486,45 +494,15 @@ function sortReportData(data: any[]): any[] {
       return 1;
     }
 
-    // 同一账户内，按campaign_id排序
-    const campaignA = a.campaign_id || '';
-    const campaignB = b.campaign_id || '';
-    
-    // 如果一个有campaign_id，一个没有，没有的（账户合计）已经在上面对处理了
-    // 这里处理同系列或系列合计的情况
-    
     // 系列合计行（有campaign_id，没有adset_id和ad_id）排在该系列的组和广告前面
     if (typeA === 'campaign' && typeB !== 'campaign') {
-      // 检查是否属于同一系列
-      if (b.campaign_id === a.campaign_id) {
-        return -1;
-      }
+      return -1;
     }
     if (typeA !== 'campaign' && typeB === 'campaign') {
-      if (a.campaign_id === b.campaign_id) {
-        return 1;
-      }
+      return 1;
     }
 
-    // 按campaign_id排序
-    const campaignCompare = campaignA.localeCompare(campaignB);
-    if (campaignCompare !== 0) {
-      return campaignCompare;
-    }
-
-    // 组合计行（有campaign_id和adset_id，没有ad_id）排在该组的广告前面
-    if (typeA === 'adset' && typeB === 'ad') {
-      if (b.adset_id === a.adset_id) {
-        return -1;
-      }
-    }
-    if (typeA === 'ad' && typeB === 'adset') {
-      if (a.adset_id === b.adset_id) {
-        return 1;
-      }
-    }
-
-    // 按adset_id排序
+    // 按adset_id排序（确保同一组的数据在一起，区分同名组）
     const adsetA = a.adset_id || '';
     const adsetB = b.adset_id || '';
     const adsetCompare = adsetA.localeCompare(adsetB);
@@ -532,7 +510,15 @@ function sortReportData(data: any[]): any[] {
       return adsetCompare;
     }
 
-    // 最后按指定字段排序（同一组内的广告）
+    // 组合计行（有campaign_id和adset_id，没有ad_id）排在该组的广告前面
+    if (typeA === 'adset' && typeB === 'ad') {
+      return -1;
+    }
+    if (typeA === 'ad' && typeB === 'adset') {
+      return 1;
+    }
+
+    // 最后按指定字段排序（同一组内的广告按排序字段排序）
     const valueA = getFieldValue(a, sortField);
     const valueB = getFieldValue(b, sortField);
 
