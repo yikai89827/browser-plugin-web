@@ -294,13 +294,13 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
       rowData.campaignName = fixedColumnCellsArray[1]?.textContent?.trim() || '';
       rowData.adSetName = fixedColumnCellsArray[2]?.textContent?.trim() || '';
       rowData.adName = fixedColumnCellsArray[3]?.textContent?.trim() || '';
-      console.log('提取的名称数据:', rowData.accountName, rowData.campaignName, rowData.adSetName, rowData.adName);
+      // console.log('提取的名称数据:', rowData.accountName, rowData.campaignName, rowData.adSetName, rowData.adName);
     }
     
     // 可滚动列数据
     const scrollableColumn = cells.children[1];
     const scrollableColumnCellsArray = Array.from(scrollableColumn.children[0].children);
-    console.log('可滚动列单元格数量:', scrollableColumnCellsArray.length);
+    // console.log('可滚动列单元格数量:', scrollableColumnCellsArray.length);
     
     // 提取数值数据
     for (const [field, columnIndex] of Object.entries(columnMapping)) {
@@ -343,7 +343,7 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
       rowData.id = generateAdId(rowData);
     }
     
-    console.log('提取的行数据:', rowData);
+    // console.log('提取的行数据:', rowData);
     return rowData;
   } catch (error) {
     console.error('从行提取数据错误:', error);

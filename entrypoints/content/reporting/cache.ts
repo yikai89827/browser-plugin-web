@@ -38,18 +38,6 @@ export async function generateCacheKeyForDate(prefix: string, date: string) {
   return `${prefix}_${accountId}_${date}`;
 }
 
-// 保存数据到缓存
-export async function saveDataToCache(data: any): Promise<void> {
-  const key = await generateCacheKey('reporting_data');
-  await browserStorage.set(key, data);
-}
-
-// 从缓存获取数据
-export async function getDataFromCache(): Promise<any | null> {
-  const key = await generateCacheKey('reporting_data');
-  return await browserStorage.get(key);
-}
-
 // 保存修改的数据
 export async function saveModifiedData(modifiedData: any, date?: string): Promise<void> {
   const key = date ? await generateCacheKeyForDate('modified', date) : await generateCacheKey('modified');

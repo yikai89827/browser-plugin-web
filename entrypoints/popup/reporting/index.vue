@@ -50,17 +50,12 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
   });
 }
 
-// 从缓存获取广告数据
-async function getAdsFromCache(): Promise<{ ads: AdData[], currencySymbol: string, columnMapping: any } | null> {
+// 从缓存获取广告数据（只获取增加值）
+async function getAdsFromCache(): Promise<{ ads: any } | null> {
   const response = await sendMessageToContent('getReportingCachedData', { date: getCurrentDate() });
-  if (response && response.success && response.data && response.data.data) {
-    // 扁平化广告数据
-    const ads = flattenAds(response.data.data);
-    return { 
-      ads,
-      currencySymbol: response.data.currencySymbol || '$',
-      columnMapping: response.data.columnMapping || {},
-    };
+  if (response && response.success && response.data) {
+    console.log('从缓存获取的增加值数据:', response.data);
+    return response.data;
   }
   return null;
 }
@@ -88,7 +83,7 @@ function flattenAds(entities: any[]): AdData[] {
   console.log('开始扁平化广告数据:', entities);
   
   // 定义数值字段
-  const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
+  // const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
   
   // 直接遍历所有实体，包括合计行
   entities.forEach(entity => {
@@ -163,7 +158,7 @@ function getSummaryType(entity: any): 'account' | 'campaign' | 'adset' | 'ad' {
 // 获取行显示名称
 function getRowDisplayName(ad: any): string {
   const { summaryType, accountName, campaignName, adSetName, adName } = ad || {};
-  console.log('getRowDisplayName:',ad, summaryType, accountName, campaignName, adSetName, adName);   
+  // console.log('getRowDisplayName:',ad, summaryType, accountName, campaignName, adSetName, adName);   
   
   // 根据合计类型返回不同的显示名称
   switch (summaryType) {
@@ -239,10 +234,10 @@ const fetchAds = async () => {
         currencySymbol = domCurrencySymbol;
       }
       
-      // 从缓存获取增加值数据并合并
+      // 从缓存获取增加值数据并合并（按选择的日期）
       const cachedResult = await getAdsFromCache();
-      if (cachedResult && cachedResult.ads && cachedResult.ads.length > 0) {
-        console.log('从缓存获取增加值数据:', cachedResult.ads);
+      if (cachedResult && cachedResult.ads) {
+        console.log('从缓存获取增加值数据（按日期:', getCurrentDate(), '）:', cachedResult.ads);
         mergeIncreaseValues(ads.value, cachedResult.ads);
         console.log('合并后的广告数据:', ads.value);
       }
