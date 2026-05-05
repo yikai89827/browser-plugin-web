@@ -343,23 +343,37 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     rowData.adSetName = rowData.adSetName || '';
     rowData.adName = rowData.adName || '';
     
-    // 提取ID字段
-    rowData.account_id = rowData.account_id || '';
-    rowData.campaign_id = rowData.campaign_id || '';
-    rowData.adset_id = rowData.adset_id || '';
-    rowData.ad_id = rowData.ad_id || '';
+    // 提取ID字段（确保始终为字符串类型）
+    rowData.account_id = String(rowData.account_id || '');
+    rowData.campaign_id = String(rowData.campaign_id || '');
+    rowData.adset_id = String(rowData.adset_id || '');
+    rowData.ad_id = String(rowData.ad_id || '');
+    
+    // 处理破折号表示空值的情况
+    const normalizeId = (id: string): string => {
+      const trimmed = id.trim();
+      if (trimmed === '' || trimmed === '-' || trimmed === '—') {
+        return '';
+      }
+      return trimmed;
+    };
+    
+    rowData.account_id = normalizeId(rowData.account_id);
+    rowData.campaign_id = normalizeId(rowData.campaign_id);
+    rowData.adset_id = normalizeId(rowData.adset_id);
+    rowData.ad_id = normalizeId(rowData.ad_id);
     
     // 生成ID：数据行使用多个ID字段的组合，合计行使用各自的ID
-    if (rowData.ad_id && rowData.ad_id.trim() !== '') {
+    if (rowData.ad_id) {
       // 数据行：使用广告ID、广告组ID、广告系列ID和账户ID的组合作为唯一标识
-      rowData.id = `${rowData.account_id}_${rowData.campaign_id}_${rowData.adset_id}_${rowData.ad_id}`;
-    } else if (rowData.adset_id && rowData.adset_id.trim() !== '') {
+      rowData.id = `${rowData.account_id || 'NA'}_${rowData.campaign_id || 'NA'}_${rowData.adset_id || 'NA'}_${rowData.ad_id}`;
+    } else if (rowData.adset_id) {
       // 广告组合计行：使用广告组ID作为唯一标识
       rowData.id = rowData.adset_id;
-    } else if (rowData.campaign_id && rowData.campaign_id.trim() !== '') {
+    } else if (rowData.campaign_id) {
       // 广告系列合计行：使用广告系列ID作为唯一标识
       rowData.id = rowData.campaign_id;
-    } else if (rowData.account_id && rowData.account_id.trim() !== '') {
+    } else if (rowData.account_id) {
       // 账户合计行：使用账户ID作为唯一标识
       rowData.id = rowData.account_id;
     } else {
