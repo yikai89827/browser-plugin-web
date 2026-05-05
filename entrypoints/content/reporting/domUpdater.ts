@@ -6,12 +6,26 @@ import { getModifiedData } from './cache';
 
 // 更新DOM元素
 export async function updateDomElements() {
-  // 从页面提取日期
-  const pageDate: string[] = extractDateFromPage();
-  console.log('更新DOM元素，页面日期:', pageDate);
+  // 从页面提取日期范围
+  const dateRange: string[] = extractDateFromPage();
+  console.log('更新DOM元素，页面日期范围:', dateRange);
   
-  // 获取修改的数据（按页面日期）
-  const modifiedData = await getModifiedData(pageDate.join(',')) || {};
+  // 获取修改的数据（按页面日期范围）
+  let modifiedData: any = {};
+  if (dateRange.length >= 2) {
+    const startDate = dateRange[0];
+    const endDate = dateRange[1];
+    
+    if (startDate && endDate && startDate === endDate) {
+      // 单个日期
+      modifiedData = await getModifiedData(startDate) || {};
+      console.log('单个日期查询，修改的数据:', modifiedData);
+    } else if (startDate && endDate) {
+      // 日期范围，累加范围内所有日期的修改数据
+      modifiedData = await getModifiedData(startDate, endDate) || {};
+      console.log('日期范围查询，累加后的修改数据:', modifiedData);
+    }
+  }
   console.log('更新DOM元素，修改的数据:', modifiedData);
   if (Object.keys(modifiedData).length === 0) {
     console.log('没有修改数据，无需更新DOM元素');

@@ -530,12 +530,26 @@ function initReportingPageObserver(): void {
             console.log('检测到报表页面表格元素被创建，可能是页面刷新');
           }
           
-          // 从页面提取日期，用于检查对应日期的缓存数据
-          const pageDate = extractDateFromPage();
-          console.log('页面日期:', pageDate);
+          // 从页面提取日期范围，用于检查对应日期的缓存数据
+          const dateRange = extractDateFromPage();
+          console.log('页面日期范围:', dateRange);
           
-          // 检查指定日期是否有缓存的增加值
-          const shouldUpdateDom = await checkDateRangeForModifications(pageDate);
+          // 检查指定日期范围是否有缓存的增加值
+          let shouldUpdateDom = false;
+          if (dateRange.length >= 2) {
+            const startDate = dateRange[0];
+            const endDate = dateRange[1];
+            
+            if (startDate && endDate) {
+              if (startDate === endDate) {
+                // 单个日期
+                shouldUpdateDom = await checkDateRangeForModifications(startDate);
+              } else {
+                // 日期范围，检查范围内是否有任何修改数据
+                shouldUpdateDom = await checkDateRangeForModifications(startDate, endDate);
+              }
+            }
+          }
           if (shouldUpdateDom) {
             // 显示遮盖层
             createOverlay();
