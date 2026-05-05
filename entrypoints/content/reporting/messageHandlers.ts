@@ -15,54 +15,17 @@ export function handleReportingGetDataFromDom(sendResponse: (response: any) => v
   (async () => {
     try {
       console.log('开始从报表页面DOM提取数据...');
-      // 从DOM提取数据
+      // 从DOM提取数据（原始数据每次从DOM获取，不从缓存）
       const { data, columnMapping, currencySymbol } = await extractDataFromDom();
       console.log('提取的报表数据:', data);
       console.log('提取的列映射:', columnMapping);
       console.log('提取的货币符号:', currencySymbol);
       
-      // 获取修改的数据（增加值）
-      const modifiedData = await getModifiedData() || {};
-      console.log('获取的修改数据（增加值）:', modifiedData);
-      
-      
-      // 合并原始数据和修改数据
-      const mergedData = data.map((item: any) => {
-        // 初始化增加字段
-        const itemWithIncrease: any = { ...item };
-        
-        numericFields.forEach(field => {
-          itemWithIncrease[`increase_${field}`] = 0;
-        });
-        
-        // 如果有修改数据，应用修改
-        if (modifiedData[item.id]) {
-          Object.entries(modifiedData[item.id]).forEach(([field, value]) => {
-            itemWithIncrease[`increase_${field}`] = Number(value) || 0;
-          });
-        }
-        
-        return itemWithIncrease;
-      });
-      
-      // 生成缓存键
-      const dataKey = await generateCacheKey('reporting_data');
-      
-      // 保存原始数据到缓存
-      const cacheData = { 
-        data: data, 
-        columnMapping: columnMapping,
-        currencySymbol
-      };
-      
-      await browserStorage.set(dataKey, cacheData);
-      
-      console.log('已从报表页面DOM提取数据并缓存:', { data: data, currencySymbol, columnMapping });
-      console.log('合并后的数据:', mergedData);
+      console.log('已从报表页面DOM提取数据:', { data: data, currencySymbol, columnMapping });
       
       sendResponse({ 
         success: true, 
-        data: mergedData, 
+        data: data, 
         columnMapping: columnMapping, 
         currencySymbol
       });
@@ -98,8 +61,8 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
       const { data, columnMapping, currencySymbol } = await extractDataFromDom();
       console.log('重新提取的报表数据:', data);
       
-      // 生成缓存键
-      const dataKey = await generateCacheKey('reporting_data');
+      // 生成缓存键（使用指定日期）
+      const dataKey = await generateCacheKeyForDate('reporting_data', date);
       
       // 保存更新后的数据到缓存
       const cacheData = { 
@@ -373,10 +336,10 @@ export function handleReportingGetCachedData(message: any, sendResponse: (respon
       const { date } = message;
       console.log('获取缓存数据，日期:', date);
       
-      // 获取缓存数据
-      const cachedData = await fetchCachedData();
+      // 获取缓存数据（按指定日期）
+      const cachedData = await fetchCachedData(date);
       
-      // 获取修改的数据
+      // 获取修改的数据（按指定日期）
       const modifiedData = await getModifiedData(date) || {};
       console.log('获取的修改数据（增加值）:', modifiedData);
       
@@ -409,8 +372,8 @@ export function handleReportingGetCachedData(message: any, sendResponse: (respon
 }
 
 // 获取缓存数据
-async function fetchCachedData(): Promise<any | null> {
-  const dataKey = await generateCacheKey('reporting_data');
+async function fetchCachedData(date?: string): Promise<any | null> {
+  const dataKey = date ? await generateCacheKeyForDate('reporting_data', date) : await generateCacheKey('reporting_data');
   return await browserStorage.get(dataKey);
 }
 
