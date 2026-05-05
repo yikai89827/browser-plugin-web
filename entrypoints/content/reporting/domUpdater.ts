@@ -1,7 +1,7 @@
 // 报告页面的DOM更新模块
 // 负责处理DOM元素的更新和保持修改的值
 
-import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter, extractDateFromPage } from './dom';
+import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter, extractDateFromPage, sortReportData, getSortConfig, getFieldValue, getRowType } from './dom';
 import { getModifiedData } from './cache';
 
 // 更新DOM元素
@@ -111,6 +111,9 @@ export async function updateDomElements() {
   
   // 更新表格底部合计行
   updateFooterRows(modifiedData, summaryValues);
+
+  // 根据增加了值后的数据重新排序DOM行
+  reorderDomRowsBySortValue(dataRows, allRowData, modifiedData);
 }
 
 // 计算合计行的增加值
@@ -394,5 +397,71 @@ export function setupSortListener() {
         await updateDomElements();
       }, 100);
     });
+  });
+}
+
+// 根据排序值重新排序DOM行
+function reorderDomRowsBySortValue(dataRows: HTMLElement[], allRowData: any[], modifiedData: any) {
+  const sortConfig = getSortConfig();
+  const sortField = sortConfig.field;
+  const sortDirection = sortConfig.direction;
+
+  // 为每行数据计算增加了值后的排序值
+  const rowsWithSortValue = allRowData.map((rowData, index) => {
+    let sortValue = getFieldValue(rowData, sortField);
+
+    // 如果有修改数据，加上增加值
+    if (rowData.ad_id && modifiedData[rowData.id]) {
+      const modification = modifiedData[rowData.id];
+      if (modification && modification[sortField]) {
+        sortValue += Number(modification[sortField]);
+      }
+    }
+
+    return {
+      rowData,
+      rowElement: dataRows[index],
+      sortValue,
+      index
+    };
+  });
+
+  // 排序
+  rowsWithSortValue.sort((a, b) => {
+    // 首先按账户ID排序
+    const accountCompare = (a.rowData.account_id || '').localeCompare(b.rowData.account_id || '');
+    if (accountCompare !== 0) return accountCompare;
+
+    // 按campaign_id排序
+    const campaignCompare = (a.rowData.campaign_id || '').localeCompare(b.rowData.campaign_id || '');
+    if (campaignCompare !== 0) return campaignCompare;
+
+    // 按adset_id排序
+    const adsetCompare = (a.rowData.adset_id || '').localeCompare(b.rowData.adset_id || '');
+    if (adsetCompare !== 0) return adsetCompare;
+
+    // 按行类型排序（合计行在前）
+    const typeA = getRowType(a.rowData);
+    const typeB = getRowType(b.rowData);
+    const typePriority: Record<string, number> = { account: 0, campaign: 1, adset: 2, ad: 3 };
+    const typeCompare = typePriority[typeA] - typePriority[typeB];
+    if (typeCompare !== 0) return typeCompare;
+
+    // 最后按排序值排序
+    if (sortDirection === 'desc') {
+      return b.sortValue - a.sortValue;
+    }
+    return a.sortValue - b.sortValue;
+  });
+
+  // 获取表格tbody
+  const tableBody = document.querySelector('[role="table"] > div[aria-label]');
+  if (!tableBody) return;
+
+  // 重新排列DOM元素
+  rowsWithSortValue.forEach((item, newIndex) => {
+    if (item.rowElement && item.rowElement.parentNode === tableBody) {
+      tableBody.appendChild(item.rowElement);
+    }
   });
 }

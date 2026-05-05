@@ -242,11 +242,8 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
     // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
     const processedData = processNames(data);
     
-    // 按层级排序：账户合计 → 系列合计 → 组合计 → 广告统计
-    const sortedData = sortReportData(processedData);
-    
-    console.log('提取的报表数据:', sortedData);
-    return { data: sortedData, columnMapping, currencySymbol };
+    console.log('提取的报表数据:', processedData);
+    return { data: processedData, columnMapping, currencySymbol };
   } catch (error) {
     console.error('提取报表数据错误:', error);
     return { data: [], columnMapping: {}, currencySymbol: '$' };
@@ -391,7 +388,7 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
 
 // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
 // 从URL参数获取排序配置
-function getSortConfig(): { field: string; direction: 'asc' | 'desc' } {
+export function getSortConfig(): { field: string; direction: 'asc' | 'desc' } {
   const urlParams = new URLSearchParams(window.location.search);
   const sortSpec = urlParams.get('sort_spec');
   
@@ -408,7 +405,7 @@ function getSortConfig(): { field: string; direction: 'asc' | 'desc' } {
 }
 
 // 判断行类型
-function getRowType(item: any): string {
+export function getRowType(item: any): string {
   const hasAdId = item.ad_id && item.ad_id.trim() !== '';
   const hasAdsetId = item.adset_id && item.adset_id.trim() !== '';
   const hasCampaignId = item.campaign_id && item.campaign_id.trim() !== '';
@@ -424,7 +421,7 @@ function getRowType(item: any): string {
 }
 
 // 获取指定字段的数值
-function getFieldValue(item: any, field: string): number {
+export function getFieldValue(item: any, field: string): number {
   const value = item[field];
   if (value === undefined || value === null) {
     return 0;
@@ -448,18 +445,10 @@ function getFieldValue(item: any, field: string): number {
 }
 
 // 按层级排序数据：账户合计 → 系列合计 → 组合计 → 广告统计
-function sortReportData(data: any[]): any[] {
+export function sortReportData(data: any[]): any[] {
   if (!data || data.length === 0) {
     return data;
   }
-  
-  // 定义行类型优先级（账户合计最高，广告统计最低）
-  const rowTypePriority: Record<string, number> = {
-    account: 0,   // 账户合计（只有accountName，没有其他ID）
-    campaign: 1,  // 系列合计（有campaign_id，没有adset_id和ad_id）
-    adset: 2,     // 组合计（有adset_id，没有ad_id）
-    ad: 3         // 广告统计（有ad_id）
-  };
   
   // 获取排序配置
   const sortConfig = getSortConfig();
