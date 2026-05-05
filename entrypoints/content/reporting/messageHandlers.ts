@@ -118,15 +118,13 @@ export function handleReportingGetCachedData(message: any, sendResponse: (respon
       
       // 获取修改的数据（按指定日期）
       const modifiedData = await getModifiedData(date) || {};
-      console.log('获取的修改数据（增加值）:', modifiedData);
+      if (!modifiedData || Object.keys(modifiedData).length === 0) {
+        sendResponse({ success: true, data: {} });
+        return;
+      }
       
-      // 只返回增加值数据，不返回DOM原始数据
-      const cachedResult = {
-        ads: modifiedData
-      };
-      
-      console.log('返回缓存的增加值数据:', cachedResult);
-      sendResponse({ success: true, data: cachedResult });
+      console.log('返回缓存的增加值数据:', modifiedData);
+      sendResponse({ success: true, data: modifiedData });
     } catch (error: any) {
       console.error('获取报告页面缓存数据错误:', error);
       sendResponse({ success: false, error: error.message });

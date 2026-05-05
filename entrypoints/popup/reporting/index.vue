@@ -118,7 +118,7 @@ function flattenAds(entities: any[]): AdData[] {
       isSummary: isSummary,
       summaryType: summaryType
     };
-    console.log('处理广告数据:', adData);
+    // console.log('处理广告数据:', adData);
     ads.push(adData);
   });
   
@@ -253,16 +253,10 @@ const fetchAds = async () => {
 };
 
 // 合并增加值数据到DOM数据
-function mergeIncreaseValues(domAds: AdData[], cachedAds: AdData[]) {
-  // 构建缓存数据的Map，用于快速查找
-  const cachedMap = new Map<string, AdData>();
-  cachedAds.forEach(cachedAd => {
-    cachedMap.set(cachedAd.id, cachedAd);
-  });
-  
+function mergeIncreaseValues(domAds: AdData[], cachedAds: any) {
   // 合并增加值到DOM数据
-  domAds.forEach(domAd => {
-    const cachedAd = cachedMap.get(domAd.id);
+  domAds?.forEach(domAd => {
+    const cachedAd = cachedAds[domAd.id];
     if (cachedAd) {
       // 合并增加值字段
       domAd.increase_impressions = cachedAd.increase_impressions || 0;
