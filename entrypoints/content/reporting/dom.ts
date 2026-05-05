@@ -76,8 +76,8 @@ export function getColumnIndicesSync(): any {
   const columnIndices: Record<string, number> = {};
   const headerCells = Array.from(headerElement.children);
   const fixedCells:any = headerCells[0]?.firstChild?.childNodes;  const scrollableCells:any = headerCells[1]?.firstChild?.childNodes;
-  console.log('固定列:', fixedCells);
-  console.log('可滚动列:', scrollableCells);
+  console.log('固定列:', fixedCells?.length);
+  console.log('可滚动列:', scrollableCells?.length);
   if (!scrollableCells) {
     return {};
   }
@@ -89,7 +89,7 @@ export function getColumnIndicesSync(): any {
     
     // 获取data-surface属性，可能包含字段信息
     const dataSurface = cell.getAttribute?.('data-surface') || '';
-    const dataId = cell.getAttribute?.('data-id') || '';
+    // const dataId = cell.getAttribute?.('data-id') || '';
     
     // 调试：输出每个表头单元格的文本
     // console.log(`表头单元格[${index}]: "${cellText}" (小写: "${text}") data-surface: "${dataSurface}" data-id: "${dataId}"`);
@@ -242,8 +242,11 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
     // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
     const processedData = processNames(data);
     
-    console.log('提取的报表数据:', processedData);
-    return { data: processedData, columnMapping, currencySymbol };
+    // 按层级排序：账户合计 → 系列合计 → 组合计 → 广告统计
+    const sortedData = sortReportData(processedData);
+    
+    console.log('提取的报表数据:', sortedData);
+    return { data: sortedData, columnMapping, currencySymbol };
   } catch (error) {
     console.error('提取报表数据错误:', error);
     return { data: [], columnMapping: {}, currencySymbol: '$' };
@@ -373,6 +376,76 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
 }
 
 // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
+// 按层级排序数据：账户合计 → 系列合计 → 组合计 → 广告统计
+function sortReportData(data: any[]): any[] {
+  if (!data || data.length === 0) {
+    return data;
+  }
+  
+  // 定义行类型优先级（账户合计最高，广告统计最低）
+  const rowTypePriority: Record<string, number> = {
+    account: 0,   // 账户合计（只有accountName，没有其他ID）
+    campaign: 1,  // 系列合计（有campaign_id，没有adset_id和ad_id）
+    adset: 2,     // 组合计（有adset_id，没有ad_id）
+    ad: 3         // 广告统计（有ad_id）
+  };
+  
+  // 判断行类型
+  function getRowType(item: any): string {
+    const hasAdId = item.ad_id && item.ad_id.trim() !== '';
+    const hasAdsetId = item.adset_id && item.adset_id.trim() !== '';
+    const hasCampaignId = item.campaign_id && item.campaign_id.trim() !== '';
+    
+    if (hasAdId) {
+      return 'ad';
+    } else if (hasAdsetId) {
+      return 'adset';
+    } else if (hasCampaignId) {
+      return 'campaign';
+    }
+    return 'account';
+  }
+  
+  // 获取排序键（用于保持同一账户的数据在一起）
+  function getSortKey(item: any): string {
+    const parts: string[] = [];
+    
+    // 账户ID（确保同一账户的数据在一起）
+    parts.push(item.account_id || item.accountName || '');
+    
+    // 系列ID（确保同一系列的数据在一起）
+    parts.push(item.campaign_id || item.campaignName || '');
+    
+    // 组ID（确保同一组的数据在一起）
+    parts.push(item.adset_id || item.adSetName || '');
+    
+    // 广告ID（用于广告统计行排序）
+    parts.push(item.ad_id || item.adName || '');
+    
+    return parts.join('_');
+  }
+  
+  // 排序逻辑
+  return [...data].sort((a, b) => {
+    // 首先按账户ID排序（确保同一账户的数据在一起）
+    const accountCompare = (a.account_id || a.accountName || '').localeCompare(b.account_id || b.accountName || '');
+    if (accountCompare !== 0) {
+      return accountCompare;
+    }
+    
+    // 然后按行类型优先级排序（合计行在前，广告统计行在后）
+    const typeA = getRowType(a);
+    const typeB = getRowType(b);
+    const typeCompare = rowTypePriority[typeA] - rowTypePriority[typeB];
+    if (typeCompare !== 0) {
+      return typeCompare;
+    }
+    
+    // 最后按排序键排序（保持同一层级内的顺序）
+    return getSortKey(a).localeCompare(getSortKey(b));
+  });
+}
+
 export function processNames(data: any[]): any[] {
   try {
     if (!data || data.length === 0) {
