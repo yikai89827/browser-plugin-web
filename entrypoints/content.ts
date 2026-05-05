@@ -17,6 +17,7 @@ import { renderCachedModifications, hasCachedModifications } from './content/man
 import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
 // 导入报告页面的缓存检查函数
 import { checkDateRangeForModifications } from './content/reporting/cache';
+import { extractDateFromPage } from './content/reporting/dom';
 
 
 // 全局同步状态变量
@@ -529,8 +530,12 @@ function initReportingPageObserver(): void {
             console.log('检测到报表页面表格元素被创建，可能是页面刷新');
           }
           
-          // 检查当前DOM日期范围是否有缓存的增加值
-          const shouldUpdateDom = await checkDateRangeForModifications();
+          // 从页面提取日期，用于检查对应日期的缓存数据
+          const pageDate = extractDateFromPage();
+          console.log('页面日期:', pageDate);
+          
+          // 检查指定日期是否有缓存的增加值
+          const shouldUpdateDom = await checkDateRangeForModifications(pageDate);
           if (shouldUpdateDom) {
             // 显示遮盖层
             createOverlay();

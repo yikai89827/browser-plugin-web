@@ -8,6 +8,32 @@ export function findTableContainer(): HTMLElement | null {
   return element as HTMLElement || null;
 }
 
+// 从页面提取日期（支持单个日期或日期范围）
+export function extractDateFromPage(): string[] {
+  try {
+    // 查找日期范围元素
+    const dateRangeElements: HTMLElement | null = document.querySelector('#PNG_EXPORT div[role="button"] div[role="presentation"]');
+    const rangeElement = dateRangeElements?.nextElementSibling;
+    if (!rangeElement) {
+      console.log('未找到日期范围元素');
+      return [];
+    }
+    console.log('找到的日期范围元素:', rangeElement);
+    
+    // 处理多种可能的分隔符：长破折号(–)、短破折号(-)、中文破折号(—)
+    const textContent = rangeElement.textContent?.trim() || '';
+    const dateRanges: string[] = textContent.split(/[–\-—]/) || [];
+    if (dateRanges.length > 0) {
+      console.log('找到日期范围:', dateRanges);
+    }
+    return dateRanges.length ===1 ? [dateRanges[0],dateRanges[0]] : dateRanges;
+    
+  } catch (error) {
+    console.error('提取日期范围错误:', error);
+    return [];
+  }
+}
+
 // 获取表格标题
 export function getReportingTableHeader(): HTMLElement | null {
   const tableContainer = findTableContainer();

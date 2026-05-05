@@ -1,13 +1,17 @@
 // 报告页面的DOM更新模块
 // 负责处理DOM元素的更新和保持修改的值
 
-import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter } from './dom';
+import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter, extractDateFromPage } from './dom';
 import { getModifiedData } from './cache';
 
 // 更新DOM元素
 export async function updateDomElements() {
-  // 获取修改的数据
-  const modifiedData = await getModifiedData() || {};
+  // 从页面提取日期
+  const pageDate: string[] = extractDateFromPage();
+  console.log('更新DOM元素，页面日期:', pageDate);
+  
+  // 获取修改的数据（按页面日期）
+  const modifiedData = await getModifiedData(pageDate.join(',')) || {};
   console.log('更新DOM元素，修改的数据:', modifiedData);
   if (Object.keys(modifiedData).length === 0) {
     console.log('没有修改数据，无需更新DOM元素');

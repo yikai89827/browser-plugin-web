@@ -46,10 +46,10 @@ export async function getModifiedData(date?: string): Promise<any | null> {
   return await browserStorage.get(key);
 }
 
-// 检查当前日期范围是否有缓存的修改数据
-export async function checkDateRangeForModifications(): Promise<boolean> {
+// 检查指定日期是否有缓存的修改数据
+export async function checkDateRangeForModifications(date?: string | null): Promise<boolean> {
   try {
-    const modifiedData = await getModifiedData();
+    const modifiedData = await getModifiedData(date || '');
     if (modifiedData && Object.keys(modifiedData).length > 0) {
       console.log('检测到存在修改数据');
       return true;
