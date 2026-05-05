@@ -437,26 +437,47 @@ function sortReportData(data: any[]): any[] {
   const sortField = sortConfig.field;
   const sortDirection = sortConfig.direction;
   
+  // 获取排序用的键（用于比较是否属于同一层级）
+  function getCampaignKey(item: any): string {
+    return item.campaign_id || '';
+  }
+
+  function getAdsetKey(item: any): string {
+    return item.adset_id || '';
+  }
+
+  function getAdKey(item: any): string {
+    return item.ad_id || '';
+  }
+
+  // ID比较函数：确保合计行（ID为空）排在前面
+  function compareId(a: string, b: string): number {
+    if (a === '' && b === '') return 0;
+    if (a === '') return -1;  // 空ID排在前面
+    if (b === '') return 1;
+    return a.localeCompare(b);
+  }
+
   // 排序逻辑
   return [...data].sort((a, b) => {
     // 首先按账户ID排序（确保同一账户的数据在一起）
-    const accountCompare = (a.account_id || a.accountName || '').localeCompare(b.account_id || b.accountName || '');
+    const accountCompare = (a.account_id || '').localeCompare(b.account_id || '');
     if (accountCompare !== 0) {
       return accountCompare;
     }
-    
-    // 然后按系列ID排序（确保同一系列的数据在一起）
-    const campaignCompare = (a.campaign_id || a.campaignName || '').localeCompare(b.campaign_id || b.campaignName || '');
+
+    // 然后按campaign_id排序（确保同一系列的数据在一起），空ID排在前面
+    const campaignCompare = compareId(getCampaignKey(a), getCampaignKey(b));
     if (campaignCompare !== 0) {
       return campaignCompare;
     }
-    
-    // 然后按组ID排序（确保同一组的数据在一起）
-    const adsetCompare = (a.adset_id || a.adSetName || '').localeCompare(b.adset_id || b.adSetName || '');
+
+    // 然后按adset_id排序（确保同一组的数据在一起），空ID排在前面
+    const adsetCompare = compareId(getAdsetKey(a), getAdsetKey(b));
     if (adsetCompare !== 0) {
       return adsetCompare;
     }
-    
+
     // 然后按行类型优先级排序（合计行在前，广告统计行在后）
     const typeA = getRowType(a);
     const typeB = getRowType(b);
@@ -464,15 +485,15 @@ function sortReportData(data: any[]): any[] {
     if (typeCompare !== 0) {
       return typeCompare;
     }
-    
+
     // 最后按指定字段排序
     const valueA = getFieldValue(a, sortField);
     const valueB = getFieldValue(b, sortField);
-    
+
     if (sortDirection === 'desc') {
-      return valueB - valueA; // 倒序
+      return valueB - valueA;
     }
-    return valueA - valueB; // 升序
+    return valueA - valueB;
   });
 }
 

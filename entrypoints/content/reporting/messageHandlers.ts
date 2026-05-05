@@ -1,12 +1,9 @@
 // 报表页面的消息处理模块
 // 负责处理来自popup的消息
 
-import { browserStorage } from '../../../utils/storage';
-import { generateCacheKey, generateCacheKeyForDate } from '../reporting/cache';
 import { extractDataFromDom } from './dom';
 import { saveModifiedData, getModifiedData } from './cache';
 import { updateDomElements } from './domUpdater';
-import { numericFields } from './config';
 
 
 
@@ -74,39 +71,6 @@ export function handleReportingRefresh(message: any, sendResponse: (response: an
     }
   })();
   return true;
-}
-
-// 计算广告组的合计修改值
-function calculateAdsetModifications(adsetAds: any[]): Record<string, number> {
-  return adsetAds.reduce((sum: Record<string, number>, ad: any) => {
-    const mod = ad.modification;
-    Object.keys(mod).forEach(field => {
-      sum[field] = (sum[field] || 0) + Number(mod[field]);
-    });
-    return sum;
-  }, {});
-}
-
-// 计算广告系列的合计修改值
-function calculateCampaignModifications(campaignAds: any[]): Record<string, number> {
-  return campaignAds.reduce((sum: Record<string, number>, ad: any) => {
-    const mod = ad.modification;
-    Object.keys(mod).forEach(field => {
-      sum[field] = (sum[field] || 0) + Number(mod[field]);
-    });
-    return sum;
-  }, {});
-}
-
-// 计算账户的合计修改值
-function calculateAccountModifications(accountAds: any[]): Record<string, number> {
-  return accountAds.reduce((sum: Record<string, number>, ad: any) => {
-    const mod = ad.modification;
-    Object.keys(mod).forEach(field => {
-      sum[field] = (sum[field] || 0) + Number(mod[field]);
-    });
-    return sum;
-  }, {});
 }
 
 // 消息处理函数 - 获取缓存数据（只返回增加值数据）
