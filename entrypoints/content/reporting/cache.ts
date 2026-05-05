@@ -21,11 +21,8 @@ function generateDateRange(startDate: string, endDate: string): string[] {
   const dates: string[] = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
-  console.log('generateDateRange开始日期:', start);
-  console.log('generateDateRange结束日期:', end);
   while (start <= end) {
     const dateStr = start.toISOString().split('T')[0];
-    console.log('当前日期:', dateStr);
     dates.push(dateStr);
     start.setDate(start.getDate() + 1);
   }

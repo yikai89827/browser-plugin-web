@@ -132,7 +132,7 @@ export function getColumnIndicesSync(): any {
           mappedField = 'ad_id';
         }
         columnIndices[mappedField] = index;
-        console.log(`匹配到字段: ${field} -> ${mappedField} 在索引 ${index}`);
+        // console.log(`匹配到字段: ${field} -> ${mappedField} 在索引 ${index}`);
         break;
       }
     }
