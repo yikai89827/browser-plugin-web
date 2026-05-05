@@ -54,7 +54,7 @@ function sendMessageToContent(action: string, data?: any): Promise<any> {
 async function getAdsFromCache(): Promise<{ ads: any } | null> {
   const response = await sendMessageToContent('getReportingCachedData', { date: getCurrentDate() });
   if (response && response.success && response.data) {
-    console.log('从缓存获取的增加值数据:', response.data);
+    // console.log('从缓存获取的增加值数据:', response.data);
     return response.data;
   }
   return null;
@@ -225,7 +225,7 @@ const fetchAds = async () => {
     console.log('从DOM获取列映射成功:', receivedColumnMapping);
     console.log('从DOM获取货币符号成功:', domCurrencySymbol);
     
-    if (domAds && domAds.length > 0) {
+    if (domAds && domAds?.length > 0) {
       ads.value = domAds;
       columnMapping.value = receivedColumnMapping;
       
@@ -236,9 +236,10 @@ const fetchAds = async () => {
       
       // 从缓存获取增加值数据并合并（按选择的日期）
       const cachedResult = await getAdsFromCache();
-      if (cachedResult && cachedResult.ads) {
-        console.log('从缓存获取增加值数据（按日期:', getCurrentDate(), '）:', cachedResult.ads);
-        mergeIncreaseValues(ads.value, cachedResult.ads);
+      console.log('从缓存获取增加值数据:', cachedResult);
+      if (cachedResult && Object.keys(cachedResult).length > 0) {
+        console.log('从缓存获取增加值数据（按日期:', getCurrentDate(), '）:', cachedResult);
+        mergeIncreaseValues(ads.value, cachedResult);
         console.log('合并后的广告数据:', ads.value);
       }
     }
@@ -257,14 +258,15 @@ function mergeIncreaseValues(domAds: AdData[], cachedAds: any) {
   // 合并增加值到DOM数据
   domAds?.forEach(domAd => {
     const cachedAd = cachedAds[domAd.id];
+    // console.log('合并Ad:', domAd, cachedAd,domAd.id);
     if (cachedAd) {
       // 合并增加值字段
-      domAd.increase_impressions = cachedAd.increase_impressions || 0;
-      domAd.increase_reach = cachedAd.increase_reach || 0;
-      domAd.increase_spend = cachedAd.increase_spend || 0;
-      domAd.increase_clicks = cachedAd.increase_clicks || 0;
-      domAd.increase_registrations = cachedAd.increase_registrations || 0;
-      domAd.increase_purchases = cachedAd.increase_purchases || 0;
+      domAd.increase_impressions = cachedAd.impressions || 0;
+      domAd.increase_reach = cachedAd.reach || 0;
+      domAd.increase_spend = cachedAd.spend || 0;
+      domAd.increase_clicks = cachedAd.clicks || 0;
+      domAd.increase_registrations = cachedAd.registrations || 0;
+      domAd.increase_purchases = cachedAd.purchases || 0;
     }
   });
 }

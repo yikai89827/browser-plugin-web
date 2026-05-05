@@ -8,25 +8,46 @@ export function findTableContainer(): HTMLElement | null {
   return element as HTMLElement || null;
 }
 
+// 解析中文日期格式 "2026年3月1日" 为 "YYYY-MM-DD"
+function parseChineseDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.trim();
+  // 匹配 "2026年3月1日" 或 "2026年03月01日"
+  const match = trimmed.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (match) {
+    const year = match[1];
+    const month = String(match[2]).padStart(2, '0');
+    const day = String(match[3]).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return dateStr;
+}
+
 // 从页面提取日期（支持单个日期或日期范围）
 export function extractDateFromPage(): string[] {
   try {
     // 查找日期范围元素
-    const dateRangeElements: HTMLElement | null = document.querySelector('#PNG_EXPORT div[role="button"] div[role="presentation"]');
-    const rangeElement = dateRangeElements?.nextElementSibling;
+    const dateRangeElements: any = document.querySelectorAll('#PNG_EXPORT div[role="button"] > span > div > div > div[role="presentation"]');
+    const rangeElement: any = Array.from(dateRangeElements)?.find((element: any) => ['年','月','日'].every((item: string) => element?.nextElementSibling?.textContent?.trim()?.includes(item)));
     if (!rangeElement) {
       console.log('未找到日期范围元素');
       return [];
     }
-    console.log('找到的日期范围元素:', rangeElement);
     
     // 处理多种可能的分隔符：长破折号(–)、短破折号(-)、中文破折号(—)
-    const textContent = rangeElement.textContent?.trim() || '';
+    const textContent = rangeElement?.nextElementSibling?.textContent?.trim() || '';
     const dateRanges: string[] = textContent.split(/[–\-—]/) || [];
     if (dateRanges.length > 0) {
       console.log('找到日期范围:', dateRanges);
     }
-    return dateRanges.length ===1 ? [dateRanges[0],dateRanges[0]] : dateRanges;
+    
+    // 解析中文日期格式为标准日期格式
+    const parsedDates = dateRanges.map(date => parseChineseDate(date)).filter(date => date);
+    
+    if (parsedDates.length === 1) {
+      return [parsedDates[0], parsedDates[0]];
+    }
+    return parsedDates;
     
   } catch (error) {
     console.error('提取日期范围错误:', error);
@@ -71,27 +92,27 @@ export function getColumnIndicesSync(): any {
     const dataId = cell.getAttribute?.('data-id') || '';
     
     // 调试：输出每个表头单元格的文本
-    console.log(`表头单元格[${index}]: "${cellText}" (小写: "${text}") data-surface: "${dataSurface}" data-id: "${dataId}"`);
+    // console.log(`表头单元格[${index}]: "${cellText}" (小写: "${text}") data-surface: "${dataSurface}" data-id: "${dataId}"`);
     
     // 首先尝试通过data-surface属性匹配
     if (dataSurface.includes('account_id')) {
       columnIndices['account_id'] = index;
-      console.log(`通过data-surface匹配到 account_id 在索引 ${index}`);
+      // console.log(`通过data-surface匹配到 account_id 在索引 ${index}`);
       return;
     }
     if (dataSurface.includes('campaign_id')) {
       columnIndices['campaign_id'] = index;
-      console.log(`通过data-surface匹配到 campaign_id 在索引 ${index}`);
+      // console.log(`通过data-surface匹配到 campaign_id 在索引 ${index}`);
       return;
     }
     if (dataSurface.includes('adset_id')) {
       columnIndices['adset_id'] = index;
-      console.log(`通过data-surface匹配到 adset_id 在索引 ${index}`);
+      // console.log(`通过data-surface匹配到 adset_id 在索引 ${index}`);
       return;
     }
     if (dataSurface.includes('ad_id')) {
       columnIndices['ad_id'] = index;
-      console.log(`通过data-surface匹配到 ad_id 在索引 ${index}`);
+      // console.log(`通过data-surface匹配到 ad_id 在索引 ${index}`);
       return;
     }
     
@@ -278,8 +299,8 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
   try {
     const rowData: any = {};
     
-    console.log('处理行:', row);
-    console.log('列映射:', columnMapping);
+    // console.log('处理行:', row);
+    // console.log('列映射:', columnMapping);
     // 固定列数据
     const cells = row.querySelector('[role="presentation"]')?.children[0];
     // 提取账户名称、广告系列名称、广告组名称和广告名称
