@@ -15,6 +15,8 @@ import { renderCachedModifications, hasCachedModifications } from './content/man
 
 // 导入报告页面的消息处理函数
 import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingGetCachedData, handleReportingInit } from './content/reporting/messageHandlers';
+// 导入报告页面的缓存检查函数
+import { checkDateRangeForModifications } from './content/reporting/cache';
 
 
 // 全局同步状态变量

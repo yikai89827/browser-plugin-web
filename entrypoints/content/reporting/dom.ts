@@ -36,16 +36,48 @@ export function getColumnIndicesSync(): any {
   }
   const scrollableCellsArray = Array.from(scrollableCells);
    scrollableCellsArray.forEach((cell: any, index: number) => {
-    const cellText = cell.textContent?.trim().toLowerCase() || '';
-    const text = cellText.replace('打开列内操作菜单', '');
+    const cellText = cell.textContent?.trim() || '';
+    const lowerText = cellText.toLowerCase();
+    const text = lowerText.replace('打开列内操作菜单', '');
     
-    // 查找匹配的字段
+    // 获取data-surface属性，可能包含字段信息
+    const dataSurface = cell.getAttribute?.('data-surface') || '';
+    const dataId = cell.getAttribute?.('data-id') || '';
+    
+    // 调试：输出每个表头单元格的文本
+    console.log(`表头单元格[${index}]: "${cellText}" (小写: "${text}") data-surface: "${dataSurface}" data-id: "${dataId}"`);
+    
+    // 首先尝试通过data-surface属性匹配
+    if (dataSurface.includes('account_id')) {
+      columnIndices['account_id'] = index;
+      console.log(`通过data-surface匹配到 account_id 在索引 ${index}`);
+      return;
+    }
+    if (dataSurface.includes('campaign_id')) {
+      columnIndices['campaign_id'] = index;
+      console.log(`通过data-surface匹配到 campaign_id 在索引 ${index}`);
+      return;
+    }
+    if (dataSurface.includes('adset_id')) {
+      columnIndices['adset_id'] = index;
+      console.log(`通过data-surface匹配到 adset_id 在索引 ${index}`);
+      return;
+    }
+    if (dataSurface.includes('ad_id')) {
+      columnIndices['ad_id'] = index;
+      console.log(`通过data-surface匹配到 ad_id 在索引 ${index}`);
+      return;
+    }
+    
+    // 然后尝试通过文本匹配
     for (const { field, labels } of fieldMappingConfig) {
       if (labels.some(label => text.includes(label.toLowerCase()))) {
         // 确保字段名与extractRowData中使用的一致
         let mappedField = field;
         // 特殊处理ID字段，确保与extractRowData中使用的字段名一致
-        if (field === 'campaign_id') {
+        if (field === 'account_id') {
+          mappedField = 'account_id';
+        } else if (field === 'campaign_id') {
           mappedField = 'campaign_id';
         } else if (field === 'adset_id') {
           mappedField = 'adset_id';
@@ -53,6 +85,7 @@ export function getColumnIndicesSync(): any {
           mappedField = 'ad_id';
         }
         columnIndices[mappedField] = index;
+        console.log(`匹配到字段: ${field} -> ${mappedField} 在索引 ${index}`);
         break;
       }
     }
@@ -261,23 +294,24 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     rowData.adName = rowData.adName || '';
     
     // 提取ID字段
+    rowData.account_id = rowData.account_id || '';
     rowData.campaign_id = rowData.campaign_id || '';
     rowData.adset_id = rowData.adset_id || '';
     rowData.ad_id = rowData.ad_id || '';
     
     // 生成ID：数据行使用多个ID字段的组合，合计行使用各自的ID
     if (rowData.ad_id && rowData.ad_id.trim() !== '') {
-      // 数据行：使用广告ID、广告组ID、广告系列ID和账户名称的组合作为唯一标识
-      rowData.id = `${rowData.accountName}_${rowData.campaign_id}_${rowData.adset_id}_${rowData.ad_id}`;
+      // 数据行：使用广告ID、广告组ID、广告系列ID和账户ID的组合作为唯一标识
+      rowData.id = `${rowData.account_id}_${rowData.campaign_id}_${rowData.adset_id}_${rowData.ad_id}`;
     } else if (rowData.adset_id && rowData.adset_id.trim() !== '') {
       // 广告组合计行：使用广告组ID作为唯一标识
       rowData.id = rowData.adset_id;
     } else if (rowData.campaign_id && rowData.campaign_id.trim() !== '') {
       // 广告系列合计行：使用广告系列ID作为唯一标识
       rowData.id = rowData.campaign_id;
-    } else if (rowData.accountName && rowData.accountName.trim() !== '') {
-      // 账户合计行：使用账户名称作为唯一标识
-      rowData.id = rowData.accountName;
+    } else if (rowData.account_id && rowData.account_id.trim() !== '') {
+      // 账户合计行：使用账户ID作为唯一标识
+      rowData.id = rowData.account_id;
     } else {
       // 其他情况：使用生成的ID
       rowData.id = generateAdId(rowData);
@@ -301,6 +335,7 @@ export function processNames(data: any[]): any[] {
     let currentAccountName = '';
     let currentCampaignName = '';
     let currentAdSetName = '';
+    let currentAdName = '';
     
     for (const item of data) {
       // 如果当前行有账户名，更新当前账户名
@@ -309,6 +344,7 @@ export function processNames(data: any[]): any[] {
         // 重置系列和组名称，因为账户变更了
         currentCampaignName = '';
         currentAdSetName = '';
+        currentAdName = '';
       }
       // 如果当前行有广告系列名称，更新当前系列名
       if (item.campaignName && item.campaignName.trim() !== '') {
@@ -332,6 +368,10 @@ export function processNames(data: any[]): any[] {
       // 如果当前行没有组名，但有其他数据，使用当前组名
       if (currentAdSetName && item.adSetName === '') {
         item.adSetName = currentAdSetName;
+      }
+      // 如果当前行没有广告名，但有其他数据，使用当前广告名
+      if (currentAdName && item.adName === '') {
+        item.adName = currentAdName;
       }
     }
     

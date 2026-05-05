@@ -60,50 +60,32 @@ export async function updateDomElements() {
     // 这样可以确保行数据有完整的名称信息
     const rowData = allRowData[index];
     if (rowData && rowData.id) {
-      // 尝试多种ID格式进行匹配
+      // 尝试匹配修改数据
       let matchedModification = null;
       
-      // 1. 直接使用rowData.id匹配（组合格式）
+      // 1. 直接使用rowData.id匹配（DOM解析出的ID与缓存中的ID匹配）
       if (modifiedData[rowData.id]) {
         matchedModification = modifiedData[rowData.id];
       }
       
-      // 2. 如果rowData.id包含多个下划线，尝试提取ad_id进行匹配（简化格式）
-      if (!matchedModification && rowData.id) {
-        const idParts = rowData.id.split('_');
-        if (idParts.length >= 4) {
-          const adIdOnly = idParts[idParts.length - 1];
-          if (adIdOnly && modifiedData[adIdOnly]) {
-            matchedModification = modifiedData[adIdOnly];
-          }
-        }
+      // 2. 如果没有匹配，尝试使用ad_id匹配
+      if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
+        matchedModification = modifiedData[rowData.ad_id];
       }
       
-      // 3. 检查是否为合计行，使用相应的键匹配
-      let summaryModification = null;
-      if (!matchedModification) {
-        // 检查是否为账户合计行
-        if (rowData.accountName && !rowData.ad_id) {
-          summaryModification = summaryValues[rowData.accountName];
-        }
-        // 检查是否为广告系列合计行
-        else if (rowData.accountName && rowData.campaignName && !rowData.ad_id) {
-          const campaignKey = `${rowData.accountName}_${rowData.campaignName}`;
-          summaryModification = summaryValues[campaignKey];
-        }
-        // 检查是否为广告组合计行
-        else if (rowData.accountName && rowData.campaignName && rowData.adSetName && !rowData.ad_id) {
-          const adsetKey = `${rowData.accountName}_${rowData.campaignName}_${rowData.adSetName}`;
-          summaryModification = summaryValues[adsetKey];
-        }
+      // 3. 检查是否为合计行，使用ID匹配
+      if (!matchedModification && summaryValues[rowData.id]) {
+        matchedModification = summaryValues[rowData.id];
+      }
+      
+      // 4. 最后尝试使用账户名称匹配账户合计行
+      if (!matchedModification && rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
+        matchedModification = summaryValues[rowData.accountName];
       }
       
       if (matchedModification) {
-        // 更新数据行
+        // 更新行（使用列索引确定列）
         updateAdRow(row, matchedModification);
-      } else if (summaryModification) {
-        // 更新合计行
-        updateAdRow(row, summaryModification);
       }
       // 对于没有修改的行，不做处理
     }
@@ -121,24 +103,19 @@ function calculateSummaryValues(allRowData: any[], modifiedData: any): Record<st
   const accountGroups: Record<string, any[]> = {};
   
   allRowData.forEach(rowData => {
-    if (rowData.id) {
-      // 尝试多种ID格式进行匹配
+    // 只处理广告统计行（有 ad_id 的）
+    if (rowData.ad_id && rowData.ad_id.trim() !== '') {
+      // 简化匹配逻辑：使用DOM解析出的ID与缓存中的ID匹配
       let matchedModification = null;
       
-      // 1. 直接使用rowData.id匹配（组合格式）
+      // 1. 优先使用rowData.id匹配（DOM解析出的ID）
       if (modifiedData[rowData.id]) {
         matchedModification = modifiedData[rowData.id];
       }
       
-      // 2. 如果rowData.id包含多个下划线，尝试提取ad_id进行匹配（简化格式）
-      if (!matchedModification && rowData.id) {
-        const idParts = rowData.id.split('_');
-        if (idParts.length >= 4) {
-          const adIdOnly = idParts[idParts.length - 1];
-          if (adIdOnly && modifiedData[adIdOnly]) {
-            matchedModification = modifiedData[adIdOnly];
-          }
-        }
+      // 2. 如果没有匹配，使用ad_id匹配
+      if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
+        matchedModification = modifiedData[rowData.ad_id];
       }
       
       if (matchedModification) {
@@ -156,9 +133,9 @@ function calculateSummaryValues(allRowData: any[], modifiedData: any): Record<st
     const accountAds = accountGroups[accountName];
     const accountSummary = allRowData.find(rowData => 
       rowData.accountName === accountName && 
-      rowData.campaignName === '全部' && 
-      rowData.adSetName === '全部' && 
-      rowData.adName === '全部'
+      !rowData.ad_id && 
+      !rowData.adset_id && 
+      !rowData.campaign_id
     );
     
     // 计算账户合计的增加值
@@ -172,58 +149,57 @@ function calculateSummaryValues(allRowData: any[], modifiedData: any): Record<st
       }
     }
     
-    // 按广告系列分组
+    // 按广告系列分组（使用 campaign_id）
     const campaignGroups: Record<string, any[]> = {};
     accountAds.forEach(rowData => {
-      const campaignKey = `${rowData.accountName}_${rowData.campaignName}`;
-      if (!campaignGroups[campaignKey]) {
-        campaignGroups[campaignKey] = [];
+      const campaign_id = rowData.campaign_id;
+      if (campaign_id) {
+        if (!campaignGroups[campaign_id]) {
+          campaignGroups[campaign_id] = [];
+        }
+        campaignGroups[campaign_id].push(rowData);
       }
-      campaignGroups[campaignKey].push(rowData);
     });
     
     // 计算每个广告系列的合计
-    Object.keys(campaignGroups).forEach(campaignKey => {
-      const campaignAds = campaignGroups[campaignKey];
-      const [accountName, campaignName] = campaignKey.split('_');
+    Object.keys(campaignGroups).forEach(campaign_id => {
+      const campaignAds = campaignGroups[campaign_id];
       const campaignSummary = allRowData.find(rowData => 
-        rowData.accountName === accountName && 
-        rowData.campaignName === campaignName && 
-        rowData.adSetName === '全部' && 
-        rowData.adName === '全部'
+        rowData.campaign_id === campaign_id && 
+        !rowData.ad_id && 
+        !rowData.adset_id
       );
       
       const campaignModifications = calculateGroupModifications(campaignAds, modifiedData);
       if (Object.keys(campaignModifications).length > 0 && campaignSummary && campaignSummary.id) {
         summaryValues[campaignSummary.id] = campaignModifications;
       }
-    });
-    
-    // 按广告组分组
-    const adsetGroups: Record<string, any[]> = {};
-    accountAds.forEach(rowData => {
-      const adsetKey = `${rowData.accountName}_${rowData.campaignName}_${rowData.adSetName}`;
-      if (!adsetGroups[adsetKey]) {
-        adsetGroups[adsetKey] = [];
-      }
-      adsetGroups[adsetKey].push(rowData);
-    });
-    
-    // 计算每个广告组的合计
-    Object.keys(adsetGroups).forEach(adsetKey => {
-      const adsetAds = adsetGroups[adsetKey];
-      const [accountName, campaignName, adSetName] = adsetKey.split('_');
-      const adsetSummary = allRowData.find(rowData => 
-        rowData.accountName === accountName && 
-        rowData.campaignName === campaignName && 
-        rowData.adSetName === adSetName && 
-        rowData.adName === '全部'
-      );
       
-      const adsetModifications = calculateGroupModifications(adsetAds, modifiedData);
-      if (Object.keys(adsetModifications).length > 0 && adsetSummary && adsetSummary.id) {
-        summaryValues[adsetSummary.id] = adsetModifications;
-      }
+      // 按广告组分组（使用 adset_id）- 移到广告系列循环内部
+      const adsetGroups: Record<string, any[]> = {};
+      campaignAds.forEach(rowData => {
+        const adset_id = rowData.adset_id;
+        if (adset_id) {
+          if (!adsetGroups[adset_id]) {
+            adsetGroups[adset_id] = [];
+          }
+          adsetGroups[adset_id].push(rowData);
+        }
+      });
+      
+      // 计算每个广告组的合计 - 移到广告系列循环内部
+      Object.keys(adsetGroups).forEach(adset_id => {
+        const adsetAds = adsetGroups[adset_id];
+        const adsetSummary = allRowData.find(rowData => 
+          rowData.adset_id === adset_id && 
+          !rowData.ad_id
+        );
+        
+        const adsetModifications = calculateGroupModifications(adsetAds, modifiedData);
+        if (Object.keys(adsetModifications).length > 0 && adsetSummary && adsetSummary.id) {
+          summaryValues[adsetSummary.id] = adsetModifications;
+        }
+      });
     });
   });
   
@@ -261,16 +237,20 @@ function calculateGroupModifications(ads: any[], modifiedData: any): any {
 
 // 识别行类型
 export function identifyRowType(rowData: any): string {
-  // 根据数据判断行类型
-  if (rowData.campaignName === '全部' && rowData.adSetName === '全部' && rowData.adName === '全部') {
-    return 'account';
-  } else if (rowData.adSetName === '全部' && rowData.adName === '全部') {
-    return 'campaign';
-  } else if (rowData.adName === '全部') {
-    return 'adset';
-  } else {
+  // 根据ID字段判断行类型
+  if (rowData.ad_id && rowData.ad_id.trim() !== '') {
     return 'ad';
   }
+  
+  if (rowData.adset_id && rowData.adset_id.trim() !== '') {
+    return 'adset';
+  }
+  
+  if (rowData.campaign_id && rowData.campaign_id.trim() !== '') {
+    return 'campaign';
+  }
+  
+  return 'account';
 }
 
 // 更新广告行

@@ -10,6 +10,9 @@ interface AdData {
   accountName: string;
   campaignName: string;
   adSetName: string;
+  campaign_id: string;
+  adset_id: string;
+  ad_id: string;
   impressions: number;
   increase_impressions: number;
   reach: number;
@@ -79,7 +82,7 @@ async function getAdsFromDom(): Promise<{ ads: AdData[], currencySymbol: string,
 }
 
 // 扁平化广告数据
-function flattenAds(entities: any[]): AdData[] {
+function flattenAds(entities: any[]): AdData[] {  
   const ads: AdData[] = [];
   
   console.log('开始扁平化广告数据:', entities);
@@ -87,47 +90,40 @@ function flattenAds(entities: any[]): AdData[] {
   // 定义数值字段
   const numericFields = ['impressions', 'reach', 'spend', 'clicks', 'registrations', 'purchases'];
   
-  // 直接遍历所有实体，因为报表页面的数据结构与管理页面不同
+  // 直接遍历所有实体，包括合计行
   entities.forEach(entity => {
     // 判断是否为合计行
     const isSummary = isSummaryRow(entity);
     const summaryType = getSummaryType(entity);
     
-    // 生成显示名称
-    let displayName = entity.adName || entity.name;
-    if (isSummary) {
-      if (summaryType === 'account') {
-        displayName = `${entity.accountName} 账户合计`;
-      } else if (summaryType === 'campaign') {
-        displayName = `${entity.campaignName} 系列合计`;
-      } else if (summaryType === 'adset') {
-        displayName = `${entity.adSetName} 组合计`;
-      }
-    }
     
     // 创建广告数据对象
     const adData: AdData = {
       id: entity.id || '',
-      name: displayName,
+      name: getRowDisplayName(entity),
       accountName: entity.accountName,
       campaignName: entity.campaignName,
       adSetName: entity.adSetName,
+      adName: entity.adName || '',
+      campaign_id: entity.campaign_id || '',
+      adset_id: entity.adset_id || '',
+      ad_id: entity.ad_id || '',
       impressions: entity.impressions || 0,
-      increase_impressions: entity.increase_impressions || 0,
+      increase_impressions: 0,
       reach: entity.reach || 0,
-      increase_reach: entity.increase_reach || 0,
+      increase_reach: 0,
       spend: entity.spend || 0,
-      increase_spend: entity.increase_spend || 0,
+      increase_spend: 0,
       clicks: entity.clicks || 0,
-      increase_clicks: entity.increase_clicks || 0,
+      increase_clicks: 0,
       purchases: entity.purchases || 0,
-      increase_purchases: entity.increase_purchases || 0,
+      increase_purchases: 0,
       registrations: entity.registrations || 0,
-      increase_registrations: entity.increase_registrations || 0,
+      increase_registrations: 0,
       isSummary: isSummary,
       summaryType: summaryType
     };
-    
+    console.log('处理广告数据:', adData);
     ads.push(adData);
   });
   
@@ -137,49 +133,52 @@ function flattenAds(entities: any[]): AdData[] {
 
 // 判断是否为合计行
 function isSummaryRow(entity: any): boolean {
-  const accountName = entity.accountName || '';
-  const campaignName = entity.campaignName || '';
-  const adSetName = entity.adSetName || '';
-  const adName = entity.adName || '';
-  
-  // 检查是否包含"全部"字样
-  const isAll = (name: string) => name === '全部' || name === 'All' || name === 'ALL';
-  
-  // 如果广告名称是"全部"，则是合计行
-  if (isAll(adName)) {
-    return true;
-  }
-  
-  return false;
+  // 使用'ad_id'来判断：有ad_id，则是广告统计行（非合计行）
+  return !(entity?.ad_id && entity?.ad_id?.trim() !== ''&& entity?.ad_id?.trim() !== "—");
 }
 
 // 获取合计行类型
 function getSummaryType(entity: any): 'account' | 'campaign' | 'adset' | 'ad' {
-  const accountName = entity.accountName || '';
-  const campaignName = entity.campaignName || '';
-  const adSetName = entity.adSetName || '';
-  const adName = entity.adName || '';
+  const { campaign_id, adset_id, ad_id } = entity || {};
   
-  // 检查是否包含"全部"字样
-  const isAll = (name: string) => name === '全部' || name === 'All' || name === 'ALL';
+  // 如果有ad_id，则是广告统计行
+  if (ad_id && ad_id.trim() !== '' && ad_id.trim() !== "—") {
+    return 'ad';
+  }
   
-  // 如果广告名称是"全部"，其他三个名称都是具体名称，则是广告组合计行
-  if (isAll(adName) && !isAll(accountName) && !isAll(campaignName) && !isAll(adSetName)) {
+  // 如果有adset_id且没有ad_id，则是广告组合计行
+  if (adset_id && adset_id.trim() !== '' && adset_id.trim() !== "—") {
     return 'adset';
   }
   
-  // 如果广告名称和广告组名称都是"全部"，账户名称和广告系列名称是具体名称，则是广告系列合计行
-  if (isAll(adName) && isAll(adSetName) && !isAll(accountName) && !isAll(campaignName)) {
+  // 如果有campaign_id且没有adset_id和ad_id，则是广告系列合计行
+  if (campaign_id && campaign_id.trim() !== '' && campaign_id.trim() !== "—") {
     return 'campaign';
   }
   
-  // 如果广告名称、广告组名称、广告系列名称都是"全部"，账户名称是具体名称，则是账户合计行
-  if (isAll(adName) && isAll(adSetName) && isAll(campaignName) && !isAll(accountName)) {
-    return 'account';
-  }
+  // 否则是账户合计行
+  return 'account';
+}
+
+// 获取行显示名称
+function getRowDisplayName(ad: any): string {
+  const { summaryType, accountName, campaignName, adSetName, adName } = ad || {};
+  console.log('getRowDisplayName:',ad, summaryType, accountName, campaignName, adSetName, adName);   
   
-  // 否则是单条广告数据
-  return 'ad';
+  // 根据合计类型返回不同的显示名称
+  switch (summaryType) {
+    case 'account':
+      // 账户合计行：显示账户名称
+      return accountName+'账户合计' ;   
+    case 'campaign':
+      // 系列合计行：显示系列名称+"合计"
+      return campaignName+'系列合计';
+    case 'adset':
+      // 组合计行：显示组名称+"合计"
+      return adSetName+'组合计' ;
+    default:
+      return  adName || '';
+  }
 }
 
 // 状态管理
@@ -224,40 +223,28 @@ const fetchAds = async () => {
   error.value = '';
 
   try {
-    // 先尝试从缓存获取数据
-    const cachedResult = await getAdsFromCache();
+    // 总是从DOM获取最新的原始数据
+    console.log('从DOM获取广告数据...');
+    const { ads: domAds, columnMapping: receivedColumnMapping, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
+    console.log('从DOM获取广告数据成功:', domAds);
+    console.log('从DOM获取列映射成功:', receivedColumnMapping);
+    console.log('从DOM获取货币符号成功:', domCurrencySymbol);
     
-    if (cachedResult && cachedResult.ads && cachedResult.ads.length > 0) {
-      console.log('从缓存获取广告数据成功:', cachedResult.ads);
-      ads.value = cachedResult.ads;
-      columnMapping.value = cachedResult.columnMapping;
+    if (domAds && domAds.length > 0) {
+      ads.value = domAds;
+      columnMapping.value = receivedColumnMapping;
       
       // 更新货币符号
-      if (cachedResult.currencySymbol) {
-        currencySymbol = cachedResult.currencySymbol;
+      if (domCurrencySymbol) {
+        currencySymbol = domCurrencySymbol;
       }
       
-      // 更新合计行的增加值
-      updateSummaryRows();
-    } else {
-      console.log('缓存中没有数据，从DOM获取广告数据');
-      // 缓存中没有数据，从DOM获取
-      const { ads: domAds, columnMapping: receivedColumnMapping, currencySymbol: domCurrencySymbol } = await getAdsFromDom();
-      console.log('从DOM获取广告数据成功:', domAds);
-      console.log('从DOM获取列映射成功:', receivedColumnMapping);
-      console.log('从DOM获取货币符号成功:', domCurrencySymbol);
-      
-      if (domAds && domAds.length > 0) {
-        ads.value = domAds;
-        columnMapping.value = receivedColumnMapping;
-        
-        // 更新货币符号
-        if (domCurrencySymbol) {
-          currencySymbol = domCurrencySymbol;
-        }
-        
-        // 更新合计行的增加值
-        updateSummaryRows();
+      // 从缓存获取增加值数据并合并
+      const cachedResult = await getAdsFromCache();
+      if (cachedResult && cachedResult.ads && cachedResult.ads.length > 0) {
+        console.log('从缓存获取增加值数据:', cachedResult.ads);
+        mergeIncreaseValues(ads.value, cachedResult.ads);
+        console.log('合并后的广告数据:', ads.value);
       }
     }
     
@@ -269,6 +256,29 @@ const fetchAds = async () => {
     loading.value = false;
   }
 };
+
+// 合并增加值数据到DOM数据
+function mergeIncreaseValues(domAds: AdData[], cachedAds: AdData[]) {
+  // 构建缓存数据的Map，用于快速查找
+  const cachedMap = new Map<string, AdData>();
+  cachedAds.forEach(cachedAd => {
+    cachedMap.set(cachedAd.id, cachedAd);
+  });
+  
+  // 合并增加值到DOM数据
+  domAds.forEach(domAd => {
+    const cachedAd = cachedMap.get(domAd.id);
+    if (cachedAd) {
+      // 合并增加值字段
+      domAd.increase_impressions = cachedAd.increase_impressions || 0;
+      domAd.increase_reach = cachedAd.increase_reach || 0;
+      domAd.increase_spend = cachedAd.increase_spend || 0;
+      domAd.increase_clicks = cachedAd.increase_clicks || 0;
+      domAd.increase_registrations = cachedAd.increase_registrations || 0;
+      domAd.increase_purchases = cachedAd.increase_purchases || 0;
+    }
+  });
+}
 
 // 处理日期变化
 const handleDateChange = (date: string) => {
@@ -289,39 +299,43 @@ const saveChanges = async () => {
   error.value = '';
   
   try {
-    // 更新合计行的增加值
-    updateSummaryRows();
-    
     // 检测哪些广告被修改并保存
-  let modifiedCount = 0;
-  const modifications: any = {};
-  
-  for (const ad of ads.value) {
-    // 跳过合计行，只保存非合计行的修改
-    if (ad.isSummary) {
-      continue;
+    let modifiedCount = 0;
+    const modifications: any = {};
+    
+    for (const ad of ads.value) {
+      // 只保存广告统计行的修改（跳过合计行）
+      if (ad.isSummary) {
+        continue;
+      }
+      
+      // 构建修改的字段数据
+      const modifiedFields: any = {};
+      
+      // 检查并保存所有增加字段
+      modifiedFields.impressions = ad.increase_impressions || 0;
+      modifiedFields.reach = ad.increase_reach || 0;
+      modifiedFields.spend = ad.increase_spend || 0;
+      modifiedFields.clicks = ad.increase_clicks || 0;
+      modifiedFields.registrations = ad.increase_registrations || 0;
+      modifiedFields.purchases = ad.increase_purchases || 0;
+      
+      // 检查是否有修改（至少有一个字段不为0）
+      const hasModification = Object.values(modifiedFields).some(value => Number(value) !== 0);
+      
+      if (hasModification) {
+        modifiedCount++;
+        console.log(`Modified ad: ${ad.id}`, ad);
+        // 保存修改字段和4个id字段，用于渲染时匹配行
+        modifications[ad.id] = {
+          ...modifiedFields,
+          campaign_id: ad.campaign_id,
+          adset_id: ad.adset_id,
+          ad_id: ad.ad_id,
+          accountName: ad.accountName
+        };
+      }
     }
-    
-    // 构建修改的字段数据
-    const modifiedFields: any= {};
-    
-    // 检查并保存所有增加字段
-    modifiedFields.impressions = ad.increase_impressions || 0;
-    modifiedFields.reach = ad.increase_reach || 0;
-    modifiedFields.spend = ad.increase_spend || 0;
-    modifiedFields.clicks = ad.increase_clicks || 0;
-    modifiedFields.registrations = ad.increase_registrations || 0;
-    modifiedFields.purchases = ad.increase_purchases || 0;
-    
-    // 检查是否有修改（至少有一个字段不为0）
-    const hasModification = Object.values(modifiedFields).some(value => Number(value) !== 0);
-    
-    if (hasModification) {
-      modifiedCount++;
-      console.log(`Modified ad: ${ad.id}`, ad);
-      modifications[ad.id] = modifiedFields;
-    }
-  }
     
     // 保存修改数据（包含当前选择的日期）
     await sendMessageToContent('saveReportingModifications', {
@@ -339,167 +353,7 @@ const saveChanges = async () => {
   }
 };
 
-// 计算合计数据
-const calculateTotals = () => {
-  const calculatedTotals = {
-    impressions: 0,
-    increase_impressions: 0,
-    reach: 0,
-    increase_reach: 0,
-    spend: 0,
-    increase_spend: 0,
-    clicks: 0,
-    increase_clicks: 0,
-    registrations: 0,
-    increase_registrations: 0,
-    purchases: 0,
-    increase_purchases: 0
-  };
-  
-  // 计算各字段合计
-  ads.value.forEach(ad => {
-    // 处理非数字值，将其转换为0
-    const getValue = (val: any): number => {
-      if (val === undefined || val === null || val === '-') {
-        return 0;
-      }
-      // 清理字符串，去除货币符号和逗号
-      const cleanedVal = String(val).replace(/[^\d.-]/g, '');
-      const numVal = parseFloat(cleanedVal);
-      if (isNaN(numVal)) {
-        return 0;
-      }
-      return numVal;
-    };
-    
-    calculatedTotals.impressions += getValue(ad.impressions);
-    calculatedTotals.increase_impressions += getValue(ad.increase_impressions);
-    calculatedTotals.reach += getValue(ad.reach);
-    calculatedTotals.increase_reach += getValue(ad.increase_reach);
-    calculatedTotals.spend += getValue(ad.spend);
-    calculatedTotals.increase_spend += getValue(ad.increase_spend);
-    calculatedTotals.clicks += getValue(ad.clicks);
-    calculatedTotals.increase_clicks += getValue(ad.increase_clicks);
-    calculatedTotals.registrations += getValue(ad.registrations);
-    calculatedTotals.increase_registrations += getValue(ad.increase_registrations);
-    calculatedTotals.purchases += getValue(ad.purchases);
-    calculatedTotals.increase_purchases += getValue(ad.increase_purchases);
-  });
-  
-  return calculatedTotals;
-};
 
-// 更新合计行的增加值
-const updateSummaryRows = () => {
-  // 首先确保所有合计行的增加值默认为0
-  ads.value.forEach(ad => {
-    if (ad.isSummary) {
-      ad.increase_impressions = 0;
-      ad.increase_reach = 0;
-      ad.increase_spend = 0;
-      ad.increase_clicks = 0;
-      ad.increase_registrations = 0;
-      ad.increase_purchases = 0;
-    }
-  });
-  
-  // 按账户分组
-  const accountGroups: Record<string, AdData[]> = {};
-  
-  ads.value.forEach(ad => {
-    if (!ad.isSummary) {
-      const accountKey = ad.accountName;
-      if (!accountGroups[accountKey]) {
-        accountGroups[accountKey] = [];
-      }
-      accountGroups[accountKey].push(ad);
-    }
-  });
-  
-  // 计算每个账户的合计
-  Object.keys(accountGroups).forEach(accountName => {
-    const accountAds = accountGroups[accountName];
-    const accountSummary = ads.value.find(ad => 
-      ad.isSummary && 
-      ad.summaryType === 'account' && 
-      ad.accountName === accountName
-    );
-    
-    // 按广告系列分组
-    const campaignGroups: Record<string, AdData[]> = {};
-    accountAds.forEach(ad => {
-      const campaignKey = `${ad.accountName}_${ad.campaignName}`;
-      if (!campaignGroups[campaignKey]) {
-        campaignGroups[campaignKey] = [];
-      }
-      campaignGroups[campaignKey].push(ad);
-    });
-    
-    // 计算每个广告系列的合计
-    Object.keys(campaignGroups).forEach(campaignKey => {
-      const campaignAds = campaignGroups[campaignKey];
-      const [accountName, campaignName] = campaignKey.split('_');
-      const campaignSummary = ads.value.find(ad => 
-        ad.isSummary && 
-        ad.summaryType === 'campaign' && 
-        ad.accountName === accountName && 
-        ad.campaignName === campaignName
-      );
-      
-      // 按广告组分组
-      const adsetGroups: Record<string, AdData[]> = {};
-      campaignAds.forEach(ad => {
-        const adsetKey = `${ad.accountName}_${ad.campaignName}_${ad.adSetName}`;
-        if (!adsetGroups[adsetKey]) {
-          adsetGroups[adsetKey] = [];
-        }
-        adsetGroups[adsetKey].push(ad);
-      });
-      
-      // 计算每个广告组的合计（先计算这层）
-      Object.keys(adsetGroups).forEach(adsetKey => {
-        const adsetAds = adsetGroups[adsetKey];
-        const [accountName, campaignName, adSetName] = adsetKey.split('_');
-        const adsetSummary = ads.value.find(ad => 
-          ad.isSummary && 
-          ad.summaryType === 'adset' && 
-          ad.accountName === accountName && 
-          ad.campaignName === campaignName && 
-          ad.adSetName === adSetName
-        );
-        
-        if (adsetSummary) {
-          adsetSummary.increase_impressions = adsetAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
-          adsetSummary.increase_reach = adsetAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
-          adsetSummary.increase_spend = adsetAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
-          adsetSummary.increase_clicks = adsetAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
-          adsetSummary.increase_registrations = adsetAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
-          adsetSummary.increase_purchases = adsetAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
-        }
-      });
-      
-      if (campaignSummary) {
-        // 计算广告系列合计的增加值（包含所有广告组的合计）
-        campaignSummary.increase_impressions = campaignAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
-        campaignSummary.increase_reach = campaignAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
-        campaignSummary.increase_spend = campaignAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
-        campaignSummary.increase_clicks = campaignAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
-        campaignSummary.increase_registrations = campaignAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
-        campaignSummary.increase_purchases = campaignAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
-      }
-    });
-    
-    if (accountSummary) {
-      // 计算账户合计的增加值（包含所有广告系列的合计）
-      accountSummary.increase_impressions = accountAds.reduce((sum, ad) => sum + (ad.increase_impressions || 0), 0);
-      accountSummary.increase_reach = accountAds.reduce((sum, ad) => sum + (ad.increase_reach || 0), 0);
-      accountSummary.increase_spend = accountAds.reduce((sum, ad) => sum + (ad.increase_spend || 0), 0);
-      accountSummary.increase_clicks = accountAds.reduce((sum, ad) => sum + (ad.increase_clicks || 0), 0);
-      accountSummary.increase_registrations = accountAds.reduce((sum, ad) => sum + (ad.increase_registrations || 0), 0);
-      accountSummary.increase_purchases = accountAds.reduce((sum, ad) => sum + (ad.increase_purchases || 0), 0);
-    }
-  });
-};
 
 // 关闭弹窗
 const closePopup = () => {
@@ -632,86 +486,99 @@ onUnmounted(() => {
         </thead>
         <tbody>
           <tr v-for="ad in ads" :key="ad.id" :class="{ 'summary-row': ad.isSummary }">
-            <td class="ellipsis-cell" :title="ad.name">
-              {{ ad.name }}
+            <td class="ellipsis-cell" :title="getRowDisplayName(ad)">
+              {{ getRowDisplayName(ad) }}
             </td>
             <td class="ellipsis-cell" :title="String(ad.impressions || '-')">
-              {{ ad.impressions|| '-' }}
+              {{ ad.impressions || '-' }}
             </td>
             <td>
+              <!-- 合计行显示数值，广告统计行显示输入框 -->
+              <template v-if="ad.isSummary">
+                <span class="summary-value">{{ ad.increase_impressions || 0 }}</span>
+              </template>
               <input 
-                v-if="!ad.isSummary"
+                v-else
                 type="number" 
                 v-model="ad.increase_impressions" 
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell">{{ ad.increase_impressions || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.reach || '-')">
               {{ ad.reach || '-' }}
             </td>
             <td>
+              <template v-if="ad.isSummary">
+                <span class="summary-value">{{ ad.increase_reach || 0 }}</span>
+              </template>
               <input 
-                v-if="!ad.isSummary"
+                v-else
                 type="number" 
                 v-model="ad.increase_reach" 
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell">{{ ad.increase_reach || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.spend || '-')">
               {{ ad.spend || '0' }}
             </td>
             <td>
+              <template v-if="ad.isSummary">
+                <span class="summary-value">{{ ad.increase_spend || 0 }}</span>
+              </template>
               <input 
-                v-if="!ad.isSummary"
+                v-else
                 type="number" 
                 v-model="ad.increase_spend" 
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell">{{ ad.increase_spend || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.clicks || '-')">  
               {{ ad.clicks || '0' }}
             </td>
             <td>
+              <template v-if="ad.isSummary">
+                <span class="summary-value">{{ ad.increase_clicks || 0 }}</span>
+              </template>
               <input 
-                v-if="!ad.isSummary"
+                v-else
                 type="number" 
                 v-model="ad.increase_clicks" 
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell">{{ ad.increase_clicks || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.registrations || '-')">  
               {{ ad.registrations || '0' }}
             </td>
             <td>
+              <template v-if="ad.isSummary">
+                <span class="summary-value">{{ ad.increase_registrations || 0 }}</span>
+              </template>
               <input 
-                v-if="!ad.isSummary"
+                v-else
                 type="number" 
                 v-model="ad.increase_registrations" 
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell">{{ ad.increase_registrations || 0 }}</span>
             </td>
             <td class="ellipsis-cell" :title="String(ad.purchases || '-')">  
               {{ ad.purchases || '0' }}
             </td>
             <td>
+              <template v-if="ad.isSummary">
+                <span class="summary-value">{{ ad.increase_purchases || 0 }}</span>
+              </template>
               <input 
-                v-if="!ad.isSummary"
+                v-else
                 type="number" 
                 v-model="ad.increase_purchases" 
                 class="editable-input"
                 min="0"
               />
-              <span v-else class="summary-cell">{{ ad.increase_purchases || 0 }}</span>
             </td>
           </tr>
           <tr v-if="ads.length === 0 && !loading">
@@ -899,7 +766,7 @@ onUnmounted(() => {
 }
 
 .total-row {
-  background-color: #999;
+  background-color: #666;
   font-weight: 600;
 }
 
@@ -908,17 +775,28 @@ onUnmounted(() => {
 }
 
 .summary-row {
-  background-color: #999;
+  background-color: #666;
   font-weight: 600;
 }
 
 .summary-row td {
-  background-color: #999;
+  background-color: #666;
 }
 
 .summary-cell {
   color: #fff;
   font-style: italic;
+}
+
+.summary-value {
+  display: inline-block;
+  padding: 3px 8px;
+  background-color: #fff;
+  color: #333;
+  border-radius: 4px;
+  font-weight: normal;
+  min-width: 40px;
+  text-align: center;
 }
 
 .icon {
