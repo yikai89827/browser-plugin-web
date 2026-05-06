@@ -6,6 +6,10 @@ import { getModifiedData } from './cache';
 
 // 更新DOM元素
 export async function updateDomElements() {
+  // 获取当前排序配置
+  const sortConfig = getSortConfig();
+  console.log('更新DOM元素，当前排序配置:', sortConfig);
+  
   // 从页面提取日期范围
   const dateRange: string[] = extractDateFromPage();
   console.log('更新DOM元素，页面日期范围:', dateRange);
@@ -406,12 +410,33 @@ export function setupScrollListener() {
 // 监听排序变动
 export function setupSortListener() {
   const tableHeaders = document.querySelectorAll('[role="columnheader"]');
-  tableHeaders.forEach(header => {
-    header.addEventListener('click', async () => {
+  console.log('找到的表头数量:', tableHeaders.length);
+  
+  tableHeaders.forEach((header, index) => {
+    const headerText = header.textContent?.trim() || '未知';
+    console.log(`表头 ${index}: ${headerText}`);
+    
+    header.addEventListener('click', async (event) => {
+      console.log('表头被点击:', headerText);
+      console.log('点击事件目标:', event.target);
+      
+      // 获取点击前的排序配置
+      const beforeSortConfig = getSortConfig();
+      console.log('点击前排序配置:', beforeSortConfig);
+      
       // 延迟执行，等待DOM更新
       setTimeout(async () => {
-        await updateDomElements();
-      }, 100);
+        // 获取点击后的排序配置
+        const afterSortConfig = getSortConfig();
+        console.log('点击后排序配置:', afterSortConfig);
+        
+        if (beforeSortConfig.field !== afterSortConfig.field || beforeSortConfig.direction !== afterSortConfig.direction) {
+          console.log('排序发生变化，触发DOM更新');
+          await updateDomElements();
+        } else {
+          console.log('排序未发生变化，跳过DOM更新');
+        }
+      }, 200);
     });
   });
 }

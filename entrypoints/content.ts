@@ -394,10 +394,12 @@ function initReportingPageObserver(): void {
   let debounceTimer: number | null = null;
   // 节流计时器（用于排序切换）
   let throttleTimer: number | null = null;
+  // 上次排序信息
+  let lastSortInfo = { field: null, direction: null };
   
   // 使用MutationObserver来拦截页面渲染
   const observer = new MutationObserver((mutations) => {
-    // 检查是否有排序变化（通过style变化检测）
+    // 检查是否有排序变化
     let hasSortChange = false;
 
     // 检查是否有新的表格元素被创建（可能是页面刷新）
@@ -493,6 +495,32 @@ function initReportingPageObserver(): void {
         }
         return false;
       });
+
+      // 检测排序变化
+      try {
+        // 从URL参数获取当前排序信息
+        const urlParams = new URLSearchParams(window.location.search);
+        const sortSpec = urlParams.get('sort_spec');
+        let currentField = null;
+        let currentDirection = null;
+        
+        if (sortSpec) {
+          const [field, direction] = sortSpec.split('~');
+          currentField = field;
+          currentDirection = direction;
+        }
+        
+        console.log('当前排序信息 - field:', currentField, 'direction:', currentDirection, '上次排序:', lastSortInfo);
+        
+        // 检查排序是否发生变化
+        if (currentField !== lastSortInfo.field || currentDirection !== lastSortInfo.direction) {
+          hasSortChange = true;
+          lastSortInfo = { field: currentField, direction: currentDirection };
+          console.log('检测到排序变化:', lastSortInfo);
+        }
+      } catch (error) {
+        console.error('检测排序信息错误:', error);
+      }
 
       if (hasTableCreated || hasScrollChange) {
         // 如果是表体行的data-surface属性变化（可能是排序切换），使用节流逻辑
