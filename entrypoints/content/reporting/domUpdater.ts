@@ -366,12 +366,21 @@ function calculateTotalModifications(modifiedData: any): any {
   };
   
   // 遍历所有修改的数据，只计算广告行的修改，不包括合计行
-  Object.values(modifiedData).forEach((modifications: any) => {
-    Object.entries(modifications).forEach(([field, value]) => {
-      if (total[field] !== undefined) {
-        total[field] += Number(value) || 0;
-      }
-    });
+  // 广告行的ID格式为 `${account_id}_${campaign_id}_${adset_id}_${ad_id}`，包含多个下划线
+  // 合计行的ID通常只是单个ID（account_id/campaign_id/adset_id），不包含下划线或只有一个下划线
+  Object.entries(modifiedData).forEach(([adId, modifications]) => {
+    // 只有广告行的ID包含多个下划线（格式为 account_campaign_adset_ad）
+    // 合计行的ID是单个值，不包含下划线或下划线数量少于3个
+    const underscoreCount = (adId.match(/_/g) || []).length;
+    if (underscoreCount >= 3) {
+      // 这是广告统计行，累加其增加值
+      Object.entries(modifications as Record<string, unknown>).forEach(([field, value]) => {
+        if (total[field] !== undefined) {
+          total[field] += Number(value) || 0;
+        }
+      });
+    }
+    // 合计行的修改值不应该被计入底部总计
   });
   
   return total;

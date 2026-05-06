@@ -8,6 +8,7 @@ interface AdData {
   id: string;
   name: string;
   accountName: string;
+  account_id: string;
   campaignName: string;
   adSetName: string;
   campaign_id: string;
@@ -97,6 +98,7 @@ function flattenAds(entities: any[]): AdData[] {
       id: entity.id || '',
       name: getRowDisplayName(entity),
       accountName: entity.accountName,
+      account_id: entity.account_id || '',
       campaignName: entity.campaignName,
       adSetName: entity.adSetName,
       adName: entity.adName || '',
@@ -324,8 +326,15 @@ const saveChanges = async () => {
     let modifiedCount = 0;
     const modifications: any = {};
     
+    // 先获取现有缓存数据，保留之前保存的广告行数据
+    const cachedResult = await getAdsFromCache();
+    if (cachedResult && Object.keys(cachedResult).length > 0) {
+      Object.assign(modifications, cachedResult);
+    }
+    
+    // 遍历所有广告行，更新或添加修改数据
     for (const ad of ads.value) {
-      // 只保存广告统计行的修改（跳过合计行）
+      // 只处理广告统计行（跳过合计行）
       if (ad.isSummary) {
         continue;
       }
@@ -353,50 +362,71 @@ const saveChanges = async () => {
           campaign_id: ad.campaign_id,
           adset_id: ad.adset_id,
           ad_id: ad.ad_id,
-          accountName: ad.accountName
+          account_id: ad.account_id
         };
-        
-        // 同时保存到上层合计行
-        // 组合计（使用adset_id）
-        if (ad.adset_id) {
-          if (!modifications[ad.adset_id]) {
-            modifications[ad.adset_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
-          }
-          modifications[ad.adset_id].impressions += Number(modifiedFields.impressions);
-          modifications[ad.adset_id].reach += Number(modifiedFields.reach);
-          modifications[ad.adset_id].spend += Number(modifiedFields.spend);
-          modifications[ad.adset_id].clicks += Number(modifiedFields.clicks);
-          modifications[ad.adset_id].registrations += Number(modifiedFields.registrations);
-          modifications[ad.adset_id].purchases += Number(modifiedFields.purchases);
-        }
-        // 系列合计（使用campaign_id）
-        if (ad.campaign_id) {
-          if (!modifications[ad.campaign_id]) {
-            modifications[ad.campaign_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
-          }
-          modifications[ad.campaign_id].impressions += Number(modifiedFields.impressions);
-          modifications[ad.campaign_id].reach += Number(modifiedFields.reach);
-          modifications[ad.campaign_id].spend += Number(modifiedFields.spend);
-          modifications[ad.campaign_id].clicks += Number(modifiedFields.clicks);
-          modifications[ad.campaign_id].registrations += Number(modifiedFields.registrations);
-          modifications[ad.campaign_id].purchases += Number(modifiedFields.purchases);
-        }
-        // 账户合计（使用account_id）
-        if (ad.account_id) {
-          if (!modifications[ad.account_id]) {
-            modifications[ad.account_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
-          }
-          modifications[ad.account_id].impressions += Number(modifiedFields.impressions);
-          modifications[ad.account_id].reach += Number(modifiedFields.reach);
-          modifications[ad.account_id].spend += Number(modifiedFields.spend);
-          modifications[ad.account_id].clicks += Number(modifiedFields.clicks);
-          modifications[ad.account_id].registrations += Number(modifiedFields.registrations);
-          modifications[ad.account_id].purchases += Number(modifiedFields.purchases);
-        }
       }
     }
     
-    console.log('保存的修改数据（含合计行）:', modifications);
+    console.log('保存前的修改数据（包含缓存）:', modifications);
+    
+    // 重新计算所有合计行的增加值
+    // 首先重置所有合计行的增加值（从当前数据中识别合计行）
+    ads.value?.forEach(ad => {
+      if (ad.isSummary && modifications[ad.id]) {
+        modifications[ad.id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+      }
+    });
+    
+    // 然后重新计算所有广告行的合计
+    for (const ad of ads.value) {
+      if (ad.isSummary) {
+        continue;
+      }
+      
+      const modifiedFields = modifications[ad.id];
+      if (!modifiedFields) {
+        continue;
+      }
+      
+      // 组合计（使用adset_id）
+      if (ad.adset_id) {
+        if (!modifications[ad.adset_id]) {
+          modifications[ad.adset_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+        }
+        modifications[ad.adset_id].impressions += Number(modifiedFields.impressions);
+        modifications[ad.adset_id].reach += Number(modifiedFields.reach);
+        modifications[ad.adset_id].spend += Number(modifiedFields.spend);
+        modifications[ad.adset_id].clicks += Number(modifiedFields.clicks);
+        modifications[ad.adset_id].registrations += Number(modifiedFields.registrations);
+        modifications[ad.adset_id].purchases += Number(modifiedFields.purchases);
+      }
+      // 系列合计（使用campaign_id）
+      if (ad.campaign_id) {
+        if (!modifications[ad.campaign_id]) {
+          modifications[ad.campaign_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+        }
+        modifications[ad.campaign_id].impressions += Number(modifiedFields.impressions);
+        modifications[ad.campaign_id].reach += Number(modifiedFields.reach);
+        modifications[ad.campaign_id].spend += Number(modifiedFields.spend);
+        modifications[ad.campaign_id].clicks += Number(modifiedFields.clicks);
+        modifications[ad.campaign_id].registrations += Number(modifiedFields.registrations);
+        modifications[ad.campaign_id].purchases += Number(modifiedFields.purchases);
+      }
+      // 账户合计（使用account_id）
+      if (ad.account_id) {
+        if (!modifications[ad.account_id]) {
+          modifications[ad.account_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+        }
+        modifications[ad.account_id].impressions += Number(modifiedFields.impressions);
+        modifications[ad.account_id].reach += Number(modifiedFields.reach);
+        modifications[ad.account_id].spend += Number(modifiedFields.spend);
+        modifications[ad.account_id].clicks += Number(modifiedFields.clicks);
+        modifications[ad.account_id].registrations += Number(modifiedFields.registrations);
+        modifications[ad.account_id].purchases += Number(modifiedFields.purchases);
+      }
+    }
+    
+    console.log('保存的修改数据（含重新计算的合计行）:', modifications);
     
     // 保存修改数据（包含当前选择的日期）
     await sendMessageToContent('saveReportingModifications', {
