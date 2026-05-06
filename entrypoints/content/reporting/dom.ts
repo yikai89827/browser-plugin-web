@@ -465,15 +465,20 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     // 提取数值数据
     for (const [field, columnIndex] of Object.entries(columnMapping)) {
       if (columnIndex >= 0 && scrollableColumnCellsArray[columnIndex]) {
-        let cellText = scrollableColumnCellsArray[columnIndex].textContent?.trim() || '';
-        // 去掉数值后面的中括号和数字，如 "12[2]" → "12"
-        cellText = cellText.replace(/\[\d+\]$/, '');
+        const cellElement = scrollableColumnCellsArray[columnIndex];
+        let cellText = cellElement.textContent?.trim() || '';
         
-        // ID字段保持为字符串，数值字段转换为数字
+        // 获取最内层DOM的 data-increase 属性值
+        const innermostElement = findInnermostElement(cellElement);
+        const dataIncrease = innermostElement.getAttribute('data-increase');
+        const increaseValue = dataIncrease ? Number(dataIncrease) : 0;
+        
+        // ID字段保持为字符串，数值字段转换为数字并扣除增加值
         if (['account_id', 'campaign_id', 'adset_id', 'ad_id'].includes(field)) {
           rowData[field] = cellText;
         } else {
-          rowData[field] = parseValueToNumber(cellText);
+          const rawValue = parseValueToNumber(cellText);
+          rowData[field] = rawValue - increaseValue;
         }
         // console.log('提取的字段数据:', field, columnIndex, cellText, rowData[field]);
       }
