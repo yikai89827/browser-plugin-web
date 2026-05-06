@@ -288,14 +288,50 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
         
         processedData.forEach(rowData => {
           console.log('处理行 - id:', rowData.id, 'ad_id:', rowData.ad_id, 'isAdRow:', !!(rowData.ad_id && rowData.ad_id.trim() !== ''));
+          console.log('行的四个ID字段 - account_id:', rowData.account_id, 'campaign_id:', rowData.campaign_id, 'adset_id:', rowData.adset_id, 'ad_id:', rowData.ad_id);
           
-          if (rowData && rowData.id && modifiedData[rowData.id]) {
-            console.log('找到匹配的修改数据:', rowData.id, modifiedData[rowData.id]);
+          // 尝试多种方式匹配缓存数据
+          let matchedModification = null;
+          let matchedId = null;
+          
+          // 1. 首先尝试使用完整的组合ID匹配
+          if (rowData.id && modifiedData[rowData.id]) {
+            matchedModification = modifiedData[rowData.id];
+            matchedId = rowData.id;
+            console.log('通过完整ID匹配成功:', matchedId);
+          }
+          
+          // 2. 如果完整ID不匹配，尝试使用ad_id匹配
+          if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
+            matchedModification = modifiedData[rowData.ad_id];
+            matchedId = rowData.ad_id;
+            console.log('通过ad_id匹配成功:', matchedId);
+          }
+          
+          // 3. 如果ad_id也不匹配，尝试使用账户ID匹配（针对账户合计行）
+          if (!matchedModification && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id && rowData.account_id && modifiedData[rowData.account_id]) {
+            matchedModification = modifiedData[rowData.account_id];
+            matchedId = rowData.account_id;
+            console.log('通过account_id匹配成功:', matchedId);
+          }
+          
+          // 4. 如果以上都不匹配，尝试检查缓存中是否有包含ad_id的键
+          if (!matchedModification && rowData.ad_id) {
+            const cachedKeyWithAdId = Object.keys(modifiedData).find(key => key.includes(rowData.ad_id));
+            if (cachedKeyWithAdId) {
+              matchedModification = modifiedData[cachedKeyWithAdId];
+              matchedId = cachedKeyWithAdId;
+              console.log(`通过包含ad_id的键匹配成功: ${rowData.ad_id} -> ${cachedKeyWithAdId}`);
+            }
+          }
+          
+          if (matchedModification) {
+            console.log('找到匹配的修改数据:', rowData.id, matchedModification);
             
             // 只有广告统计行（有ad_id的行）才需要减去增加值
             // 合计行的增加值是通过计算广告行的增加值得到的，不应该直接减去
-            if (rowData.ad_id && rowData.ad_id.trim() !== ''&& rowData.ad_id.trim() !== '—') {
-              const modification = modifiedData[rowData.id];
+            if (rowData.ad_id && rowData.ad_id.trim() !== '' && rowData.ad_id.trim() !== '—') {
+              const modification = matchedModification;
               console.log('原始值 - impressions:', rowData.impressions, 'reach:', rowData.reach);
               console.log('增加值 - impressions:', modification.impressions, 'reach:', modification.reach);
               
@@ -348,12 +384,17 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
   }
 }
 
-// 生成广告唯一标识符
+// 生成广告唯一标识符（基于名称的备用方案）
 export function generateAdId(adData: any): string {
   const originalId = `${adData.accountName}_${adData.campaignName}_${adData.adSetName}_${adData.adName}`;
   const charCodeString = stringToCharCodeString(originalId);
   const num = charCodeStringToNumber(charCodeString);
   return numberToBase62(num);
+}
+
+// 生成广告统计行的ID（使用四个ID字段组合）
+export function generateAdRowId(account_id: string, campaign_id: string, adset_id: string, ad_id: string): string {
+  return `${account_id || 'NA'}_${campaign_id || 'NA'}_${adset_id || 'NA'}_${ad_id}`;
 }
 
 // 将字符串转换为字符编码字符串
@@ -469,7 +510,7 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     // 生成ID：数据行使用多个ID字段的组合，合计行使用各自的ID
     if (rowData.ad_id) {
       // 数据行：使用广告ID、广告组ID、广告系列ID和账户ID的组合作为唯一标识
-      rowData.id = `${rowData.account_id || 'NA'}_${rowData.campaign_id || 'NA'}_${rowData.adset_id || 'NA'}_${rowData.ad_id}`;
+      rowData.id = generateAdRowId(rowData.account_id, rowData.campaign_id, rowData.adset_id, rowData.ad_id);
     } else if (rowData.adset_id) {
       // 广告组合计行：使用广告组ID作为唯一标识
       rowData.id = rowData.adset_id;

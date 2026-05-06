@@ -290,8 +290,15 @@ export function updateAdRow(row: Element, modifications: any) {
 // 应用修改到单元格数组
 function applyModificationsToCells(cellsArray: Element[], modifications: any) {
   const columnIndices = getColumnIndicesSync();
+  // ID字段列表，这些字段不应该被当成数值处理
+  const idFields = ['account_id', 'campaign_id', 'adset_id', 'ad_id'];
 
   Object.entries(modifications).forEach(([field, value]) => {
+    // 跳过ID字段，这些字段不需要处理
+    if (idFields.includes(field)) {
+      return;
+    }
+    
     const columnIndex = columnIndices[field] ?? -1;
     
     if (columnIndex >= 0 && cellsArray[columnIndex]) {
