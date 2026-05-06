@@ -159,8 +159,8 @@ export function getReportingTableDataRows(): HTMLElement[] {
 }
 
 /**
- * 报表表格实际产生纵向滚动的节点（往往不是 [role="table"] 本身）。
- * 用于绑定 scroll 与读取 scrollTop；误用外层的 scrollTop≈0 会导致「回顶重排」永远不触发或行为错乱。
+ * 报表**数据区**纵向滚动容器（排除侧栏透视表等：它们也在 table 内滚动但不包含数据行）。
+ * 在「从首行父链向上」的所有 overflow-y 可滚祖先里，取 scrollRange 最大者，一般即主虚拟列表视口。
  */
 export function getReportingTableScrollParent(): HTMLElement | null {
   const table = findTableContainer();
@@ -168,11 +168,12 @@ export function getReportingTableScrollParent(): HTMLElement | null {
     return null;
   }
   const rows = getReportingTableDataRows();
-  const first = rows[0] as HTMLElement | undefined;
-  if (!first) {
+  const anchor = rows[0] as HTMLElement | undefined;
+  if (!anchor) {
     return table;
   }
-  let p: HTMLElement | null = first.parentElement;
+  const scrollables: HTMLElement[] = [];
+  let p: HTMLElement | null = anchor.parentElement;
   while (p && table.contains(p)) {
     const st = window.getComputedStyle(p);
     const oy = st.overflowY;
@@ -180,11 +181,18 @@ export function getReportingTableScrollParent(): HTMLElement | null {
       (oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
       p.scrollHeight > p.clientHeight + 4
     ) {
-      return p;
+      scrollables.push(p);
     }
     p = p.parentElement;
   }
-  return table;
+  if (scrollables.length === 0) {
+    return table;
+  }
+  return scrollables.reduce((best, cur) => {
+    const db = cur.scrollHeight - cur.clientHeight;
+    const da = best.scrollHeight - best.clientHeight;
+    return db > da ? cur : best;
+  });
 }
 
 // 获取表格底部

@@ -56,9 +56,8 @@ export function shouldIgnoreReportingPageObserver(): boolean {
   return Date.now() < ignoreReportingObserverUntil || updateDomElementsInFlight;
 }
 
-/** 停滚后统一处理：顶/底一次完整重排，否则仅补丁（用 getReportingTableScrollParent 读 scrollTop，避免 e.target 与真实滚动层不一致） */
+/** 停滚后统一处理：顶/底一次完整重排，否则仅补丁 */
 let scrollStopUnifiedTimer: ReturnType<typeof setTimeout> | null = null;
-let lastReportingScrollElement: HTMLElement | null = null;
 
 export type UpdateDomElementsOptions = {
   /**
@@ -513,8 +512,8 @@ function calculateTotalModifications(modifiedData: any): any {
 }
 
 const SCROLL_STOP_DEBOUNCE_MS = 550;
-/** 顶/底判定放宽，避免亚像素、内边距导致永远判不中 */
-const SCROLL_EDGE_THRESHOLD_PX = 32;
+/** 顶/底判定放宽（含轻微回弹） */
+const SCROLL_EDGE_THRESHOLD_PX = 40;
 
 function isReportingInnerScrollTarget(el: HTMLElement, table: HTMLElement): boolean {
   if (!table.contains(el)) return false;
@@ -533,20 +532,24 @@ export function setupScrollListener() {
 
   const onScrollCapture = (e: Event) => {
     const el = e.target as HTMLElement | null;
-    if (!el || !isReportingInnerScrollTarget(el, table)) {
+    if (!el || !table.contains(el)) {
       return;
     }
-
-    lastReportingScrollElement = el;
+    // 侧栏透视表等滚动：e.target 不包含报表数据行，忽略（否则会误判 scrollTop、从不触发主表回顶重排）
+    const anchor = getReportingTableDataRows()[0] as HTMLElement | undefined;
+    if (!anchor || !el.contains(anchor)) {
+      return;
+    }
+    if (!isReportingInnerScrollTarget(el, table)) {
+      return;
+    }
 
     if (scrollStopUnifiedTimer !== null) {
       clearTimeout(scrollStopUnifiedTimer);
     }
     scrollStopUnifiedTimer = setTimeout(() => {
       scrollStopUnifiedTimer = null;
-      const scrollEl =
-        getReportingTableScrollParent() ||
-        (lastReportingScrollElement?.isConnected ? lastReportingScrollElement : null);
+      const scrollEl = getReportingTableScrollParent();
       if (!scrollEl?.isConnected) {
         void updateDomElements({ skipReorder: true });
         return;
@@ -557,7 +560,7 @@ export function setupScrollListener() {
         return;
       }
       const st = scrollEl.scrollTop;
-      const nearTop = st <= SCROLL_EDGE_THRESHOLD_PX;
+      const nearTop = st <= SCROLL_EDGE_THRESHOLD_PX || st < 0;
       const nearBottom = st >= maxScroll - SCROLL_EDGE_THRESHOLD_PX;
       if (nearTop || nearBottom) {
         void updateDomElements({ skipReorder: false });
