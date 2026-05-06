@@ -648,7 +648,7 @@ function initReportingPageObserver(): void {
     const waitTime = isScrollRelated ? 250 : 400;
     setTimeout(async () => {
       const { updateDomElements } = await import('./content/reporting/domUpdater');
-      await updateDomElements({ skipReorder: false });
+      await updateDomElements({ skipReorder: isScrollRelated });
       removeOverlay();
     }, waitTime);
   };
@@ -679,7 +679,7 @@ function initReportingPageObserver(): void {
       const shouldUpdateDom = await checkDateRangeHasModifications(dateRange);
 
       if (shouldUpdateDom) {
-        // 滚动相关：仍用较短 wait；滚动停止后需完整重排（appendChild+translate）否则会回到 Meta 原始顺序
+        // 滚动相关：仅补丁数值+footer，不重排，避免虚拟列表空白/错位；回顶静止后再重排见 domUpdater.setupScrollListener
         const isScrollRelated =
           hasScrollChange || hasBodyRowDataSurfaceChange || isScrollLoadingFlag;
         await applyDomUpdates(isScrollRelated);

@@ -158,6 +158,35 @@ export function getReportingTableDataRows(): HTMLElement[] {
   return Array.from(element) as HTMLElement[];
 }
 
+/**
+ * 报表表格实际产生纵向滚动的节点（往往不是 [role="table"] 本身）。
+ * 用于绑定 scroll 与读取 scrollTop；误用外层的 scrollTop≈0 会导致「回顶重排」永远不触发或行为错乱。
+ */
+export function getReportingTableScrollParent(): HTMLElement | null {
+  const table = findTableContainer();
+  if (!table) {
+    return null;
+  }
+  const rows = getReportingTableDataRows();
+  const first = rows[0] as HTMLElement | undefined;
+  if (!first) {
+    return table;
+  }
+  let p: HTMLElement | null = first.parentElement;
+  while (p && table.contains(p)) {
+    const st = window.getComputedStyle(p);
+    const oy = st.overflowY;
+    if (
+      (oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
+      p.scrollHeight > p.clientHeight + 4
+    ) {
+      return p;
+    }
+    p = p.parentElement;
+  }
+  return table;
+}
+
 // 获取表格底部
 export function getReportingTableFooter(): HTMLElement[] {
   const tableContainer = findTableContainer();

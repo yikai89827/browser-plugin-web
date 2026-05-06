@@ -1,7 +1,21 @@
 // 报告页面的DOM更新模块
 // 负责处理DOM元素的更新和保持修改的值
 
-import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter, extractDateFromPage, sortReportData, getSortConfig, getFieldValue, getRowType } from './dom';
+import {
+  getReportingTableDataRows,
+  getReportingTableScrollParent,
+  findInnermostElement,
+  getColumnIndicesSync,
+  extractRowData,
+  processNames,
+  generateAdId,
+  getReportingTableFooter,
+  extractDateFromPage,
+  sortReportData,
+  getSortConfig,
+  getFieldValue,
+  getRowType,
+} from './dom';
 import { getModifiedData } from './cache';
 
 /** 虚拟行内容区高度，与 Meta 报表 DOM 一致；appendChild 改顺序后须重写 translate 才能与视觉一致 */
@@ -42,11 +56,14 @@ export function shouldIgnoreReportingPageObserver(): boolean {
   return Date.now() < ignoreReportingObserverUntil || updateDomElementsInFlight;
 }
 
-let scrollListenerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+/** 停滚后统一处理：顶/底一次完整重排，否则仅补丁（用 getReportingTableScrollParent 读 scrollTop，避免 e.target 与真实滚动层不一致） */
+let scrollStopUnifiedTimer: ReturnType<typeof setTimeout> | null = null;
+let lastReportingScrollElement: HTMLElement | null = null;
 
 export type UpdateDomElementsOptions = {
   /**
-   * 为 true 时只补丁数值与 footer，不重排（一般不用；滚动结束应完整重排才能保持「按修改后」顺序）。
+   * 为 true：滚动中/停滚在表格中部——只补丁合成数值与 footer，不改顺序。
+   * 为 false：appendChild + translate 按修改后指标重排（首屏、表头排序、滚到顶/底停稳后等）。
    */
   skipReorder?: boolean;
 };
@@ -191,9 +208,9 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
       updateAdRow(row, matchedModification, rowData);
     }
   });
-  // 默认：rAF 后 appendChild + 同步 translate（滚动结束也走这里，否则只改数不重排会回到 Meta 原始顺序）
+  // 滚动中不重排：虚拟列表由 Meta 管理 transform/回收，任何 translate/appendChild 中途介入都易空白错位
   if (!skipReorder) {
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues);
   }
   // 更新表格底部合计行
@@ -495,20 +512,62 @@ function calculateTotalModifications(modifiedData: any): any {
   return total;
 }
 
-// 监听表格滚动
+const SCROLL_STOP_DEBOUNCE_MS = 550;
+/** 顶/底判定放宽，避免亚像素、内边距导致永远判不中 */
+const SCROLL_EDGE_THRESHOLD_PX = 32;
+
+function isReportingInnerScrollTarget(el: HTMLElement, table: HTMLElement): boolean {
+  if (!table.contains(el)) return false;
+  const st = window.getComputedStyle(el);
+  const oy = st.overflowY;
+  if (oy !== 'auto' && oy !== 'scroll' && oy !== 'overlay') return false;
+  return el.scrollHeight > el.clientHeight + 4;
+}
+
+// 监听表格滚动（真实滚动多在 table 内部 div；用 capture 才能拿到 e.target.scrollTop）
 export function setupScrollListener() {
-  const tableContainer = document.querySelector('[role="table"]');
-  if (tableContainer) {
-    tableContainer.addEventListener('scroll', () => {
-      if (scrollListenerDebounceTimer !== null) {
-        clearTimeout(scrollListenerDebounceTimer);
-      }
-      scrollListenerDebounceTimer = setTimeout(() => {
-        scrollListenerDebounceTimer = null;
-        void updateDomElements({ skipReorder: false });
-      }, 400);
-    });
+  const table = document.querySelector('[role="table"]') as HTMLElement | null;
+  if (!table) {
+    return;
   }
+
+  const onScrollCapture = (e: Event) => {
+    const el = e.target as HTMLElement | null;
+    if (!el || !isReportingInnerScrollTarget(el, table)) {
+      return;
+    }
+
+    lastReportingScrollElement = el;
+
+    if (scrollStopUnifiedTimer !== null) {
+      clearTimeout(scrollStopUnifiedTimer);
+    }
+    scrollStopUnifiedTimer = setTimeout(() => {
+      scrollStopUnifiedTimer = null;
+      const scrollEl =
+        getReportingTableScrollParent() ||
+        (lastReportingScrollElement?.isConnected ? lastReportingScrollElement : null);
+      if (!scrollEl?.isConnected) {
+        void updateDomElements({ skipReorder: true });
+        return;
+      }
+      const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      if (maxScroll < 4) {
+        void updateDomElements({ skipReorder: true });
+        return;
+      }
+      const st = scrollEl.scrollTop;
+      const nearTop = st <= SCROLL_EDGE_THRESHOLD_PX;
+      const nearBottom = st >= maxScroll - SCROLL_EDGE_THRESHOLD_PX;
+      if (nearTop || nearBottom) {
+        void updateDomElements({ skipReorder: false });
+      } else {
+        void updateDomElements({ skipReorder: true });
+      }
+    }, SCROLL_STOP_DEBOUNCE_MS);
+  };
+
+  document.addEventListener('scroll', onScrollCapture, { capture: true, passive: true });
 }
 
 // 监听排序变动
@@ -680,7 +739,7 @@ function flattenReportingHierarchy(accounts: AccountBlock[]): ReportingRowEntry[
 }
 
 // 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
-// 报表虚拟列表：仅 appendChild 时节点顺序变了，但子元素上旧的 translate 仍按修改前位置绘制；须在非滚动完整重排里 appendChild 后立刻按新索引重写 translate。
+// 仅应在非滚动路径调用；appendChild 后须同步子元素 translate 与 DOM 顺序一致。
 function reorderDomRowsBySortValue(allRowData: any[], modifiedData: any, summaryValues: Record<string, any>) {
   const sortConfig = getSortConfig();
   const sortField = sortConfig.field;
