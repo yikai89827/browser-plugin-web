@@ -113,7 +113,7 @@ export async function updateDomElements() {
   updateFooterRows(modifiedData, summaryValues);
 
   // 根据增加了值后的数据重新排序DOM行
-  reorderDomRowsBySortValue(dataRows, allRowData, modifiedData);
+  reorderDomRowsBySortValue(dataRows, allRowData, modifiedData, summaryValues);
 }
 
 // 计算合计行的增加值
@@ -417,7 +417,7 @@ export function setupSortListener() {
 }
 
 // 根据排序值重新排序DOM行
-function reorderDomRowsBySortValue(dataRows: HTMLElement[], allRowData: any[], modifiedData: any) {
+function reorderDomRowsBySortValue(dataRows: HTMLElement[], allRowData: any[], modifiedData: any, summaryValues: Record<string, any>) {
   const sortConfig = getSortConfig();
   const sortField = sortConfig.field;
   const sortDirection = sortConfig.direction;
@@ -478,6 +478,32 @@ function reorderDomRowsBySortValue(dataRows: HTMLElement[], allRowData: any[], m
   rowsWithSortValue.forEach((item, newIndex) => {
     if (item.rowElement && item.rowElement.parentNode === tableBody) {
       tableBody.appendChild(item.rowElement);
+    }
+  });
+
+  // 排序完成后，重新应用修改值到所有行
+  // 这是解决排序切换后合成值消失的关键步骤
+  rowsWithSortValue.forEach((item) => {
+    const rowData = item.rowData;
+    const row = item.rowElement;
+    
+    if (rowData && rowData.id && row) {
+      let matchedModification = null;
+      
+      // 尝试多种方式匹配修改数据
+      if (modifiedData[rowData.id]) {
+        matchedModification = modifiedData[rowData.id];
+      } else if (rowData.ad_id && modifiedData[rowData.ad_id]) {
+        matchedModification = modifiedData[rowData.ad_id];
+      } else if (summaryValues[rowData.id]) {
+        matchedModification = summaryValues[rowData.id];
+      } else if (rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
+        matchedModification = summaryValues[rowData.accountName];
+      }
+      
+      if (matchedModification) {
+        updateAdRow(row, matchedModification);
+      }
     }
   });
 }
