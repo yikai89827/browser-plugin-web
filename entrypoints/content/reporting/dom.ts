@@ -476,9 +476,9 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     } else if (rowData.campaign_id) {
       // 广告系列合计行：使用广告系列ID作为唯一标识
       rowData.id = rowData.campaign_id;
-    } else if (rowData.accountName) {
-      // 账户合计行：使用账户名称作为唯一标识（与保存时的key保持一致）
-      rowData.id = rowData.accountName;
+    } else if (rowData.account_id) {
+      // 账户合计行：使用账户ID作为唯一标识
+      rowData.id = rowData.account_id;
     } else {
       // 其他情况：使用生成的ID
       rowData.id = generateAdId(rowData);
