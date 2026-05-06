@@ -327,48 +327,7 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
           
           if (matchedModification) {
             console.log('找到匹配的修改数据:', rowData.id, matchedModification);
-            
-            // 只有广告统计行（有ad_id的行）才需要减去增加值
-            // 合计行的增加值是通过计算广告行的增加值得到的，不应该直接减去
-            if (rowData.ad_id && rowData.ad_id.trim() !== '' && rowData.ad_id.trim() !== '—') {
-              const modification = matchedModification;
-              console.log('原始值 - impressions:', rowData.impressions, 'reach:', rowData.reach);
-              console.log('增加值 - impressions:', modification.impressions, 'reach:', modification.reach);
-              
-              // 从DOM值中减去增加值得到真正的原始值
-              if (rowData.impressions !== undefined && modification.impressions !== undefined) {
-                const oldImpressions = rowData.impressions;
-                rowData.impressions = (Number(rowData.impressions) || 0) - (Number(modification.impressions) || 0);
-                console.log(`impressions: ${oldImpressions} -> ${rowData.impressions}`);
-              }
-              if (rowData.reach !== undefined && modification.reach !== undefined) {
-                const oldReach = rowData.reach;
-                rowData.reach = (Number(rowData.reach) || 0) - (Number(modification.reach) || 0);
-                console.log(`reach: ${oldReach} -> ${rowData.reach}`);
-              }
-              if (rowData.spend !== undefined && modification.spend !== undefined) {
-                const oldSpend = rowData.spend;
-                rowData.spend = (Number(rowData.spend) || 0) - (Number(modification.spend) || 0);
-                console.log(`spend: ${oldSpend} -> ${rowData.spend}`);
-              }
-              if (rowData.clicks !== undefined && modification.clicks !== undefined) {
-                const oldClicks = rowData.clicks;
-                rowData.clicks = (Number(rowData.clicks) || 0) - (Number(modification.clicks) || 0);
-                console.log(`clicks: ${oldClicks} -> ${rowData.clicks}`);
-              }
-              if (rowData.registrations !== undefined && modification.registrations !== undefined) {
-                const oldRegistrations = rowData.registrations;
-                rowData.registrations = (Number(rowData.registrations) || 0) - (Number(modification.registrations) || 0);
-                console.log(`registrations: ${oldRegistrations} -> ${rowData.registrations}`);
-              }
-              if (rowData.purchases !== undefined && modification.purchases !== undefined) {
-                const oldPurchases = rowData.purchases;
-                rowData.purchases = (Number(rowData.purchases) || 0) - (Number(modification.purchases) || 0);
-                console.log(`purchases: ${oldPurchases} -> ${rowData.purchases}`);
-              }
-            } else {
-              console.log('跳过非广告统计行:', rowData.id);
-            }
+            // 注意：增加值已在 extractRowData 函数中直接从DOM扣除，此处不再重复扣除
           } else {
             console.log('未找到匹配的修改数据:', rowData.id);
           }
