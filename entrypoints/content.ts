@@ -18,6 +18,7 @@ import { handleReportingGetDataFromDom, handleReportingRefresh, handleReportingG
 // 导入报告页面的缓存检查函数
 import { checkDateRangeForModifications } from './content/reporting/cache';
 import { extractDateFromPage } from './content/reporting/dom';
+import { shouldIgnoreReportingPageObserver } from './content/reporting/domUpdater';
 
 
 // 全局同步状态变量
@@ -642,11 +643,12 @@ function initReportingPageObserver(): void {
     }
     
     createOverlay();
-    
-    const waitTime = isScrollRelated ? 300 : 2000;
+
+    // 非滚动场景（如表格初次挂载）原先 2s 过长，用户会长时间只看到 loading；缩短后仍略延迟一帧以便 Meta 表格行稳定
+    const waitTime = isScrollRelated ? 250 : 400;
     setTimeout(async () => {
       const { updateDomElements } = await import('./content/reporting/domUpdater');
-      await updateDomElements();
+      await updateDomElements({ skipReorder: false });
       removeOverlay();
     }, waitTime);
   };
@@ -670,14 +672,20 @@ function initReportingPageObserver(): void {
       
       const dateRange = extractDateFromPage();
       console.log('页面日期范围:', dateRange);
-      
+
+      // 缓存检查是异步的，先盖住表格区域，避免「原始值 → 几秒后才加上增加值」的闪烁
+      createOverlay();
+
       const shouldUpdateDom = await checkDateRangeHasModifications(dateRange);
-      
+
       if (shouldUpdateDom) {
-        const isScrollRelated = hasScrollChange || hasBodyRowDataSurfaceChange;
+        // 滚动相关：仍用较短 wait；滚动停止后需完整重排（appendChild+translate）否则会回到 Meta 原始顺序
+        const isScrollRelated =
+          hasScrollChange || hasBodyRowDataSurfaceChange || isScrollLoadingFlag;
         await applyDomUpdates(isScrollRelated);
       } else {
         console.log('不需要更新DOM元素');
+        removeOverlay();
       }
     } catch (error) {
       console.error('处理表格变化错误:', error);
@@ -701,17 +709,24 @@ function initReportingPageObserver(): void {
     createOverlay();
     
     setTimeout(async () => {
-      await updateDomElements();
+      await updateDomElements({ skipReorder: false });
       removeOverlay();
-    }, 100);
+    }, 480);
   };
   
   // 使用MutationObserver来拦截页面渲染
   const observer = new MutationObserver((mutations) => {
     try {
       const hasSortChange = detectSortChange();
-      const hasTableCreated = detectTableCreation(mutations);
-      const [hasScrollChange, hasBodyRowDataSurfaceChange] = detectScrollChange(mutations);
+      const ignoreTableMutations = shouldIgnoreReportingPageObserver();
+
+      let hasTableCreated = false;
+      let hasScrollChange = false;
+      let hasBodyRowDataSurfaceChange = false;
+      if (!ignoreTableMutations) {
+        hasTableCreated = detectTableCreation(mutations);
+        [hasScrollChange, hasBodyRowDataSurfaceChange] = detectScrollChange(mutations);
+      }
       
       // 处理表格创建或滚动变化
       if (hasTableCreated || hasScrollChange) {
@@ -1053,18 +1068,34 @@ export default {
     if (window.location.href.includes('adsmanager/reporting')) {
       console.log('Facebook Ads reporting 报告页面已加载');
       
-      // 导入报告页面模块
-      import('./content/reporting/domUpdater').then(({ updateDomElements, setupScrollListener, setupSortListener }) => {
-        // 初始化DOM更新
-        updateDomElements();
-        
-        // 设置滚动监听器
+      // 导入报告页面模块：若有缓存修改则先显示 loading 再应用，避免刷新后先看到原始指标再跳变
+      void import('./content/reporting/domUpdater').then(async ({ updateDomElements, setupScrollListener, setupSortListener }) => {
+        let reportingHasModifications = false;
+        try {
+          const dateRange = extractDateFromPage();
+          if (dateRange.length >= 2) {
+            const startDate = dateRange[0];
+            const endDate = dateRange[1];
+            if (startDate && endDate) {
+              if (startDate === endDate) {
+                reportingHasModifications = await checkDateRangeForModifications(startDate);
+              } else {
+                reportingHasModifications = await checkDateRangeForModifications(startDate, endDate);
+              }
+            }
+          }
+          if (reportingHasModifications) {
+            createOverlay();
+          }
+          await updateDomElements();
+        } catch (e) {
+          console.error('报表页初始化 DOM 更新失败:', e);
+        } finally {
+          removeOverlay();
+        }
+
         setupScrollListener();
-        
-        // 设置排序监听器
         setupSortListener();
-        
-        // 初始化报表页面变化监听
         initReportingPageObserver();
       });
       

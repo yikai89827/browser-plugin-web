@@ -4,8 +4,70 @@
 import { getReportingTableDataRows, findInnermostElement, getColumnIndicesSync, extractRowData, processNames, generateAdId, getReportingTableFooter, extractDateFromPage, sortReportData, getSortConfig, getFieldValue, getRowType } from './dom';
 import { getModifiedData } from './cache';
 
-// 更新DOM元素
-export async function updateDomElements() {
+/** 虚拟行内容区高度，与 Meta 报表 DOM 一致；appendChild 改顺序后须重写 translate 才能与视觉一致 */
+const REPORTING_VIRTUAL_ROW_HEIGHT_PX = 42;
+
+/** 刷新后表格/虚拟行可能晚于脚本执行，有修改数据时在总时长内轮询等待 DOM 就绪 */
+const REPORTING_TABLE_RETRY_MAX = 30;
+const REPORTING_TABLE_RETRY_INTERVAL_MS = 100;
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 切换排序后表头会重绘，getColumnIndicesSync 可能短暂为空；过早写单元格会全部跳过 */
+async function waitForReportColumnMappingReady(): Promise<void> {
+  const maxAttempts = 35;
+  for (let i = 0; i < maxAttempts; i++) {
+    const idx = getColumnIndicesSync();
+    const keys = idx && typeof idx === 'object' ? Object.keys(idx) : [];
+    if (keys.includes('impressions') || keys.length >= 5) {
+      return;
+    }
+    await delayMs(80);
+  }
+  console.warn('报表列映射在等待后仍不完整，将继续尝试应用修改');
+}
+
+/** 插件重排/写单元格后，Facebook 会触发 data-surface/style 等 mutation，易被误判为「滚动停止」导致死循环；用时间窗 + 执行中标志在 content 侧忽略表格类 mutation（排序检测仍单独执行）。 */
+let ignoreReportingObserverUntil = 0;
+let updateDomElementsInFlight = false;
+let extendObserverSuppressAfterThisRun = false;
+
+function bumpIgnoreReportingObserver(ms: number): void {
+  ignoreReportingObserverUntil = Math.max(ignoreReportingObserverUntil, Date.now() + ms);
+}
+
+export function shouldIgnoreReportingPageObserver(): boolean {
+  return Date.now() < ignoreReportingObserverUntil || updateDomElementsInFlight;
+}
+
+let scrollListenerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export type UpdateDomElementsOptions = {
+  /**
+   * 为 true 时只补丁数值与 footer，不重排（一般不用；滚动结束应完整重排才能保持「按修改后」顺序）。
+   */
+  skipReorder?: boolean;
+};
+
+let updateDomElementsQueue: Promise<void> = Promise.resolve();
+
+// 更新DOM元素（并发调用会排成队列依次执行，避免排序监听与 MutationObserver 同时触发时后一次被直接丢弃）
+export function updateDomElements(options?: UpdateDomElementsOptions): Promise<void> {
+  const opts = options;
+  updateDomElementsQueue = updateDomElementsQueue
+    .then(() => runUpdateDomElementsOnce(opts))
+    .catch((err) => {
+      console.error('updateDomElements 执行失败:', err);
+    });
+  return updateDomElementsQueue;
+}
+
+async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Promise<void> {
+  const skipReorder = options?.skipReorder === true;
+  updateDomElementsInFlight = true;
+  try {
   // 获取当前排序配置
   const sortConfig = getSortConfig();
   console.log('更新DOM元素，当前排序配置:', sortConfig);
@@ -35,25 +97,51 @@ export async function updateDomElements() {
     console.log('没有修改数据，无需更新DOM元素');
     return;
   }
-  
-  // 找到表格容器
-  const tableContainer = document.querySelector('[role="table"]');
-  if (!tableContainer) {
+
+  let tableContainer: Element | null = null;
+  let dataRows: HTMLElement[] = [];
+
+  for (let attempt = 0; attempt < REPORTING_TABLE_RETRY_MAX; attempt++) {
+    tableContainer = document.querySelector('[role="table"]');
+    dataRows = tableContainer ? getReportingTableDataRows() : [];
+    if (tableContainer && dataRows.length > 0) {
+      if (attempt > 0) {
+        console.log(`报表表格就绪，第 ${attempt + 1} 次检测`);
+      }
+      break;
+    }
+    if (attempt === 0) {
+      console.log('报表表格或数据行尚未就绪，等待重试…');
+    }
+    if (attempt < REPORTING_TABLE_RETRY_MAX - 1) {
+      await delayMs(REPORTING_TABLE_RETRY_INTERVAL_MS);
+    }
+  }
+
+  if (!tableContainer || dataRows.length === 0) {
+    console.warn(
+      `报表表格在等待约 ${(REPORTING_TABLE_RETRY_MAX - 1) * REPORTING_TABLE_RETRY_INTERVAL_MS}ms 后仍无数据行，跳过本次 DOM 更新`,
+    );
     return;
   }
-  
-  // 获取数据行
-  const dataRows = getReportingTableDataRows();
+
+  await waitForReportColumnMappingReady();
+
+  extendObserverSuppressAfterThisRun = true;
+
   console.log('找到的数据行数:', dataRows.length);
   
   // 构建ID到行的映射
   let idToRowMap: Record<string, HTMLElement> = {};
   let allRowData: any[] = [];
   
-  // 第一次遍历，构建映射和收集所有行数据
+  const columnIndicesSnapshot = getColumnIndicesSync();
+
+  // 第一次遍历，构建映射和收集所有行数据（挂上对应 DOM 行；allRowData 仅为有 id 的行，不能与 dataRows 按下标对齐）
   dataRows.forEach((row) => {
-    const rowData = extractRowData(row, getColumnIndicesSync());
+    const rowData = extractRowData(row, columnIndicesSnapshot);
     if (rowData && rowData.id) {
+      rowData._reportingRowEl = row;
       idToRowMap[rowData.id] = row;
       allRowData.push(rowData);
     }
@@ -64,11 +152,11 @@ export async function updateDomElements() {
   
   // 重新构建ID到行的映射，使用处理后的名称数据
   const updatedIdToRowMap: Record<string, HTMLElement> = {};
-  allRowData.forEach((rowData, index) => {
+  allRowData.forEach((rowData) => {
     if (rowData && rowData.id) {
       // 不要重新生成ID，使用第一次提取时生成的ID
       // 这样可以确保与modifiedData中的ID匹配
-      updatedIdToRowMap[rowData.id] = idToRowMap[rowData.id] || dataRows[index];
+      updatedIdToRowMap[rowData.id] = idToRowMap[rowData.id] || rowData._reportingRowEl;
     }
   });
   idToRowMap = updatedIdToRowMap;
@@ -76,48 +164,47 @@ export async function updateDomElements() {
   // 计算合计行的增加值
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
   
-  // 第二次遍历，只更新修改过的行和相关的合计行
-  dataRows.forEach((row, index) => {
-    // 使用处理后的行数据，而不是重新提取
-    // 这样可以确保行数据有完整的名称信息
-    const rowData = allRowData[index];
-    if (rowData && rowData.id) {
-      // 尝试匹配修改数据
-      let matchedModification = null;
-      
-      // 1. 直接使用rowData.id匹配（DOM解析出的ID与缓存中的ID匹配）
-      if (modifiedData[rowData.id]) {
-        matchedModification = modifiedData[rowData.id];
-      }
-      
-      // 2. 如果没有匹配，尝试使用ad_id匹配
-      if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
-        matchedModification = modifiedData[rowData.ad_id];
-      }
-      
-      // 3. 检查是否为合计行，使用ID匹配
-      if (!matchedModification && summaryValues[rowData.id]) {
-        matchedModification = summaryValues[rowData.id];
-      }
-      
-      // 4. 最后尝试使用账户名称匹配账户合计行
-      if (!matchedModification && rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
-        matchedModification = summaryValues[rowData.accountName];
-      }
-      
-      if (matchedModification) {
-        // 更新行（使用列索引确定列）
-        updateAdRow(row, matchedModification);
-      }
-      // 对于没有修改的行，不做处理
+  // 第二次遍历，只更新修改过的行和相关的合计行（按 allRowData + 对应 DOM 行，避免与 dataRows 下标错位）
+  allRowData.forEach((rowData) => {
+    const row = rowData._reportingRowEl as HTMLElement | undefined;
+    if (!rowData?.id || !row) return;
+
+    let matchedModification = null;
+
+    if (modifiedData[rowData.id]) {
+      matchedModification = modifiedData[rowData.id];
+    }
+
+    if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
+      matchedModification = modifiedData[rowData.ad_id];
+    }
+
+    if (!matchedModification && summaryValues[rowData.id]) {
+      matchedModification = summaryValues[rowData.id];
+    }
+
+    if (!matchedModification && rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
+      matchedModification = summaryValues[rowData.accountName];
+    }
+
+    if (matchedModification) {
+      updateAdRow(row, matchedModification, rowData);
     }
   });
-  
+  // 默认：rAF 后 appendChild + 同步 translate（滚动结束也走这里，否则只改数不重排会回到 Meta 原始顺序）
+  if (!skipReorder) {
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues);
+  }
   // 更新表格底部合计行
   updateFooterRows(modifiedData, summaryValues);
-
-  // 根据增加了值后的数据重新排序DOM行
-  reorderDomRowsBySortValue(dataRows, allRowData, modifiedData, summaryValues);
+  } finally {
+    updateDomElementsInFlight = false;
+    if (extendObserverSuppressAfterThisRun) {
+      extendObserverSuppressAfterThisRun = false;
+      bumpIgnoreReportingObserver(900);
+    }
+  }
 }
 
 // 计算合计行的增加值
@@ -278,8 +365,8 @@ export function identifyRowType(rowData: any): string {
   return 'account';
 }
 
-// 更新广告行
-export function updateAdRow(row: Element, modifications: any) {
+// 更新广告行（baseRowData 为 extractRowData 结果时，数值列以行数据为基数，避免虚拟列表复用 DOM 时误读 data-increase）
+export function updateAdRow(row: Element, modifications: any, baseRowData?: any) {
   const cells = row.querySelector('[role="presentation"]')?.children[0];
   if (!cells?.childNodes?.length) {
     return;
@@ -288,11 +375,11 @@ export function updateAdRow(row: Element, modifications: any) {
   const scrollableColumn = cells.children[1];
   const scrollableColumnCellsArray = Array.from(scrollableColumn.children[0].children);
   
-  applyModificationsToCells(scrollableColumnCellsArray, modifications);
+  applyModificationsToCells(scrollableColumnCellsArray, modifications, baseRowData);
 }
 
 // 应用修改到单元格数组
-function applyModificationsToCells(cellsArray: Element[], modifications: any) {
+function applyModificationsToCells(cellsArray: Element[], modifications: any, baseRowData?: any) {
   const columnIndices = getColumnIndicesSync();
   // ID字段列表，这些字段不应该被当成数值处理
   const idFields = ['account_id', 'campaign_id', 'adset_id', 'ad_id'];
@@ -308,18 +395,29 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any) {
     if (columnIndex >= 0 && cellsArray[columnIndex]) {
       const cell = cellsArray[columnIndex];
       const innermostElement = findInnermostElement(cell);
-      
-      const existingIncrease = innermostElement.getAttribute('data-increase');
-      
+
       let originalText = innermostElement.textContent?.trim() || '';
       originalText = originalText.replace(/\[\d+\]$/, '');
-      let originalValue = parseNumber(originalText);
-      
-      if (existingIncrease) {
-        const existingIncreaseValue = Number(existingIncrease);
-        originalValue = originalValue - existingIncreaseValue;
+
+      let originalValue: number;
+      const baseCandidate =
+        baseRowData &&
+        baseRowData[field] !== undefined &&
+        baseRowData[field] !== null &&
+        baseRowData[field] !== ''
+          ? Number(baseRowData[field])
+          : NaN;
+      if (Number.isFinite(baseCandidate)) {
+        originalValue = baseCandidate;
+      } else {
+        const existingIncrease = innermostElement.getAttribute('data-increase');
+        originalValue = parseNumber(originalText);
+        if (existingIncrease) {
+          const existingIncreaseValue = Number(existingIncrease);
+          originalValue = originalValue - existingIncreaseValue;
+        }
       }
-      
+
       const newValue = originalValue + Number(value);
       
       let formattedValue = String(newValue);
@@ -401,8 +499,14 @@ function calculateTotalModifications(modifiedData: any): any {
 export function setupScrollListener() {
   const tableContainer = document.querySelector('[role="table"]');
   if (tableContainer) {
-    tableContainer.addEventListener('scroll', async () => {
-      await updateDomElements();
+    tableContainer.addEventListener('scroll', () => {
+      if (scrollListenerDebounceTimer !== null) {
+        clearTimeout(scrollListenerDebounceTimer);
+      }
+      scrollListenerDebounceTimer = setTimeout(() => {
+        scrollListenerDebounceTimer = null;
+        void updateDomElements({ skipReorder: false });
+      }, 400);
     });
   }
 }
@@ -424,7 +528,7 @@ export function setupSortListener() {
       const beforeSortConfig = getSortConfig();
       console.log('点击前排序配置:', beforeSortConfig);
       
-      // 延迟执行，等待DOM更新
+      // 延迟执行，等待 URL 与表头列映射稳定（过短会导致列索引未就绪、合成值整表未写入）
       setTimeout(async () => {
         // 获取点击后的排序配置
         const afterSortConfig = getSortConfig();
@@ -432,103 +536,266 @@ export function setupSortListener() {
         
         if (beforeSortConfig.field !== afterSortConfig.field || beforeSortConfig.direction !== afterSortConfig.direction) {
           console.log('排序发生变化，触发DOM更新');
-          await updateDomElements();
+          await updateDomElements({ skipReorder: false });
         } else {
           console.log('排序未发生变化，跳过DOM更新');
         }
-      }, 200);
+      }, 520);
     });
   });
 }
 
-// 根据排序值重新排序DOM行
-function reorderDomRowsBySortValue(dataRows: HTMLElement[], allRowData: any[], modifiedData: any, summaryValues: Record<string, any>) {
+type ReportingRowEntry = { rowData: any; rowElement: HTMLElement };
+
+type AdsetBlock = { summary?: ReportingRowEntry; ads: ReportingRowEntry[] };
+type CampaignBlock = { summary?: ReportingRowEntry; adsets: AdsetBlock[] };
+type AccountBlock = { summary?: ReportingRowEntry; campaigns: CampaignBlock[] };
+
+/** 当前排序列上「展示值」用于比较：底层行数据 + 缓存增加值（与 updateDomElements 写入逻辑一致） */
+function effectiveSortValue(
+  rowData: any,
+  sortField: string,
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): number {
+  let v = getFieldValue(rowData, sortField);
+
+  if (rowData.ad_id && String(rowData.ad_id).trim() !== '') {
+    const m = modifiedData[rowData.id] || modifiedData[rowData.ad_id];
+    if (m && m[sortField] != null) v += Number(m[sortField]);
+    return v;
+  }
+
+  const sum =
+    summaryValues[rowData.id] ||
+    (rowData.accountName &&
+      !rowData.ad_id &&
+      !rowData.adset_id &&
+      !rowData.campaign_id &&
+      summaryValues[rowData.accountName]);
+  if (sum && sum[sortField] != null) v += Number(sum[sortField]);
+  return v;
+}
+
+function maxAdSortValue(
+  ads: ReportingRowEntry[],
+  sortField: string,
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): number {
+  if (!ads.length) return 0;
+  const vals = ads.map((e) => effectiveSortValue(e.rowData, sortField, modifiedData, summaryValues));
+  return Math.max(...vals);
+}
+
+function compareBlockValue(
+  va: number,
+  vb: number,
+  tieA: string,
+  tieB: string,
+  desc: boolean,
+): number {
+  if (va !== vb) return desc ? vb - va : va - vb;
+  return tieA.localeCompare(tieB);
+}
+
+/** 将扁平行序解析为 账户 → 系列 → 组 → 广告 四层树（与报表 UI 展开顺序一致） */
+function buildReportingHierarchy(allRowData: any[]): AccountBlock[] {
+  const accounts: AccountBlock[] = [];
+  let curAccount: AccountBlock | null = null;
+  let curCampaign: CampaignBlock | null = null;
+  let curAdset: AdsetBlock | null = null;
+
+  const ensureAccount = () => {
+    if (!curAccount) {
+      curAccount = { campaigns: [] };
+      accounts.push(curAccount);
+    }
+    return curAccount;
+  };
+  const ensureCampaign = () => {
+    const acc = ensureAccount();
+    if (!curCampaign) {
+      curCampaign = { adsets: [] };
+      acc.campaigns.push(curCampaign);
+    }
+    return curCampaign;
+  };
+  const ensureAdset = () => {
+    const camp = ensureCampaign();
+    if (!curAdset) {
+      curAdset = { ads: [] };
+      camp.adsets.push(curAdset);
+    }
+    return curAdset;
+  };
+
+  for (let i = 0; i < allRowData.length; i++) {
+    const rowData = allRowData[i];
+    const rowElement = rowData?._reportingRowEl as HTMLElement | undefined;
+    if (!rowData || !rowElement) continue;
+
+    const entry: ReportingRowEntry = { rowData, rowElement };
+    const type = getRowType(rowData);
+
+    if (type === 'account') {
+      curAccount = { summary: entry, campaigns: [] };
+      accounts.push(curAccount);
+      curCampaign = null;
+      curAdset = null;
+    } else if (type === 'campaign') {
+      const acc = ensureAccount();
+      curAccount = acc;
+      curCampaign = { summary: entry, adsets: [] };
+      acc.campaigns.push(curCampaign);
+      curAdset = null;
+    } else if (type === 'adset') {
+      const camp = ensureCampaign();
+      curCampaign = camp;
+      curAdset = { summary: entry, ads: [] };
+      camp.adsets.push(curAdset);
+    } else if (type === 'ad') {
+      const adset = ensureAdset();
+      curAdset = adset;
+      adset.ads.push(entry);
+    }
+  }
+
+  return accounts;
+}
+
+function flattenReportingHierarchy(accounts: AccountBlock[]): ReportingRowEntry[] {
+  const out: ReportingRowEntry[] = [];
+  for (const acc of accounts) {
+    if (acc.summary) out.push(acc.summary);
+    for (const camp of acc.campaigns) {
+      if (camp.summary) out.push(camp.summary);
+      for (const adset of camp.adsets) {
+        if (adset.summary) out.push(adset.summary);
+        out.push(...adset.ads);
+      }
+    }
+  }
+  return out;
+}
+
+// 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
+// 报表虚拟列表：仅 appendChild 时节点顺序变了，但子元素上旧的 translate 仍按修改前位置绘制；须在非滚动完整重排里 appendChild 后立刻按新索引重写 translate。
+function reorderDomRowsBySortValue(allRowData: any[], modifiedData: any, summaryValues: Record<string, any>) {
   const sortConfig = getSortConfig();
   const sortField = sortConfig.field;
   const sortDirection = sortConfig.direction;
+  const desc = sortDirection === 'desc';
 
-  // 为每行数据计算增加了值后的排序值
-  const rowsWithSortValue = allRowData.map((rowData, index) => {
-    let sortValue = getFieldValue(rowData, sortField);
+  const accounts = buildReportingHierarchy(allRowData);
 
-    // 如果有修改数据，加上增加值
-    if (rowData.ad_id && modifiedData[rowData.id]) {
-      const modification = modifiedData[rowData.id];
-      if (modification && modification[sortField]) {
-        sortValue += Number(modification[sortField]);
+  for (const acc of accounts) {
+    for (const camp of acc.campaigns) {
+      for (const adset of camp.adsets) {
+        adset.ads.sort((a, b) => {
+          const va = effectiveSortValue(a.rowData, sortField, modifiedData, summaryValues);
+          const vb = effectiveSortValue(b.rowData, sortField, modifiedData, summaryValues);
+          return compareBlockValue(va, vb, a.rowData.ad_id || '', b.rowData.ad_id || '', desc);
+        });
       }
+
+      camp.adsets.sort((a, b) => {
+        const va = a.summary
+          ? effectiveSortValue(a.summary.rowData, sortField, modifiedData, summaryValues)
+          : maxAdSortValue(a.ads, sortField, modifiedData, summaryValues);
+        const vb = b.summary
+          ? effectiveSortValue(b.summary.rowData, sortField, modifiedData, summaryValues)
+          : maxAdSortValue(b.ads, sortField, modifiedData, summaryValues);
+        const tieA = a.summary?.rowData.adset_id || a.ads[0]?.rowData.adset_id || '';
+        const tieB = b.summary?.rowData.adset_id || b.ads[0]?.rowData.adset_id || '';
+        return compareBlockValue(va, vb, tieA, tieB, desc);
+      });
     }
 
-    return {
-      rowData,
-      rowElement: dataRows[index],
-      sortValue,
-      index
-    };
+    acc.campaigns.sort((a, b) => {
+      const va = a.summary
+        ? effectiveSortValue(a.summary.rowData, sortField, modifiedData, summaryValues)
+        : Math.max(
+            ...a.adsets.map((as) =>
+              as.summary
+                ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+            ),
+            0,
+          );
+      const vb = b.summary
+        ? effectiveSortValue(b.summary.rowData, sortField, modifiedData, summaryValues)
+        : Math.max(
+            ...b.adsets.map((as) =>
+              as.summary
+                ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+            ),
+            0,
+          );
+      const tieA = a.summary?.rowData.campaign_id || a.adsets[0]?.summary?.rowData.campaign_id || '';
+      const tieB = b.summary?.rowData.campaign_id || b.adsets[0]?.summary?.rowData.campaign_id || '';
+      return compareBlockValue(va, vb, tieA, tieB, desc);
+    });
+  }
+
+  accounts.sort((a, b) => {
+    const va = a.summary
+      ? effectiveSortValue(a.summary.rowData, sortField, modifiedData, summaryValues)
+      : Math.max(
+          ...a.campaigns.map((c) =>
+            c.summary
+              ? effectiveSortValue(c.summary.rowData, sortField, modifiedData, summaryValues)
+              : Math.max(
+                  ...c.adsets.map((as) =>
+                    as.summary
+                      ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                      : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+                  ),
+                  0,
+                ),
+          ),
+          0,
+        );
+    const vb = b.summary
+      ? effectiveSortValue(b.summary.rowData, sortField, modifiedData, summaryValues)
+      : Math.max(
+          ...b.campaigns.map((c) =>
+            c.summary
+              ? effectiveSortValue(c.summary.rowData, sortField, modifiedData, summaryValues)
+              : Math.max(
+                  ...c.adsets.map((as) =>
+                    as.summary
+                      ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                      : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+                  ),
+                  0,
+                ),
+          ),
+          0,
+        );
+    const tieA = a.summary?.rowData.account_id || a.campaigns[0]?.summary?.rowData.account_id || '';
+    const tieB = b.summary?.rowData.account_id || b.campaigns[0]?.summary?.rowData.account_id || '';
+    return compareBlockValue(va, vb, tieA, tieB, desc);
   });
 
-  // 排序
-  rowsWithSortValue.sort((a, b) => {
-    // 首先按账户ID排序
-    const accountCompare = (a.rowData.account_id || '').localeCompare(b.rowData.account_id || '');
-    if (accountCompare !== 0) return accountCompare;
+  const ordered = flattenReportingHierarchy(accounts);
 
-    // 按campaign_id排序
-    const campaignCompare = (a.rowData.campaign_id || '').localeCompare(b.rowData.campaign_id || '');
-    if (campaignCompare !== 0) return campaignCompare;
-
-    // 按adset_id排序
-    const adsetCompare = (a.rowData.adset_id || '').localeCompare(b.rowData.adset_id || '');
-    if (adsetCompare !== 0) return adsetCompare;
-
-    // 按行类型排序（合计行在前）
-    const typeA = getRowType(a.rowData);
-    const typeB = getRowType(b.rowData);
-    const typePriority: Record<string, number> = { account: 0, campaign: 1, adset: 2, ad: 3 };
-    const typeCompare = typePriority[typeA] - typePriority[typeB];
-    if (typeCompare !== 0) return typeCompare;
-
-    // 最后按排序值排序
-    if (sortDirection === 'desc') {
-      return b.sortValue - a.sortValue;
-    }
-    return a.sortValue - b.sortValue;
-  });
-
-  // 获取表格tbody
-  const tableBody = document.querySelector('[role="table"] > div[aria-label]');
+  const tableBody = ordered[0]?.rowElement?.parentElement;
   if (!tableBody) return;
 
-  // 重新排列DOM元素
-  rowsWithSortValue.forEach((item, newIndex) => {
-    if (item.rowElement && item.rowElement.parentNode === tableBody) {
-      tableBody.appendChild(item.rowElement);
+  for (const item of ordered) {
+    const el = item.rowElement as HTMLElement | undefined;
+    if (el?.parentNode === tableBody) {
+      tableBody.appendChild(el);
     }
-  });
+  }
 
-  // 排序完成后，重新应用修改值到所有行
-  // 这是解决排序切换后合成值消失的关键步骤
-  rowsWithSortValue.forEach((item) => {
-    const rowData = item.rowData;
-    const row = item.rowElement;
-    
-    if (rowData && rowData.id && row) {
-      let matchedModification = null;
-      
-      // 尝试多种方式匹配修改数据
-      if (modifiedData[rowData.id]) {
-        matchedModification = modifiedData[rowData.id];
-      } else if (rowData.ad_id && modifiedData[rowData.ad_id]) {
-        matchedModification = modifiedData[rowData.ad_id];
-      } else if (summaryValues[rowData.id]) {
-        matchedModification = summaryValues[rowData.id];
-      } else if (rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
-        matchedModification = summaryValues[rowData.accountName];
-      }
-      
-      if (matchedModification) {
-        updateAdRow(row, matchedModification);
-      }
-    }
+  ordered.forEach((item, index) => {
+    const row = item.rowElement as HTMLElement | undefined;
+    if (!row) return;
+    const inner = row.firstElementChild as HTMLElement | null;
+    if (!inner) return;
+    inner.style.transform = `translate(0px, ${index * REPORTING_VIRTUAL_ROW_HEIGHT_PX}px)`;
   });
 }

@@ -437,7 +437,17 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
           rowData[field] = cellText;
         } else {
           const rawValue = parseValueToNumber(cellText);
-          rowData[field] = rawValue - increaseValue;
+          let appliedIncrease = increaseValue;
+          // 虚拟列表复用单元格时，data-increase 常来自上一行；文本已是当前行的展示值，再减旧增量会得到错误基数（负展示次数等）
+          if (appliedIncrease !== 0 && Number.isFinite(appliedIncrease) && Number.isFinite(rawValue)) {
+            if (rawValue >= 0 && (appliedIncrease > rawValue || rawValue - appliedIncrease < 0)) {
+              appliedIncrease = 0;
+            }
+          }
+          rowData[field] = rawValue - appliedIncrease;
+          if (increaseValue !== 0 && appliedIncrease === 0 && innermostElement?.removeAttribute) {
+            innermostElement.removeAttribute('data-increase');
+          }
         }
         // console.log('提取的字段数据:', field, columnIndex, cellText, rowData[field]);
       }
