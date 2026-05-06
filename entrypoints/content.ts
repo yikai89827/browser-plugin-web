@@ -534,7 +534,13 @@ function initReportingPageObserver(): void {
           clearTimeout(debounceTimer);
         }
         
+        // 判断是否是滚动相关的变化
+        const isScrollRelated = hasScrollChange || hasBodyRowDataSurfaceChange;
+        
         // 启动新的防抖计时器
+        // 滚动时使用较长的防抖时间（等待滚动停止），页面刷新使用较短的防抖时间
+        const debounceDelay = isScrollRelated ? 500 : 100;
+        
         debounceTimer = window.setTimeout(async () => {
           // 检测是否是滚动加载（通过检查是否有新的表格行被添加）
           const isScrollLoading = mutations.some(mutation => {
@@ -551,9 +557,9 @@ function initReportingPageObserver(): void {
           });
           
           if (hasScrollChange) {
-            console.log('检测到报表页面表格滚动变化');
+            console.log('检测到报表页面表格滚动变化（滚动已停止）');
           } else if (isScrollLoading) {
-            console.log('检测到报表页面表格滚动加载新行');
+            console.log('检测到报表页面表格滚动加载新行（滚动已停止）');
           } else {
             console.log('检测到报表页面表格元素被创建，可能是页面刷新');
           }
@@ -579,10 +585,19 @@ function initReportingPageObserver(): void {
             }
           }
           if (shouldUpdateDom) {
+            // 滚动相关操作：滚动停止后再显示loading
+            // 页面刷新：立即显示loading
+            if (isScrollRelated) {
+              console.log('滚动已停止，开始显示loading并执行缓存渲染');
+            }
+            
             // 显示遮盖层
             createOverlay();
+            
             // 等待DOM更新完成后再应用修改数据
-            const waitTime = hasScrollChange || isScrollLoading ? 300 : 2000; // 滚动相关操作等待300ms，页面刷新等待2秒
+            // 滚动相关操作等待较短时间（滚动已停止，数据已加载）
+            // 页面刷新等待较长时间（等待页面完全加载）
+            const waitTime = isScrollRelated ? 300 : 2000;
             setTimeout(async () => {
               // 导入reporting模块的updateDomElements函数
               const { updateDomElements } = await import('./content/reporting/domUpdater');
@@ -592,7 +607,7 @@ function initReportingPageObserver(): void {
           } else {
             console.log('不需要更新DOM元素');
           }
-        }, 100); // 防抖时间100ms
+        }, debounceDelay); // 防抖时间：滚动500ms，页面刷新100ms
         
         // 如果是表体行的data-surface属性变化，设置节流计时器
         if (hasBodyRowDataSurfaceChange) {
