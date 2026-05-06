@@ -1,4 +1,5 @@
 import { fieldMappingConfig } from './config';
+import { getModifiedData } from './cache';
 // 报告页面的DOM操作模块
 // 负责处理报表页面的DOM元素查找和操作
 
@@ -76,8 +77,8 @@ export function getColumnIndicesSync(): any {
   const columnIndices: Record<string, number> = {};
   const headerCells = Array.from(headerElement.children);
   const fixedCells:any = headerCells[0]?.firstChild?.childNodes;  const scrollableCells:any = headerCells[1]?.firstChild?.childNodes;
-  console.log('固定列:', fixedCells?.length);
-  console.log('可滚动列:', scrollableCells?.length);
+  // console.log('固定列:', fixedCells?.length);
+  // console.log('可滚动列:', scrollableCells?.length);
   if (!scrollableCells) {
     return {};
   }
@@ -138,7 +139,7 @@ export function getColumnIndicesSync(): any {
     }
   });
   
-  console.log('生成的列映射:', columnIndices);
+  // console.log('生成的列映射:', columnIndices);
   return columnIndices;
 }
 
@@ -196,6 +197,30 @@ function extractCurrencySymbolFromText(text: string): string {
   }
 }
 
+// 将文本值转换为数字（处理货币符号、千分位分隔符、空值等）
+function parseValueToNumber(text: string): number {
+  try {
+    if (!text) return 0;
+    const trimmed = text.trim();
+    
+    // 处理空值表示
+    if (trimmed === '' || trimmed === '-' || trimmed === '—' || trimmed === '--' || trimmed === '---') {
+      return 0;
+    }
+    
+    // 去掉货币符号和千分位分隔符
+    let cleaned = trimmed;
+    // 去掉所有非数字、非小数点、非负号的字符
+    cleaned = cleaned.replace(/[^\d.\-]/g, '');
+    
+    const num = Number(cleaned);
+    return isNaN(num) ? 0 : num;
+  } catch (error) {
+    console.error('解析数值错误:', error);
+    return 0;
+  }
+}
+
 // 从DOM提取数据
 export async function extractDataFromDom(): Promise<{ data: any[], columnMapping: any, currencySymbol: string }> {
   try {
@@ -241,8 +266,81 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
     
     // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
     const processedData = processNames(data);
-    
-    console.log('提取的报表数据:', processedData);
+
+    // 从缓存获取增加值数据，从DOM值中减去增加值得到真正的原始值
+    const dateRange = extractDateFromPage();
+    if (dateRange.length >= 2) {
+      const startDate = dateRange[0];
+      const endDate = dateRange[1];
+      let modifiedData: any = {};
+
+      if (startDate && endDate) {
+        if (startDate === endDate) {
+          modifiedData = await getModifiedData(startDate) || {};
+        } else {
+          modifiedData = await getModifiedData(startDate, endDate) || {};
+        }
+      }
+
+      if (Object.keys(modifiedData).length > 0) {
+        console.log('提取DOM数据时减去增加值, modifiedData:', modifiedData);
+        console.log('缓存中的ID列表:', Object.keys(modifiedData));
+        
+        processedData.forEach(rowData => {
+          console.log('处理行 - id:', rowData.id, 'ad_id:', rowData.ad_id, 'isAdRow:', !!(rowData.ad_id && rowData.ad_id.trim() !== ''));
+          
+          if (rowData && rowData.id && modifiedData[rowData.id]) {
+            console.log('找到匹配的修改数据:', rowData.id, modifiedData[rowData.id]);
+            
+            // 只有广告统计行（有ad_id的行）才需要减去增加值
+            // 合计行的增加值是通过计算广告行的增加值得到的，不应该直接减去
+            if (rowData.ad_id && rowData.ad_id.trim() !== ''&& rowData.ad_id.trim() !== '—') {
+              const modification = modifiedData[rowData.id];
+              console.log('原始值 - impressions:', rowData.impressions, 'reach:', rowData.reach);
+              console.log('增加值 - impressions:', modification.impressions, 'reach:', modification.reach);
+              
+              // 从DOM值中减去增加值得到真正的原始值
+              if (rowData.impressions !== undefined && modification.impressions !== undefined) {
+                const oldImpressions = rowData.impressions;
+                rowData.impressions = (Number(rowData.impressions) || 0) - (Number(modification.impressions) || 0);
+                console.log(`impressions: ${oldImpressions} -> ${rowData.impressions}`);
+              }
+              if (rowData.reach !== undefined && modification.reach !== undefined) {
+                const oldReach = rowData.reach;
+                rowData.reach = (Number(rowData.reach) || 0) - (Number(modification.reach) || 0);
+                console.log(`reach: ${oldReach} -> ${rowData.reach}`);
+              }
+              if (rowData.spend !== undefined && modification.spend !== undefined) {
+                const oldSpend = rowData.spend;
+                rowData.spend = (Number(rowData.spend) || 0) - (Number(modification.spend) || 0);
+                console.log(`spend: ${oldSpend} -> ${rowData.spend}`);
+              }
+              if (rowData.clicks !== undefined && modification.clicks !== undefined) {
+                const oldClicks = rowData.clicks;
+                rowData.clicks = (Number(rowData.clicks) || 0) - (Number(modification.clicks) || 0);
+                console.log(`clicks: ${oldClicks} -> ${rowData.clicks}`);
+              }
+              if (rowData.registrations !== undefined && modification.registrations !== undefined) {
+                const oldRegistrations = rowData.registrations;
+                rowData.registrations = (Number(rowData.registrations) || 0) - (Number(modification.registrations) || 0);
+                console.log(`registrations: ${oldRegistrations} -> ${rowData.registrations}`);
+              }
+              if (rowData.purchases !== undefined && modification.purchases !== undefined) {
+                const oldPurchases = rowData.purchases;
+                rowData.purchases = (Number(rowData.purchases) || 0) - (Number(modification.purchases) || 0);
+                console.log(`purchases: ${oldPurchases} -> ${rowData.purchases}`);
+              }
+            } else {
+              console.log('跳过非广告统计行:', rowData.id);
+            }
+          } else {
+            console.log('未找到匹配的修改数据:', rowData.id);
+          }
+        });
+      }
+    }
+
+    console.log('提取的报表数据（原始值）:', processedData);
     return { data: processedData, columnMapping, currencySymbol };
   } catch (error) {
     console.error('提取报表数据错误:', error);
@@ -329,8 +427,14 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
         let cellText = scrollableColumnCellsArray[columnIndex].textContent?.trim() || '';
         // 去掉数值后面的中括号和数字，如 "12[2]" → "12"
         cellText = cellText.replace(/\[\d+\]$/, '');
-        rowData[field] = cellText;
-        // console.log('提取的字段数据:', field, columnIndex, cellText);
+        
+        // ID字段保持为字符串，数值字段转换为数字
+        if (['account_id', 'campaign_id', 'adset_id', 'ad_id'].includes(field)) {
+          rowData[field] = cellText;
+        } else {
+          rowData[field] = parseValueToNumber(cellText);
+        }
+        // console.log('提取的字段数据:', field, columnIndex, cellText, rowData[field]);
       }
     }
     
@@ -346,13 +450,15 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     rowData.adset_id = String(rowData.adset_id || '');
     rowData.ad_id = String(rowData.ad_id || '');
     
-    // 处理破折号表示空值的情况
+    // 处理破折号表示空值的情况，同时去除千分位分隔符
     const normalizeId = (id: string): string => {
       const trimmed = id.trim();
       if (trimmed === '' || trimmed === '-' || trimmed === '—') {
         return '';
       }
-      return trimmed;
+      // 去除千分位分隔符（如 "20,244,868" -> "20244868"）
+      const cleanedId = trimmed.replace(/,/g, '');
+      return cleanedId;
     };
     
     rowData.account_id = normalizeId(rowData.account_id);
@@ -370,9 +476,9 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     } else if (rowData.campaign_id) {
       // 广告系列合计行：使用广告系列ID作为唯一标识
       rowData.id = rowData.campaign_id;
-    } else if (rowData.account_id) {
-      // 账户合计行：使用账户ID作为唯一标识
-      rowData.id = rowData.account_id;
+    } else if (rowData.accountName) {
+      // 账户合计行：使用账户名称作为唯一标识（与保存时的key保持一致）
+      rowData.id = rowData.accountName;
     } else {
       // 其他情况：使用生成的ID
       rowData.id = generateAdId(rowData);

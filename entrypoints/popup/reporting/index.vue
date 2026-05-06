@@ -255,18 +255,48 @@ const fetchAds = async () => {
 
 // 合并增加值数据到DOM数据
 function mergeIncreaseValues(domAds: AdData[], cachedAds: any) {
-  // 合并增加值到DOM数据
+  // DOM返回的已经是原始值，只需要存储增加值
   domAds?.forEach(domAd => {
+    console.log('合并前 - id:', domAd.id, 'impressions:', domAd.impressions, 'increase_impressions:', domAd.increase_impressions);
+
     const cachedAd = cachedAds[domAd.id];
-    // console.log('合并Ad:', domAd, cachedAd,domAd.id);
+    console.log('缓存数据 - id:', domAd.id, 'cachedAd:', cachedAd);
+
     if (cachedAd) {
-      // 合并增加值字段
-      domAd.increase_impressions = cachedAd.impressions || 0;
-      domAd.increase_reach = cachedAd.reach || 0;
-      domAd.increase_spend = cachedAd.spend || 0;
-      domAd.increase_clicks = cachedAd.clicks || 0;
-      domAd.increase_registrations = cachedAd.registrations || 0;
-      domAd.increase_purchases = cachedAd.purchases || 0;
+      // 直接存储增加值，原始值已经是真正的原始值了
+      domAd.increase_impressions = cachedAd.impressions || cachedAd.increase_impressions || 0;
+      domAd.increase_reach = cachedAd.reach || cachedAd.increase_reach || 0;
+      domAd.increase_spend = cachedAd.spend || cachedAd.increase_spend || 0;
+      domAd.increase_clicks = cachedAd.clicks || cachedAd.increase_clicks || 0;
+      domAd.increase_registrations = cachedAd.registrations || cachedAd.increase_registrations || 0;
+      domAd.increase_purchases = cachedAd.purchases || cachedAd.increase_purchases || 0;
+    }
+
+    console.log('合并后 - id:', domAd.id, 'impressions:', domAd.impressions, 'increase_impressions:', domAd.increase_impressions);
+  });
+}
+
+// 更新合计行的增加值（保存后立即更新界面显示）
+function updateSummaryRowsIncreaseValues(modifications: any) {
+  if (!modifications || Object.keys(modifications).length === 0) {
+    return;
+  }
+
+  ads.value?.forEach(ad => {
+    // 只更新合计行
+    if (!ad.isSummary) {
+      return;
+    }
+
+    const modification = modifications[ad.id];
+    if (modification) {
+      console.log('更新合计行增加值 - id:', ad.id, modification);
+      ad.increase_impressions = modification.impressions || 0;
+      ad.increase_reach = modification.reach || 0;
+      ad.increase_spend = modification.spend || 0;
+      ad.increase_clicks = modification.clicks || 0;
+      ad.increase_registrations = modification.registrations || 0;
+      ad.increase_purchases = modification.purchases || 0;
     }
   });
 }
@@ -325,14 +355,57 @@ const saveChanges = async () => {
           ad_id: ad.ad_id,
           accountName: ad.accountName
         };
+        
+        // 同时保存到上层合计行
+        // 组合计（使用adset_id）
+        if (ad.adset_id) {
+          if (!modifications[ad.adset_id]) {
+            modifications[ad.adset_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+          }
+          modifications[ad.adset_id].impressions += Number(modifiedFields.impressions);
+          modifications[ad.adset_id].reach += Number(modifiedFields.reach);
+          modifications[ad.adset_id].spend += Number(modifiedFields.spend);
+          modifications[ad.adset_id].clicks += Number(modifiedFields.clicks);
+          modifications[ad.adset_id].registrations += Number(modifiedFields.registrations);
+          modifications[ad.adset_id].purchases += Number(modifiedFields.purchases);
+        }
+        // 系列合计（使用campaign_id）
+        if (ad.campaign_id) {
+          if (!modifications[ad.campaign_id]) {
+            modifications[ad.campaign_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+          }
+          modifications[ad.campaign_id].impressions += Number(modifiedFields.impressions);
+          modifications[ad.campaign_id].reach += Number(modifiedFields.reach);
+          modifications[ad.campaign_id].spend += Number(modifiedFields.spend);
+          modifications[ad.campaign_id].clicks += Number(modifiedFields.clicks);
+          modifications[ad.campaign_id].registrations += Number(modifiedFields.registrations);
+          modifications[ad.campaign_id].purchases += Number(modifiedFields.purchases);
+        }
+        // 账户合计（使用account_id）
+        if (ad.account_id) {
+          if (!modifications[ad.account_id]) {
+            modifications[ad.account_id] = { impressions: 0, reach: 0, spend: 0, clicks: 0, registrations: 0, purchases: 0 };
+          }
+          modifications[ad.account_id].impressions += Number(modifiedFields.impressions);
+          modifications[ad.account_id].reach += Number(modifiedFields.reach);
+          modifications[ad.account_id].spend += Number(modifiedFields.spend);
+          modifications[ad.account_id].clicks += Number(modifiedFields.clicks);
+          modifications[ad.account_id].registrations += Number(modifiedFields.registrations);
+          modifications[ad.account_id].purchases += Number(modifiedFields.purchases);
+        }
       }
     }
+    
+    console.log('保存的修改数据（含合计行）:', modifications);
     
     // 保存修改数据（包含当前选择的日期）
     await sendMessageToContent('saveReportingModifications', {
       modifications: modifications,
       date: getCurrentDate()
     });
+    
+    // 保存完成后，立即更新界面上的合计行增加值
+    updateSummaryRowsIncreaseValues(modifications);
     
     // 保存完成
     saving.value = false;
