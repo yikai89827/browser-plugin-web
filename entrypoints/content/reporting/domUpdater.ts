@@ -213,7 +213,7 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
       updateAdRow(row, matchedModification, rowData);
     }
   });
-  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：四层排序 + 仅改 translate，Y 取当前 DOM 各行 translate  multiset 重排（保留大偏移、兼顾层级）
+  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：四层排序 + 仅改 translate，视口内连续 Y（anchor + i*42）
   if (!skipReorder) {
     resetReportingSeenSortMergeCache();
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -221,7 +221,7 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
     mergeReportingSeenSortFromRows(allRowData, sortConfig.field, modifiedData, summaryValues);
   } else if (scrollStopVisualReorder) {
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    applyScrollStopHierarchyTranslatePermutedYs(allRowData, modifiedData, summaryValues);
+    applyScrollStopHierarchyTranslateContiguous(allRowData, modifiedData, summaryValues);
   }
   // 更新表格底部合计行
   updateFooterRows(modifiedData, summaryValues);
@@ -953,10 +953,11 @@ function readTranslateYPx(row: HTMLElement): number | null {
 }
 
 /**
- * 停滚：四层排序 + 仅改 translate；Y 用「当前各行的 translateY  multiset」按升序重排到层级顺序上，
- * 保留 Meta 虚拟列表在视口内的大偏移量级，避免压成 0..n*42 空白；层级顺序与全量重排一致。
+ * 停滚：四层排序 + 仅改 translate。
+ * 视口内 N 行写成**连续** Y：anchor, anchor+42, …（与 Meta 行高一致），anchor 取当前各行的最小 translateY 向下对齐到 42 网格，
+ * 等价于「有修改的行插到正确名次后，中间各行整体挪 42 的整数倍」；不再用 multiset 置换（易不连续导致空白）。
  */
-function applyScrollStopHierarchyTranslatePermutedYs(
+function applyScrollStopHierarchyTranslateContiguous(
   allRowData: any[],
   modifiedData: any,
   summaryValues: Record<string, any>,
@@ -974,34 +975,29 @@ function applyScrollStopHierarchyTranslatePermutedYs(
   const ordered = flattenReportingHierarchy(accounts);
   if (ordered.length === 0) return;
 
-  const ys: number[] = [];
-  for (const item of ordered) {
-    const y = readTranslateYPx(item.rowElement);
-    if (y != null && Number.isFinite(y)) ys.push(y);
-  }
-  ys.sort((a, b) => a - b);
-  if (ys.length === 0) {
-    console.warn('停滚层级重排：无法从 DOM 读取 translateY，跳过写 transform 以免空白');
+  const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
+  const rawYs = ordered
+    .map((item) => readTranslateYPx(item.rowElement))
+    .filter((y): y is number => y != null && Number.isFinite(y));
+  if (rawYs.length === 0) {
+    console.warn('停滚层级重排：无法从 DOM 读取 translateY，跳过写 transform');
     return;
   }
-  let padBase = ys[ys.length - 1]! + REPORTING_VIRTUAL_ROW_HEIGHT_PX;
-  while (ys.length < ordered.length) {
-    ys.push(padBase);
-    padBase += REPORTING_VIRTUAL_ROW_HEIGHT_PX;
-  }
+  const minY = Math.min(...rawYs);
+  const anchorY = Math.floor(minY / H) * H;
 
   ordered.forEach((item, i) => {
     const row = item.rowElement as HTMLElement | undefined;
     if (!row) return;
     const inner = row.firstElementChild as HTMLElement | null;
     if (!inner) return;
-    const ty = ys[i]!;
+    const ty = anchorY + i * H;
     inner.style.transform = `translate(0px, ${ty}px)`;
   });
 }
 
 // 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
-// translateOnly：仅保留接口；停滚路径已改用 applyScrollStopHierarchyTranslatePermutedYs。
+// translateOnly：仅保留接口；停滚路径已改用 applyScrollStopHierarchyTranslateContiguous。
 function reorderDomRowsBySortValue(
   allRowData: any[],
   modifiedData: any,
