@@ -14,7 +14,15 @@ export const fieldMappingConfig = [
   { field: 'spend', labels: ['amount spent', '已花费金额'] },
   { field: 'impressions', labels: ['impressions', '展示次数'] },
   { field: 'reach', labels: ['reach', '覆盖人数'] },
-  { field: 'clicks', labels: ['clicks(all)', '点击量（全部）'] },
+  {
+    field: 'clicks',
+    labels: [
+      'clicks(all)',
+      '点击量（全部）',
+      '点击量 (全部)',
+      '点击量(全部)',
+    ],
+  },
   { field: 'purchases', labels: ['purchases', '购物次数'] },
   { field: 'registrations', labels: ['registrations completed', '完成注册次数'] },
 ];

@@ -4,7 +4,9 @@
 import {
   getReportingTableDataRows,
   getReportingTableScrollParent,
-  findInnermostElement,
+  findReportingValueElement,
+  parseReportingCellNumericText,
+  stripReportingModeledMetricSuffix,
   getColumnIndicesSync,
   extractRowData,
   processNames,
@@ -443,12 +445,12 @@ function reconcileAdRowNumericBaseFromDomAndCache(
     if (columnIndex < 0 || !scrollableColumnCellsArray[columnIndex]) continue;
 
     const cell = scrollableColumnCellsArray[columnIndex] as Element;
-    const inner = findInnermostElement(cell);
+    const inner = findReportingValueElement(cell);
     const attr = inner.getAttribute('data-increase');
     if (attr != null && String(attr).trim() !== '') continue;
 
     const rawText = inner.textContent?.trim() || '';
-    const displayed = parseNumber(rawText.replace(/\[\d+\]$/, ''));
+    const displayed = parseReportingCellNumericText(rawText);
     if (!Number.isFinite(displayed)) continue;
 
     const cacheBaseRaw = adLevelModifications._bases?.[field];
@@ -567,12 +569,14 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
     
     if (columnIndex >= 0 && cellsArray[columnIndex]) {
       const cell = cellsArray[columnIndex];
-      const innermostElement = findInnermostElement(cell);
+      const innermostElement = findReportingValueElement(cell);
 
-      let originalText = innermostElement.textContent?.trim() || '';
-      originalText = originalText.replace(/\[\d+\]$/, '');
+      const rawCellText = innermostElement.textContent?.trim() || '';
+      const modeledSuffixMatch = rawCellText.match(/\s*\[(\d+)\]\s*$/u);
+      const isCurrency = rawCellText.includes('$');
+      const originalText = stripReportingModeledMetricSuffix(rawCellText);
 
-      const displayNum = parseNumber(originalText);
+      const displayNum = parseReportingCellNumericText(rawCellText);
       const lockedAttr = innermostElement.getAttribute('data-display-base');
       const lockedBase =
         lockedAttr != null && String(lockedAttr).trim() !== '' ? Number(lockedAttr) : NaN;
@@ -596,7 +600,7 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
         hasIncreaseAttr0 &&
         Number.isFinite(lockedBase) &&
         lockedBase >= 0 &&
-        !originalText.includes('$') &&
+        !isCurrency &&
         Math.abs(displayNum - lockedBase) <= 0.501;
 
       if (Number.isFinite(cacheFieldBase) && cacheFieldBase >= 0) {
@@ -616,12 +620,12 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
           originalValue = baseCandidate;
         } else if (Number.isFinite(baseCandidate) && baseCandidate < 0) {
           // extract/resync 曾留下负数基数时，以屏显为准并清掉不可靠的 data-increase
-          originalValue = Math.max(0, parseNumber(originalText));
+          originalValue = Math.max(0, parseReportingCellNumericText(rawCellText));
           innermostElement.removeAttribute('data-increase');
           innermostElement.removeAttribute('data-display-base');
         } else {
           const existingIncrease = innermostElement.getAttribute('data-increase');
-          originalValue = parseNumber(originalText);
+          originalValue = parseReportingCellNumericText(rawCellText);
           if (existingIncrease) {
             const existingIncreaseValue = Number(existingIncrease);
             const implied = originalValue - existingIncreaseValue;
@@ -637,28 +641,32 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
 
       let newValue = originalValue + Number(value);
       // 非货币指标不应展示负数；若仍异常则再按「屏显 + 本次缓存增量」兜底
-      if (!originalText.includes('$') && Number.isFinite(newValue) && newValue < 0) {
-        originalValue = Math.max(0, parseNumber(originalText));
+      if (!isCurrency && Number.isFinite(newValue) && newValue < 0) {
+        originalValue = Math.max(0, parseReportingCellNumericText(rawCellText));
         innermostElement.removeAttribute('data-increase');
         innermostElement.removeAttribute('data-display-base');
         newValue = originalValue + Number(value);
       }
-      if (!originalText.includes('$') && Number.isFinite(newValue) && newValue < 0) {
+      if (!isCurrency && Number.isFinite(newValue) && newValue < 0) {
         newValue = 0;
       }
       
       let formattedValue = String(newValue);
-      if (originalText.includes('$')) {
+      if (isCurrency) {
         formattedValue = '$' + parseFloat(newValue.toString()).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
       } else if (!isNaN(newValue) && Number.isInteger(newValue)) {
         formattedValue = newValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
       }
-      
-      innermostElement.textContent = formattedValue;
+
+      let displayOut = formattedValue;
+      if (modeledSuffixMatch && !isCurrency) {
+        displayOut = `${formattedValue} [${modeledSuffixMatch[1]}]`;
+      }
+      innermostElement.textContent = displayOut;
       
       if (Number(value) !== 0) {
         innermostElement.setAttribute('data-increase', String(value));
-        if (!originalText.includes('$')) {
+        if (!isCurrency) {
           innermostElement.setAttribute('data-display-base', String(originalValue));
         }
       } else {
@@ -669,10 +677,9 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
   });
 }
 
-// 解析数字
+// 解析数字（与 dom.parseReportingCellNumericText 一致，含建模列 [n] 剥离）
 export function parseNumber(text: string): number {
-  const cleaned = text.replace(/[^0-9.-]/g, '');
-  return parseFloat(cleaned) || 0;
+  return parseReportingCellNumericText(text);
 }
 
 // 更新表格底部合计行

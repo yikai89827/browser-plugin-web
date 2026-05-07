@@ -395,6 +395,11 @@ function extractCurrencySymbolFromText(text: string): string {
   }
 }
 
+/** Meta 建模/隐私口径列常见的「主数 + [2]」；若不先去掉，解析会把括号内数字拼进主数（如 "53 [2]"→532） */
+export function stripReportingModeledMetricSuffix(text: string): string {
+  return text.replace(/\s*\[\d+\]\s*$/u, '').trim();
+}
+
 // 将文本值转换为数字（处理货币符号、千分位分隔符、空值等）
 function parseValueToNumber(text: string): number {
   try {
@@ -405,9 +410,20 @@ function parseValueToNumber(text: string): number {
     if (trimmed === '' || trimmed === '-' || trimmed === '—' || trimmed === '--' || trimmed === '---') {
       return 0;
     }
+
+    const withoutModeled = stripReportingModeledMetricSuffix(trimmed);
+    if (
+      withoutModeled === '' ||
+      withoutModeled === '-' ||
+      withoutModeled === '—' ||
+      withoutModeled === '--' ||
+      withoutModeled === '---'
+    ) {
+      return 0;
+    }
     
     // 去掉货币符号和千分位分隔符
-    let cleaned = trimmed;
+    let cleaned = withoutModeled;
     // 去掉所有非数字、非小数点、非负号的字符
     cleaned = cleaned.replace(/[^\d.\-]/g, '');
     
@@ -417,6 +433,11 @@ function parseValueToNumber(text: string): number {
     console.error('解析数值错误:', error);
     return 0;
   }
+}
+
+/** 与 parseValueToNumber 一致（含建模列 [n] 剥离），供 domUpdater 等统一解析 */
+export function parseReportingCellNumericText(text: string): number {
+  return parseValueToNumber(text);
 }
 
 /** 弹窗保存时写入的各列 Meta 原始值；用于覆盖 extractRowData 从 DOM 反推的数值，避免虚拟列表/中间态误判（含小增量如 +1） */
@@ -667,10 +688,11 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
     for (const [field, columnIndex] of Object.entries(columnMapping)) {
       if (columnIndex >= 0 && scrollableColumnCellsArray[columnIndex]) {
         const cellElement = scrollableColumnCellsArray[columnIndex];
-        let cellText = cellElement.textContent?.trim() || '';
+        const innerForText = findReportingValueElement(cellElement);
+        let cellText = innerForText.textContent?.trim() || '';
         
         // 获取最内层DOM的 data-increase 属性值
-        const innermostElement = findInnermostElement(cellElement);
+        const innermostElement = innerForText;
         const dataIncrease = innermostElement.getAttribute('data-increase');
         const increaseValue = dataIncrease ? Number(dataIncrease) : 0;
         const displayBaseAttr = innermostElement.getAttribute('data-display-base');
@@ -969,6 +991,37 @@ export function findInnermostElement(element: any): any {
   let current = element;
   while (current.firstElementChild) {
     current = current.firstElementChild;
+  }
+  return current;
+}
+
+function isReportingCellSubtreeHidden(el: HTMLElement): boolean {
+  const s = window.getComputedStyle(el);
+  return s.display === 'none' || s.visibility === 'hidden';
+}
+
+/**
+ * 报表可滚动列单元格里承载「主指标文案」的节点。
+ * - 优先已写过 data-increase / data-display-base 的节点（与插件一致）
+ * - 否则沿子树向下时跳过 display:none 等隐藏节点，避免命中 tooltip/浮层里极大的占位数字
+ */
+export function findReportingValueElement(root: Element): Element {
+  if (!(root instanceof Element)) {
+    return root as Element;
+  }
+  const marked = root.querySelector('[data-increase], [data-display-base]');
+  if (marked && root.contains(marked)) {
+    return marked as Element;
+  }
+
+  let current: Element = root;
+  while (current.firstElementChild) {
+    const kids = Array.from(current.children) as HTMLElement[];
+    const next = kids.find((k) => k && !isReportingCellSubtreeHidden(k)) ?? kids[0];
+    if (!next) {
+      break;
+    }
+    current = next;
   }
   return current;
 }
