@@ -668,6 +668,16 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
             if (implied < 0 || appliedIncrease > rawValue + 1e-6) {
               appliedIncrease = 0;
               innermostElement.removeAttribute('data-increase');
+            } else if (
+              rawValue >= 200 &&
+              appliedIncrease >= 50 &&
+              implied >= 0 &&
+              implied < Math.min(rawValue, appliedIncrease) * 0.05
+            ) {
+              // 同一行多列同加 10000 时：重排/刷新中间态下屏显仍是「原始」而 data-increase 已写入（如 10138-10000=138 假基数），
+              // 另一列已写成合成值则不会触发；本列不扣增量，避免 updateAdRow 再算成 138+10000=10138 卡死
+              appliedIncrease = 0;
+              innermostElement.removeAttribute('data-increase');
             }
           }
           rowData[field] = rawValue - appliedIncrease;

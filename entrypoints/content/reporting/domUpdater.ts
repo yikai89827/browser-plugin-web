@@ -574,6 +574,15 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
           const implied = originalValue - existingIncreaseValue;
           if (implied < 0 || existingIncreaseValue > originalValue + 1e-6) {
             innermostElement.removeAttribute('data-increase');
+          } else if (
+            !originalText.includes('$') &&
+            originalValue >= 200 &&
+            existingIncreaseValue >= 50 &&
+            implied >= 0 &&
+            implied < Math.min(originalValue, existingIncreaseValue) * 0.05
+          ) {
+            // 与 extractRowData 一致：屏显+已写 data-increase 的中间态，勿把「减完」得到的小数当基数
+            innermostElement.removeAttribute('data-increase');
           } else {
             originalValue = implied;
           }
