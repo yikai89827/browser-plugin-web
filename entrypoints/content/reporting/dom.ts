@@ -601,16 +601,12 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
           rowData[field] = cellText;
         } else {
           const rawValue = parseValueToNumber(cellText);
-          let appliedIncrease = increaseValue;
-          // 虚拟列表复用单元格时，data-increase 常来自上一行；文本已是当前行的展示值，再减旧增量会得到错误基数（负展示次数等）
-          if (appliedIncrease !== 0 && Number.isFinite(appliedIncrease) && Number.isFinite(rawValue)) {
-            if (rawValue >= 0 && (appliedIncrease > rawValue || rawValue - appliedIncrease < 0)) {
-              appliedIncrease = 0;
-            }
-          }
-          rowData[field] = rawValue - appliedIncrease;
-          if (increaseValue !== 0 && appliedIncrease === 0 && innermostElement?.removeAttribute) {
-            innermostElement.removeAttribute('data-increase');
+          // 如果DOM中有data-increase属性，说明显示的是合成值，需要扣除得到原始值
+          // 如果DOM中没有data-increase属性，说明显示的就是原始值，不需要扣除
+          if (increaseValue !== 0) {
+            rowData[field] = rawValue - increaseValue;
+          } else {
+            rowData[field] = rawValue;
           }
         }
         // console.log('提取的字段数据:', field, columnIndex, cellText, rowData[field]);

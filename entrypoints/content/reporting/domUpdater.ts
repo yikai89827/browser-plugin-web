@@ -455,9 +455,13 @@ function resyncReportingPoolRowDataFromDom(
     if (!row?.isConnected) continue;
     const fresh = extractRowData(row, columnIndices);
     if (!fresh?.id || String(fresh.id) !== String(rowData.id)) continue;
-    for (const k of Object.keys(fresh)) {
-      if (k === 'id' || k === '_reportingRowEl') continue;
-      (rowData as any)[k] = (fresh as any)[k];
+    // 只更新名称字段，不更新数值字段
+    // 数值字段应该保持原始值，因为后面会基于原始值加上缓存增加值来计算合成值
+    const nameFields = ['accountName', 'campaignName', 'adSetName', 'adName', 'account_id', 'campaign_id', 'adset_id', 'ad_id'];
+    for (const k of nameFields) {
+      if (fresh[k] !== undefined) {
+        (rowData as any)[k] = (fresh as any)[k];
+      }
     }
   }
 }
@@ -1019,31 +1023,34 @@ function sortReportingAccountsHierarchy(
 
 /**
  * 全量 appendChild 重排前：为「目标顺序」下的每一行分配一组可用的 translateY 槽位。
- * 与 dom.ts 的 readReportingRowTranslateYPx 共用读法，避免与 FB 虚拟列表刻度脱节导致空白行。
+ * 关键修复：读取所有行的 translateY 值，排序后按照重排后的顺序依次分配。
+ * 这样可以确保重排后的 translateY 值与行顺序一致，避免空白行或错位。
  */
 function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
   const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
   const ys: number[] = [];
 
-  // 步骤1：遍历重排后的逻辑顺序，从当前 DOM 读出每行真实 translateY（能读到的都收集）
+  // 步骤1：从 DOM 读出所有行的真实 translateY 值
   for (const item of ordered) {
     const row = item.rowElement as HTMLElement | undefined;
     if (!row) continue;
     const y = readReportingRowTranslateYPx(row);
-    if (y != null && Number.isFinite(y)) ys.push(y);
+    if (y != null && Number.isFinite(y)) {
+      ys.push(y);
+    }
   }
 
-  // 步骤2：从小到大排序，得到当前视口/池内已有的 Y 刻度 multiset
+  // 步骤2：从小到大排序，得到可用的 Y 刻度 multiset
   ys.sort((a, b) => a - b);
 
-  // 步骤3：若读到的 Y 个数少于行数（例如刷新后部分行尚无 transform），从最后一个 Y 起按固定行高 H 向下补齐
-  let padBase = ys.length ? ys[ys.length - 1]! + H : 0;
+  // 步骤3：若读到的 Y 个数少于行数，从最后一个 Y 起按固定行高 H 向下补齐
+  let padBase = ys.length > 0 ? ys[ys.length - 1]! + H : 0;
   while (ys.length < ordered.length) {
     ys.push(padBase);
     padBase += H;
   }
 
-  // 步骤4：返回与 ordered 等长的 Y 数组，供按序写回 inner.style.transform
+  // 步骤4：返回与 ordered 等长的 Y 数组（已排序），供按序写回 inner.style.transform
   return ys;
 }
 
