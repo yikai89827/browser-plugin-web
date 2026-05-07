@@ -67,6 +67,76 @@ export function getReportingTableHeader(): HTMLElement | null {
   return element as HTMLElement || null;
 }
 
+function headerTextHasCjk(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
+}
+
+function labelHasCjk(label: string): boolean {
+  return /[\u4e00-\u9fff]/.test(label);
+}
+
+/**
+ * 表头文案与配置 label 是否匹配。
+ * - 中文/含非标符号或较长英文短语：用 includes，避免漏匹配「点击量（全部）」等。
+ * - 短纯英文指标名：用词边界式匹配，避免 breach/research 含 reach、子串抢列。
+ */
+function labelMatchesHeaderText(label: string, text: string): boolean {
+  const low = label.trim().toLowerCase();
+  if (!low) return false;
+  if (labelHasCjk(low)) {
+    return text.includes(low);
+  }
+  if (/[^a-z0-9\s]/.test(low) || low.length > 12) {
+    return text.includes(low);
+  }
+  const escaped = low.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(text);
+}
+
+type HeaderColumnMatch = { field: string; label: string; score: number; configOrder: number };
+
+/**
+ * 从 fieldMappingConfig 中为当前表头格选出唯一字段。
+ * 修复：双语表头如「reach · 购物次数」若用简单 includes('reach') 会先命中 reach 列索引，导致覆盖人数写到购物列并反复累加。
+ */
+function pickBestFieldForHeaderCell(text: string): HeaderColumnMatch | null {
+  const candidates: HeaderColumnMatch[] = [];
+  let labelOrder = 0;
+  for (const { field, labels } of fieldMappingConfig) {
+    for (const label of labels) {
+      if (labelMatchesHeaderText(label, text)) {
+        const low = label.trim().toLowerCase();
+        candidates.push({
+          field,
+          label,
+          score: low.length,
+          configOrder: labelOrder,
+        });
+      }
+      labelOrder += 1;
+    }
+  }
+  if (candidates.length === 0) return null;
+
+  let pool = candidates;
+  if (headerTextHasCjk(text)) {
+    const anyCjkLabelHit = candidates.some((c) => labelHasCjk(c.label));
+    if (anyCjkLabelHit) {
+      // 表头含中文时：优先只采纳「中文标签」或「较长英文专用名」，避免短英文 reach/clicks 挂错到中文购物类列
+      const filtered = candidates.filter((c) => labelHasCjk(c.label) || c.label.length >= 14);
+      if (filtered.length > 0) {
+        pool = filtered;
+      }
+    }
+  }
+
+  pool.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.configOrder - b.configOrder;
+  });
+  return pool[0]!;
+}
+
 // 获取列索引
 export function getColumnIndicesSync(): any {
   const headerElement = getReportingTableHeader();
@@ -117,25 +187,10 @@ export function getColumnIndicesSync(): any {
       return;
     }
     
-    // 然后尝试通过文本匹配
-    for (const { field, labels } of fieldMappingConfig) {
-      if (labels.some(label => text.includes(label.toLowerCase()))) {
-        // 确保字段名与extractRowData中使用的一致
-        let mappedField = field;
-        // 特殊处理ID字段，确保与extractRowData中使用的字段名一致
-        if (field === 'account_id') {
-          mappedField = 'account_id';
-        } else if (field === 'campaign_id') {
-          mappedField = 'campaign_id';
-        } else if (field === 'adset_id') {
-          mappedField = 'adset_id';
-        } else if (field === 'ad_id') {
-          mappedField = 'ad_id';
-        }
-        columnIndices[mappedField] = index;
-        // console.log(`匹配到字段: ${field} -> ${mappedField} 在索引 ${index}`);
-        break;
-      }
+    // 文本匹配：多字段子串可能同时命中同一表头，取最长/最具体标签并处理中英混排歧义
+    const best = pickBestFieldForHeaderCell(text);
+    if (best) {
+      columnIndices[best.field] = index;
     }
   });
   
