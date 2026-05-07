@@ -543,6 +543,10 @@ function calculateTotalModifications(modifiedData: any): any {
 }
 
 const SCROLL_STOP_DEBOUNCE_MS = 550;
+/** 停滚：遮罩先显示再改 DOM，避免 loading 一闪而过仍看到数字/排序在动 */
+const REPORTING_SCROLL_OVERLAY_BEFORE_MS = 140;
+/** 重排后再留一帧 + 时间，避免撤遮罩瞬间仍看到中间态 */
+const REPORTING_SCROLL_OVERLAY_AFTER_MS = 240;
 
 function isReportingInnerScrollTarget(el: HTMLElement, table: HTMLElement): boolean {
   if (!table.contains(el)) return false;
@@ -578,10 +582,21 @@ export function setupScrollListener() {
     }
     scrollStopUnifiedTimer = setTimeout(() => {
       scrollStopUnifiedTimer = null;
-      createOverlay();
-      void updateDomElements({ skipReorder: true, scrollStopVisualReorder: true }).finally(() => {
-        removeOverlay();
-      });
+      void (async () => {
+        createOverlay();
+        await delayMs(REPORTING_SCROLL_OVERLAY_BEFORE_MS);
+        try {
+          await updateDomElements({ skipReorder: true, scrollStopVisualReorder: true });
+        } catch (err) {
+          console.error('滚动停 DOM 更新失败:', err);
+        } finally {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          });
+          await delayMs(REPORTING_SCROLL_OVERLAY_AFTER_MS);
+          removeOverlay();
+        }
+      })();
     }, SCROLL_STOP_DEBOUNCE_MS);
   };
 

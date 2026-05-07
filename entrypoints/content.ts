@@ -639,14 +639,16 @@ function initReportingPageObserver(): void {
     }
   };
   
-  // 更新DOM元素
+  // 更新DOM元素（滚动类：遮罩先亮再改 DOM，改完双 rAF + 短延迟再撤，避免到顶后仍看到数字/排序在动）
+  const REPORTING_SCROLL_OVERLAY_BEFORE_MS = 140;
+  const REPORTING_SCROLL_OVERLAY_AFTER_MS = 240;
   const applyDomUpdates = async (isScrollRelated: boolean): Promise<void> => {
     createOverlay();
     if (isScrollRelated) {
-      console.log('滚动已停止，显示 loading 后执行缓存渲染');
+      console.log('滚动已停止，loading 遮盖后再执行缓存渲染');
     }
 
-    const waitTime = isScrollRelated ? 0 : 400;
+    const waitTime = isScrollRelated ? REPORTING_SCROLL_OVERLAY_BEFORE_MS : 400;
     setTimeout(async () => {
       try {
         const { updateDomElements } = await import('./content/reporting/domUpdater');
@@ -654,6 +656,12 @@ function initReportingPageObserver(): void {
           skipReorder: isScrollRelated,
           scrollStopVisualReorder: isScrollRelated,
         });
+        if (isScrollRelated) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          });
+          await new Promise<void>((r) => setTimeout(r, REPORTING_SCROLL_OVERLAY_AFTER_MS));
+        }
       } finally {
         removeOverlay();
       }
