@@ -17,7 +17,6 @@ import {
   getRowType,
   readReportingRowTranslateYPx,
   captureReportingBeforeFirstReorderAnchors,
-  areReportingBeforeFirstReorderAnchorsBothInView,
   clearReportingBeforeFirstReorderAnchors,
 } from './dom';
 import { getModifiedData } from './cache';
@@ -25,6 +24,15 @@ import { createOverlay, removeOverlay } from '../manage/dom';
 
 /** 虚拟行内容区高度，与 Meta 报表 DOM 一致；appendChild 改顺序后须重写 translate 才能与视觉一致 */
 const REPORTING_VIRTUAL_ROW_HEIGHT_PX = 42;
+
+/** 全量重排后等待一帧再读 DOM，减少 Meta 下一帧把单元格/translate 复位导致的错位与「全表变原始值」 */
+const REPORTING_POST_REORDER_STABILIZE_MS = 120;
+
+async function reportingDoubleRaf(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
 
 /** 刷新后表格/虚拟行可能晚于脚本执行，有修改数据时在总时长内轮询等待 DOM 就绪 */
 const REPORTING_TABLE_RETRY_MAX = 30;
@@ -66,14 +74,10 @@ let scrollStopUnifiedTimer: ReturnType<typeof setTimeout> | null = null;
 
 export type UpdateDomElementsOptions = {
   /**
-   * 为 true：只补丁合成数值与 footer，不做 appendChild 重排。
-   * 为 false：appendChild + translate 按修改后指标完整重排（首屏、表头排序变更等）。
+   * 历史参数：曾有「只写单元格不重排」路径。当前只要存在缓存修改数据，一律全量 appendChild+translate（与 Meta 虚拟列表稳定共存），此选项会被忽略。
    */
   skipReorder?: boolean;
-  /**
-   * 与 skipReorder 同时为 true 时：停滚/滚动类更新在补丁后按当前 DOM 行 + 缓存再算顺序，只写子元素 translate，不 appendChild（适配虚拟列表）。
-   * 仅应由滚动停稳路径或 content 的 isScrollRelated 传入。
-   */
+  /** 历史参数，已忽略；停滚不再单独改 translate。 */
   scrollStopVisualReorder?: boolean;
 };
 
@@ -91,8 +95,6 @@ export function updateDomElements(options?: UpdateDomElementsOptions): Promise<v
 }
 
 async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Promise<void> {
-  let skipReorder = options?.skipReorder === true;
-  let scrollStopVisualReorder = options?.scrollStopVisualReorder === true;
   updateDomElementsInFlight = true;
   try {
   // 获取当前排序配置
@@ -125,6 +127,10 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
     return;
   }
 
+  // 只要有缓存修改，一律全量重排 + 双阶段写单元格。仅改 translate 的停滚路径会与 Meta 虚拟列表下一帧复位打架，
+  // 表现为间歇空白行、行序错位、合成值被刷成原始值；故不再走 skipReorder / scrollStopVisualReorder 轻路径。
+  void options;
+
   let tableContainer: Element | null = null;
   let dataRows: HTMLElement[] = [];
 
@@ -156,18 +162,8 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
 
   extendObserverSuppressAfterThisRun = true;
 
-  // 滚停：若「首次插件重排前」冻结的视口首尾槽位再次同时进入主表视口，说明 FB 已滚回顶侧；清空锚点后走全量合成重排（不再做停滚段内 translate）
-  if (scrollStopVisualReorder && areReportingBeforeFirstReorderAnchorsBothInView()) {
-    clearReportingBeforeFirstReorderAnchors();
-    skipReorder = false;
-    scrollStopVisualReorder = false;
-    console.log('停滚：重排前锚点均回视口，按合成值全量重排');
-  }
-
-  // 全量重排（含到顶升级、点表头）前丢掉旧冻结，便于下面 capture 采当前 FB 视口作新「重排前」基线
-  if (!skipReorder) {
-    clearReportingBeforeFirstReorderAnchors();
-  }
+  // 每次全量跑前清空「重排前锚点」，下面 capture 会采当前视口作新基线（到顶检测等仍可用）
+  clearReportingBeforeFirstReorderAnchors();
 
   console.log('找到的数据行数:', dataRows.length);
   
@@ -186,7 +182,21 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
       allRowData.push(rowData);
     }
   });
-  
+
+  // 虚拟列表：父节点 children 顺序往往不等于 translateY 对应的「自上而下」视觉顺序。
+  // 若不先按视觉序排平，buildReportingHierarchy 会把广告挂到错误的组/系列下，flatten 后 appendChild+translate 与 Meta 池刻度错位 → 间歇空白行；
+  // processNames 依赖自上而下的层级上下文，同样必须以视觉序遍历。
+  allRowData.sort((a, b) => {
+    const ra = a._reportingRowEl as HTMLElement | undefined;
+    const rb = b._reportingRowEl as HTMLElement | undefined;
+    const ya = ra ? readReportingRowTranslateYPx(ra) : null;
+    const yb = rb ? readReportingRowTranslateYPx(rb) : null;
+    const na = ya == null || !Number.isFinite(ya) ? Number.POSITIVE_INFINITY : ya;
+    const nb = yb == null || !Number.isFinite(yb) ? Number.POSITIVE_INFINITY : yb;
+    if (na !== nb) return na - nb;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+
   // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
   allRowData = processNames(allRowData);
   
@@ -207,43 +217,22 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
   // 首次写单元格 / 重排前冻结视口首尾 DOM（FB 原始布局）；到顶清空后会再采一帧新基线
   captureReportingBeforeFirstReorderAnchors();
 
-  // 第二次遍历，只更新修改过的行和相关的合计行（按 allRowData + 对应 DOM 行，避免与 dataRows 下标错位）
-  allRowData.forEach((rowData) => {
-    const row = rowData._reportingRowEl as HTMLElement | undefined;
-    if (!rowData?.id || !row) return;
+  // 第一轮：在 appendChild 重排前先把合成值写入当前槽位（减少重排瞬间看到原始值）
+  applyModificationWritesToReportingPool(allRowData, modifiedData, summaryValues);
 
-    let matchedModification = null;
+  // 全量重排：appendChild + translate，并重置「已见 id 排序键」缓存
+  resetReportingSeenSortMergeCache();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues, { translateOnly: false });
+  mergeReportingSeenSortFromRows(allRowData, sortConfig.field, modifiedData, summaryValues);
 
-    if (modifiedData[rowData.id]) {
-      matchedModification = modifiedData[rowData.id];
-    }
+  // 第二轮：等 Meta 虚拟列表完成一帧（或多帧）后再从 DOM 同步 rowData 并重写合成值，避免间歇空白行与「全表变原始值」
+  await reportingDoubleRaf();
+  await delayMs(REPORTING_POST_REORDER_STABILIZE_MS);
+  resyncReportingPoolRowDataFromDom(allRowData, columnIndicesSnapshot);
+  applyModificationWritesToReportingPool(allRowData, modifiedData, summaryValues);
+  mergeReportingSeenSortFromRows(allRowData, sortConfig.field, modifiedData, summaryValues);
 
-    if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
-      matchedModification = modifiedData[rowData.ad_id];
-    }
-
-    if (!matchedModification && summaryValues[rowData.id]) {
-      matchedModification = summaryValues[rowData.id];
-    }
-
-    if (!matchedModification && rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
-      matchedModification = summaryValues[rowData.accountName];
-    }
-
-    if (matchedModification) {
-      updateAdRow(row, matchedModification, rowData);
-    }
-  });
-  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：仅相邻「有排序列增量」的行段内按合成值置换 translate
-  if (!skipReorder) {
-    resetReportingSeenSortMergeCache();
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues, { translateOnly: false });
-    mergeReportingSeenSortFromRows(allRowData, sortConfig.field, modifiedData, summaryValues);
-  } else if (scrollStopVisualReorder) {
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    applyScrollStopHierarchyTranslateContiguous(allRowData, modifiedData, summaryValues);
-  }
   // 更新表格底部合计行
   updateFooterRows(modifiedData, summaryValues);
   } finally {
@@ -411,6 +400,107 @@ export function identifyRowType(rowData: any): string {
   }
   
   return 'account';
+}
+
+/**
+ * 虚拟列表复用单元格时，常出现「文本仍是插件写过的合成值，但 data-increase 已丢」。
+ * 此时 extractRowData 会把展示值误当基数，updateAdRow 再叠加一次增量 → 错数或看起来像「被刷回原始」。
+ * 对广告行在写回前：若某列无 data-increase 且缓存里有该列增量，用 展示值−增量 还原基数（仅当差值非负，避免 FB 已刷回真原始时的误判）。
+ */
+function reconcileAdRowNumericBaseFromDomAndCache(
+  rowData: any,
+  rowElement: HTMLElement,
+  adLevelModifications: any,
+): void {
+  if (!adLevelModifications || typeof adLevelModifications !== 'object') return;
+
+  const columnIndices = getColumnIndicesSync();
+  const idFields = ['account_id', 'campaign_id', 'adset_id', 'ad_id'];
+  const cells = rowElement.querySelector('[role="presentation"]')?.children[0];
+  if (!cells?.childNodes?.length) return;
+  const scrollableColumn = cells.children[1];
+  const scrollableColumnCellsArray = Array.from(scrollableColumn.children[0].children);
+
+  for (const [field, rawDelta] of Object.entries(adLevelModifications)) {
+    if (idFields.includes(field)) continue;
+    const delta = Number(rawDelta);
+    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-9) continue;
+
+    const columnIndex = columnIndices[field] ?? -1;
+    if (columnIndex < 0 || !scrollableColumnCellsArray[columnIndex]) continue;
+
+    const cell = scrollableColumnCellsArray[columnIndex] as Element;
+    const inner = findInnermostElement(cell);
+    const attr = inner.getAttribute('data-increase');
+    if (attr != null && String(attr).trim() !== '') continue;
+
+    const rawText = inner.textContent?.trim() || '';
+    const displayed = parseNumber(rawText.replace(/\[\d+\]$/, ''));
+    if (!Number.isFinite(displayed)) continue;
+
+    const impliedBase = displayed - delta;
+    if (impliedBase >= 0) {
+      rowData[field] = impliedBase;
+    }
+  }
+}
+
+/** Meta 可能在 appendChild/translate 后再改一帧单元格；从 DOM 重抽数值/名称写回 allRowData，保持与当前槽位一致（不换 id、不换 _reportingRowEl） */
+function resyncReportingPoolRowDataFromDom(
+  allRowData: any[],
+  columnIndices: Record<string, number>,
+): void {
+  for (const rowData of allRowData) {
+    const row = rowData._reportingRowEl as HTMLElement | undefined;
+    if (!row?.isConnected) continue;
+    const fresh = extractRowData(row, columnIndices);
+    if (!fresh?.id || String(fresh.id) !== String(rowData.id)) continue;
+    for (const k of Object.keys(fresh)) {
+      if (k === 'id' || k === '_reportingRowEl') continue;
+      (rowData as any)[k] = (fresh as any)[k];
+    }
+  }
+}
+
+/** 对池内行按缓存写合成值与 data-increase（合计行用 summaryValues） */
+function applyModificationWritesToReportingPool(
+  allRowData: any[],
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): void {
+  allRowData.forEach((rowData) => {
+    const row = rowData._reportingRowEl as HTMLElement | undefined;
+    if (!rowData?.id || !row) return;
+
+    let matchedModification = null;
+
+    if (modifiedData[rowData.id]) {
+      matchedModification = modifiedData[rowData.id];
+    }
+
+    if (!matchedModification && rowData.ad_id && modifiedData[rowData.ad_id]) {
+      matchedModification = modifiedData[rowData.ad_id];
+    }
+
+    if (!matchedModification && summaryValues[rowData.id]) {
+      matchedModification = summaryValues[rowData.id];
+    }
+
+    if (!matchedModification && rowData.accountName && !rowData.ad_id && !rowData.adset_id && !rowData.campaign_id) {
+      matchedModification = summaryValues[rowData.accountName];
+    }
+
+    if (matchedModification) {
+      const adMod =
+        String(rowData.ad_id || '').trim() !== ''
+          ? modifiedData[rowData.id] || modifiedData[rowData.ad_id]
+          : null;
+      if (adMod) {
+        reconcileAdRowNumericBaseFromDomAndCache(rowData, row as HTMLElement, adMod);
+      }
+      updateAdRow(row, matchedModification, rowData);
+    }
+  });
 }
 
 // 更新广告行（baseRowData 为 extractRowData 结果时，数值列以行数据为基数，避免虚拟列表复用 DOM 时误读 data-increase）
@@ -587,7 +677,7 @@ export function setupScrollListener() {
         createOverlay();
         await delayMs(REPORTING_SCROLL_OVERLAY_BEFORE_MS);
         try {
-          await updateDomElements({ skipReorder: true, scrollStopVisualReorder: true });
+          await updateDomElements();
         } catch (err) {
           console.error('滚动停 DOM 更新失败:', err);
         } finally {
@@ -670,45 +760,6 @@ function effectiveSortValue(
   return v;
 }
 
-/** 与 effectiveSortValue 中「缓存/合计」部分一致：当前排序列上的增加值（不含 DOM 基数） */
-function getSortFieldCacheDelta(
-  rowData: any,
-  sortField: string,
-  modifiedData: any,
-  summaryValues: Record<string, any>,
-): number {
-  if (rowData.ad_id && String(rowData.ad_id).trim() !== '') {
-    const m = modifiedData[rowData.id] || modifiedData[rowData.ad_id];
-    if (m && m[sortField] != null) return Number(m[sortField]) || 0;
-    return 0;
-  }
-  const sum =
-    summaryValues[rowData.id] ||
-    (rowData.accountName &&
-      !rowData.ad_id &&
-      !rowData.adset_id &&
-      !rowData.campaign_id &&
-      summaryValues[rowData.accountName]);
-  if (sum && sum[sortField] != null) return Number(sum[sortField]) || 0;
-  return 0;
-}
-
-/** 当前挂载行里是否至少有一行在排序列上有非零缓存增量（否则与 FB 排序一致，无需插件重排） */
-function anyVisibleRowHasSortFieldCacheDelta(
-  allRowData: any[],
-  sortField: string,
-  modifiedData: any,
-  summaryValues: Record<string, any>,
-): boolean {
-  for (const rowData of allRowData) {
-    if (!rowData?.id) continue;
-    if (Math.abs(getSortFieldCacheDelta(rowData, sortField, modifiedData, summaryValues)) > 1e-9) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function maxAdSortValue(
   ads: ReportingRowEntry[],
   sortField: string,
@@ -784,7 +835,10 @@ export function getReportingSeenSortMergedIds(): string[] {
   return entries.map(([id]) => id);
 }
 
-/** 将扁平行序解析为 账户 → 系列 → 组 → 广告 四层树（与报表 UI 展开顺序一致） */
+/**
+ * 将扁平行序解析为 账户 → 系列 → 组 → 广告 四层树（与报表 UI 展开顺序一致）。
+ * 调用方须保证 allRowData 已按 readReportingRowTranslateYPx 自上而下排序，否则虚拟列表子节点顺序与视觉层级错位会导致树错误。
+ */
 function buildReportingHierarchy(allRowData: any[]): AccountBlock[] {
   const accounts: AccountBlock[] = [];
   let curAccount: AccountBlock | null = null;
@@ -993,129 +1047,8 @@ function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
   return ys;
 }
 
-/**
- * 滚动停止后的「仅改 translate、不 appendChild」路径：在虚拟列表内按**合成排序值**纠正**同一广告组**内广告行的相对位置。
- *
- * 设计要点：
- * - 按 adset_id 分组当前视口内的**广告统计行**（有 ad_id + adset_id）；中间夹着合计/系列行也不影响分组。
- * - 组内只要有一行在「当前 URL 排序列」上有缓存增量，就对**该组全部广告行**按 effectiveSortValue 排序。
- * - 只置换该组各行**原有的** translateY  multiset 分配给排序后的行，不把组外行的 Y 挪进来，避免误伤合计行。
- * - 组内仅 1 行可见时无法做组内相对置换，直接跳过该组。
- */
-function applyScrollStopHierarchyTranslateContiguous(
-  allRowData: any[],
-  modifiedData: any,
-  summaryValues: Record<string, any>,
-): void {
-  // 步骤1：读取当前报表排序列与升降序（与表头 / sort_spec 一致）
-  const sortConfig = getSortConfig();
-  const sortField = sortConfig.field;
-  const desc = sortConfig.direction === 'desc';
-
-  // 步骤2：若当前挂载行里没有任何一行在排序列上有非零缓存增量，则与 FB 原生序一致，整函数提前退出
-  if (!anyVisibleRowHasSortFieldCacheDelta(allRowData, sortField, modifiedData, summaryValues)) {
-    return;
-  }
-
-  // 步骤3：把本次 DOM 读到的展示值合并进「已见排序」缓存，供 effectiveSortValue / getSortFieldCacheDelta 使用
-  mergeReportingSeenSortFromRows(allRowData, sortField, modifiedData, summaryValues);
-
-  // 步骤4：只处理带 _reportingRowEl 的行（插件已绑过 DOM 引用的池内行）
-  const rows = allRowData.filter((r) => r?.id && r._reportingRowEl);
-  if (rows.length === 0) return;
-
-  // Slot：单行在停滚算法里的最小单元（逻辑数据 + 行根 DOM + 当前读到的 translateY）
-  type Slot = { rowData: any; row: HTMLElement; y: number };
-  const slots: Slot[] = [];
-
-  // 步骤5：为每个池内行读取 translateY；任一行读失败则无法安全置换，整段放弃写 transform
-  for (const rowData of rows) {
-    const row = rowData._reportingRowEl as HTMLElement;
-    const y = readReportingRowTranslateYPx(row);
-    if (y == null || !Number.isFinite(y)) {
-      console.warn('停滚重排：存在无法读取 translateY 的行，跳过写 transform');
-      return;
-    }
-    slots.push({ rowData, row, y });
-  }
-
-  // 步骤6：按 y 升序得到「当前视觉自上而下」的全局顺序（同一 y 时用 id 打破平局）
-  const visual = [...slots].sort(
-    (a, b) => a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id)),
-  );
-
-  // 步骤7：闭包 —— 判断该行在当前排序列上是否有「非零」缓存增量（广告读 modifiedData，合计读 summaryValues）
-  const hasSortDelta = (s: Slot) =>
-    Math.abs(getSortFieldCacheDelta(s.rowData, sortField, modifiedData, summaryValues)) > 1e-9;
-
-  // 步骤8：闭包 —— 仅广告统计行参与组内重排（必须有 ad_id 与 adset_id；合计行返回 false）
-  const isAdStatSlot = (s: Slot) =>
-    getRowType(s.rowData) === 'ad' &&
-    String(s.rowData.ad_id || '').trim() !== '' &&
-    String(s.rowData.adset_id || '').trim() !== '';
-
-  // 步骤9：按 adset_id 分桶，把当前视口里属于同一广告组的广告行 slot 放进同一数组
-  const byAdset = new Map<string, Slot[]>();
-  for (const s of visual) {
-    if (!isAdStatSlot(s)) continue;
-    const key = String(s.rowData.adset_id).trim();
-    let arr = byAdset.get(key);
-    if (!arr) {
-      arr = [];
-      byAdset.set(key, arr);
-    }
-    arr.push(s);
-  }
-
-  // 步骤10：闭包 —— 两广告行按「合成排序值」比较；数值相同再比 id，再相同用当前 y 稳定顺序
-  const compareEffective = (a: Slot, b: Slot) => {
-    const va = effectiveSortValue(a.rowData, sortField, modifiedData, summaryValues);
-    const vb = effectiveSortValue(b.rowData, sortField, modifiedData, summaryValues);
-    const c = compareBlockValue(va, vb, String(a.rowData.id), String(b.rowData.id), desc);
-    if (c !== 0) return c;
-    return a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id));
-  };
-
-  // 步骤11：对每个广告组分别处理，组与组之间互不影响
-  for (const segment of byAdset.values()) {
-    // 步骤11a：组内少于 2 条广告行时没有「组内相对顺序」可对换，跳过
-    if (segment.length < 2) continue;
-
-    // 步骤11b：组内没有任何一行在排序列带增量，则保持 FB 对该组的纵向顺序，跳过
-    if (!segment.some(hasSortDelta)) continue;
-
-    // 步骤11c：收集该组所有行当前的 translateY，升序排列 —— 这是待置换的 Y  multiset（不增不减）
-    const ys = [...segment].map((s) => s.y).sort((a, b) => a - b);
-
-    // 步骤11d：按当前 y 排序得到「重排前的视觉顺序」（应与 segment 在 visual 里的相对次序一致）
-    const byY = [...segment].sort(
-      (a, b) => a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id)),
-    );
-
-    // 步骤11e：按合成排序值得到「重排后应有的逻辑顺序」
-    const sorted = [...segment].sort(compareEffective);
-
-    // 步骤11f：若按合成值排序后的行 id 序列与按 y 排序的序列完全相同，说明无需写 DOM
-    let same = true;
-    for (let j = 0; j < sorted.length; j++) {
-      if (sorted[j]!.rowData.id !== byY[j]!.rowData.id) {
-        same = false;
-        break;
-      }
-    }
-    if (same) continue;
-
-    // 步骤11g：将第 j 小的 Y 分配给合成序第 j 名的行 —— 等价于组内只做 translate 置换，不 appendChild
-    sorted.forEach((s, j) => {
-      const inner = s.row.firstElementChild as HTMLElement | null;
-      if (!inner) return;
-      inner.style.transform = `translate(0px, ${ys[j]}px)`;
-    });
-  }
-}
-
 // 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
-// translateOnly：仅保留接口；停滚路径已改用 applyScrollStopHierarchyTranslateContiguous。
+// translateOnly：历史接口，当前恒为全量 appendChild + translate。
 function reorderDomRowsBySortValue(
   allRowData: any[],
   modifiedData: any,

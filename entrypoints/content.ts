@@ -496,22 +496,28 @@ function initReportingPageObserver(): void {
     return false;
   };
   
+  const getReportingTableRoot = (): HTMLElement | null =>
+    document.querySelector('[role="table"]') as HTMLElement | null;
+
   // 检测表格元素创建或表格内容变化
   const detectTableCreation = (mutations: MutationRecord[]): boolean => {
+    const reportingTable = getReportingTableRoot();
     return mutations.some(mutation => {
       if (mutation.type !== 'childList') return false;
-      
+
       return Array.from(mutation.addedNodes).some(node => {
         if (node.nodeType !== Node.ELEMENT_NODE) return false;
-        
+
         const element = node as HTMLElement;
         if (isTooltipElement(element)) return false;
-        
+        // 弹窗/侧栏等挂在 body 下的节点不应因「整页里存在 table」而误判为表体更新
+        if (reportingTable && !reportingTable.contains(element)) return false;
+
         // 检测表格元素本身
         if (element.getAttribute('role') === 'table' || element.querySelector('[role="table"]')) {
           return true;
         }
-        
+
         // 检测表格行或单元格（滚动加载时添加）
         if (element.tagName === 'SPAN' && element.hasAttribute('data-surface')) {
           let parent = element.parentElement;
@@ -520,7 +526,7 @@ function initReportingPageObserver(): void {
             parent = parent.parentElement;
           }
         }
-        
+
         return false;
       });
     });
@@ -530,27 +536,18 @@ function initReportingPageObserver(): void {
   const detectScrollChange = (mutations: MutationRecord[]): [boolean, boolean] => {
     let hasScrollChange = false;
     let hasBodyRowDataSurfaceChange = false;
-    
+    const reportingTable = getReportingTableRoot();
+
     mutations.forEach(mutation => {
       if (mutation.target.nodeType !== Node.ELEMENT_NODE) return;
-      
+
       const element = mutation.target as HTMLElement;
       if (isTooltipElement(element)) return;
-      // 气泡内 style 变化勿当成表格滚动（dialog 不在这里排除：整页可能在 dialog 壳内会误伤）
       if (element.closest('[role="tooltip"]')) return;
 
-      // 检查元素是否在表格内
-      let parent = element.parentElement;
-      let isInTable = false;
-      while (parent) {
-        if (parent.getAttribute('role') === 'table' || parent.querySelector('[role="table"]')) {
-          isInTable = true;
-          break;
-        }
-        parent = parent.parentElement;
-      }
-      
-      if (!isInTable) return;
+      // 必须用「是否落在主报表 table 子树内」判断。若沿祖先用 querySelector('[role=table]')，
+      // 则 body 等祖先会匹配到页面上的表，导致弹窗/遮罩里的 style 变化误判为表滚动并全表重渲染。
+      if (!reportingTable || !reportingTable.contains(element)) return;
       
       // 检测style属性变化（滚动条移动）
       if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
@@ -613,12 +610,15 @@ function initReportingPageObserver(): void {
   
   // 判断是否是滚动加载
   const isScrollLoading = (mutations: MutationRecord[]): boolean => {
+    const reportingTable = getReportingTableRoot();
+    if (!reportingTable) return false;
     return mutations.some(mutation => {
       if (mutation.type !== 'childList') return false;
       return Array.from(mutation.addedNodes).some(node => {
         if (node.nodeType !== Node.ELEMENT_NODE) return false;
         const element = node as HTMLElement;
-        return element.tagName === 'SPAN' && element.hasAttribute('data-surface');
+        if (!(element.tagName === 'SPAN' && element.hasAttribute('data-surface'))) return false;
+        return reportingTable.contains(element);
       });
     });
   };
@@ -652,10 +652,8 @@ function initReportingPageObserver(): void {
     setTimeout(async () => {
       try {
         const { updateDomElements } = await import('./content/reporting/domUpdater');
-        await updateDomElements({
-          skipReorder: isScrollRelated,
-          scrollStopVisualReorder: isScrollRelated,
-        });
+        // 与 domUpdater 一致：有缓存修改时内部恒为全量重排 + 重排后二次写单元格，不再区分滚动/刷新轻路径
+        await updateDomElements();
         if (isScrollRelated) {
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -1098,6 +1096,11 @@ export default {
             createOverlay();
           }
           await updateDomElements();
+          // 首屏后 Meta 常再渲一帧把单元格/translate 复位；短延迟后第二次全量应用，降低刷新后间歇空白行与「全表原始值」
+          if (reportingHasModifications) {
+            await new Promise<void>((r) => setTimeout(r, 400));
+            await updateDomElements();
+          }
         } catch (e) {
           console.error('报表页初始化 DOM 更新失败:', e);
         } finally {
