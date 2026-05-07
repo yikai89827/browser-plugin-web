@@ -26,7 +26,7 @@ import { createOverlay, removeOverlay } from '../manage/dom';
 const REPORTING_VIRTUAL_ROW_HEIGHT_PX = 42;
 
 /** 全量重排后等待一帧再读 DOM，减少 Meta 下一帧把单元格/translate 复位导致的错位与「全表变原始值」 */
-const REPORTING_POST_REORDER_STABILIZE_MS = 120;
+const REPORTING_POST_REORDER_STABILIZE_MS = 200;
 
 async function reportingDoubleRaf(): Promise<void> {
   await new Promise<void>((resolve) => {
@@ -560,18 +560,36 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
         baseRowData[field] !== ''
           ? Number(baseRowData[field])
           : NaN;
-      if (Number.isFinite(baseCandidate)) {
+      if (Number.isFinite(baseCandidate) && baseCandidate >= 0) {
         originalValue = baseCandidate;
+      } else if (Number.isFinite(baseCandidate) && baseCandidate < 0) {
+        // extract/resync 曾留下负数基数时，以屏显为准并清掉不可靠的 data-increase
+        originalValue = Math.max(0, parseNumber(originalText));
+        innermostElement.removeAttribute('data-increase');
       } else {
         const existingIncrease = innermostElement.getAttribute('data-increase');
         originalValue = parseNumber(originalText);
         if (existingIncrease) {
           const existingIncreaseValue = Number(existingIncrease);
-          originalValue = originalValue - existingIncreaseValue;
+          const implied = originalValue - existingIncreaseValue;
+          if (implied < 0 || existingIncreaseValue > originalValue + 1e-6) {
+            innermostElement.removeAttribute('data-increase');
+          } else {
+            originalValue = implied;
+          }
         }
       }
 
-      const newValue = originalValue + Number(value);
+      let newValue = originalValue + Number(value);
+      // 非货币指标不应展示负数；若仍异常则再按「屏显 + 本次缓存增量」兜底
+      if (!originalText.includes('$') && Number.isFinite(newValue) && newValue < 0) {
+        originalValue = Math.max(0, parseNumber(originalText));
+        innermostElement.removeAttribute('data-increase');
+        newValue = originalValue + Number(value);
+      }
+      if (!originalText.includes('$') && Number.isFinite(newValue) && newValue < 0) {
+        newValue = 0;
+      }
       
       let formattedValue = String(newValue);
       if (originalText.includes('$')) {
@@ -1103,7 +1121,8 @@ function reorderDomRowsBySortValue(
   if (!translateOnly) {
     for (const item of ordered) {
       const el = item.rowElement as HTMLElement | undefined;
-      if (el?.parentNode === tableBody) {
+      // 虚拟列表下行可能暂时挂在中间容器；仅 parentNode===tableBody 会漏移，导致顺序与 ys 分配错位、空白行
+      if (el && tableBody.contains(el)) {
         tableBody.appendChild(el);
       }
     }

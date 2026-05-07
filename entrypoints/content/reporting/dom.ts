@@ -601,13 +601,21 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
           rowData[field] = cellText;
         } else {
           const rawValue = parseValueToNumber(cellText);
-          // 如果DOM中有data-increase属性，说明显示的是合成值，需要扣除得到原始值
-          // 如果DOM中没有data-increase属性，说明显示的就是原始值，不需要扣除
-          if (increaseValue !== 0) {
-            rowData[field] = rawValue - increaseValue;
-          } else {
-            rowData[field] = rawValue;
+          let appliedIncrease = increaseValue;
+          // 虚拟列表复用：屏显已是 FB 原始数，但 data-increase 仍为上一槽位 → 扣增量会得到负数并污染后续 updateAdRow
+          if (
+            appliedIncrease !== 0 &&
+            Number.isFinite(appliedIncrease) &&
+            Number.isFinite(rawValue) &&
+            !cellText.includes('$')
+          ) {
+            const implied = rawValue - appliedIncrease;
+            if (implied < 0 || appliedIncrease > rawValue + 1e-6) {
+              appliedIncrease = 0;
+              innermostElement.removeAttribute('data-increase');
+            }
           }
+          rowData[field] = rawValue - appliedIncrease;
         }
         // console.log('提取的字段数据:', field, columnIndex, cellText, rowData[field]);
       }
