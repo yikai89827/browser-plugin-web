@@ -652,8 +652,10 @@ function initReportingPageObserver(): void {
     setTimeout(async () => {
       try {
         const { updateDomElements } = await import('./content/reporting/domUpdater');
-        // 与 domUpdater 一致：有缓存修改时内部恒为全量重排 + 重排后二次写单元格，不再区分滚动/刷新轻路径
-        await updateDomElements();
+        // 滚动停稳：只重排「系列下的广告组 + 组内广告」，不重动账户/系列块顺序，减轻虚拟列表错位与合成值丢失
+        await updateDomElements(
+          isScrollRelated ? { reorderScope: 'adset_under_campaign_only' } : { reorderScope: 'full' },
+        );
         if (isScrollRelated) {
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()));

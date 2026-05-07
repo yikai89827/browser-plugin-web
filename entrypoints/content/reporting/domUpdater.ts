@@ -72,6 +72,9 @@ export function shouldIgnoreReportingPageObserver(): boolean {
 /** 停滚后防抖：每次停滚从 DOM 重读行数据 + 缓存合成排序键，仅更新 translate（不 appendChild） */
 let scrollStopUnifiedTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** 重排范围：停滚时缩小排序范围可降低与 Meta 虚拟列表抢位的概率 */
+export type ReportingReorderScope = 'full' | 'adset_under_campaign_only';
+
 export type UpdateDomElementsOptions = {
   /**
    * 历史参数：曾有「只写单元格不重排」路径。当前只要存在缓存修改数据，一律全量 appendChild+translate（与 Meta 虚拟列表稳定共存），此选项会被忽略。
@@ -79,6 +82,11 @@ export type UpdateDomElementsOptions = {
   skipReorder?: boolean;
   /** 历史参数，已忽略；停滚不再单独改 translate。 */
   scrollStopVisualReorder?: boolean;
+  /**
+   * full：账户 / 系列 / 组 / 广告四层均按合成值重排（首屏、刷新、点表头、保存后等）。
+   * adset_under_campaign_only：仅对「同一系列下」各广告组块及组内广告行按合成值重排，**不改变**系列块之间、账户块之间的相对顺序（适合视口内只有一两个组、停滚触发的更新）。
+   */
+  reorderScope?: ReportingReorderScope;
 };
 
 let updateDomElementsQueue: Promise<void> = Promise.resolve();
@@ -127,9 +135,9 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
     return;
   }
 
-  // 只要有缓存修改，一律全量重排 + 双阶段写单元格。仅改 translate 的停滚路径会与 Meta 虚拟列表下一帧复位打架，
-  // 表现为间歇空白行、行序错位、合成值被刷成原始值；故不再走 skipReorder / scrollStopVisualReorder 轻路径。
-  void options;
+  // 只要有缓存修改，一律 appendChild+translate + 双阶段写单元格。reorderScope 控制排序层级深度（停滚用「仅组+广告」减轻错位）。
+  const reorderScope: ReportingReorderScope =
+    options?.reorderScope === 'adset_under_campaign_only' ? 'adset_under_campaign_only' : 'full';
 
   let tableContainer: Element | null = null;
   let dataRows: HTMLElement[] = [];
@@ -223,7 +231,10 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
   // 全量重排：appendChild + translate，并重置「已见 id 排序键」缓存
   resetReportingSeenSortMergeCache();
   await new Promise((resolve) => requestAnimationFrame(resolve));
-  reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues, { translateOnly: false });
+  reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues, {
+    translateOnly: false,
+    reorderScope,
+  });
   mergeReportingSeenSortFromRows(allRowData, sortConfig.field, modifiedData, summaryValues);
 
   // 第二轮：等 Meta 虚拟列表完成一帧（或多帧）后再从 DOM 同步 rowData 并重写合成值，避免间歇空白行与「全表变原始值」
@@ -681,7 +692,7 @@ export function setupScrollListener() {
         createOverlay();
         await delayMs(REPORTING_SCROLL_OVERLAY_BEFORE_MS);
         try {
-          await updateDomElements();
+          await updateDomElements({ reorderScope: 'adset_under_campaign_only' });
         } catch (err) {
           console.error('滚动停 DOM 更新失败:', err);
         } finally {
@@ -922,13 +933,17 @@ function flattenReportingHierarchy(accounts: AccountBlock[]): ReportingRowEntry[
   return out;
 }
 
-/** 四层树内按合成指标排序（与 appendChild 重排前一致） */
+/**
+ * 四层树内按合成指标排序。
+ * reorderScope === adset_under_campaign_only 时：只排各系列下的「广告组」相对顺序与组内「广告行」，**不**重排系列块、账户块（与当前 DOM/视口层级一致，停滚更稳）。
+ */
 function sortReportingAccountsHierarchy(
   accounts: AccountBlock[],
   sortField: string,
   desc: boolean,
   modifiedData: any,
   summaryValues: Record<string, any>,
+  reorderScope: ReportingReorderScope,
 ): void {
   for (const acc of accounts) {
     for (const camp of acc.campaigns) {
@@ -953,72 +968,76 @@ function sortReportingAccountsHierarchy(
       });
     }
 
-    acc.campaigns.sort((a, b) => {
+    if (reorderScope === 'full') {
+      acc.campaigns.sort((a, b) => {
+        const va = a.summary
+          ? effectiveSortValue(a.summary.rowData, sortField, modifiedData, summaryValues)
+          : Math.max(
+              ...a.adsets.map((as) =>
+                as.summary
+                  ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                  : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+              ),
+              0,
+            );
+        const vb = b.summary
+          ? effectiveSortValue(b.summary.rowData, sortField, modifiedData, summaryValues)
+          : Math.max(
+              ...b.adsets.map((as) =>
+                as.summary
+                  ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                  : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+              ),
+              0,
+            );
+        const tieA = a.summary?.rowData.campaign_id || a.adsets[0]?.summary?.rowData.campaign_id || '';
+        const tieB = b.summary?.rowData.campaign_id || b.adsets[0]?.summary?.rowData.campaign_id || '';
+        return compareBlockValue(va, vb, tieA, tieB, desc);
+      });
+    }
+  }
+
+  if (reorderScope === 'full') {
+    accounts.sort((a, b) => {
       const va = a.summary
         ? effectiveSortValue(a.summary.rowData, sortField, modifiedData, summaryValues)
         : Math.max(
-            ...a.adsets.map((as) =>
-              as.summary
-                ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
-                : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+            ...a.campaigns.map((c) =>
+              c.summary
+                ? effectiveSortValue(c.summary.rowData, sortField, modifiedData, summaryValues)
+                : Math.max(
+                    ...c.adsets.map((as) =>
+                      as.summary
+                        ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                        : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+                    ),
+                    0,
+                  ),
             ),
             0,
           );
       const vb = b.summary
         ? effectiveSortValue(b.summary.rowData, sortField, modifiedData, summaryValues)
         : Math.max(
-            ...b.adsets.map((as) =>
-              as.summary
-                ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
-                : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+            ...b.campaigns.map((c) =>
+              c.summary
+                ? effectiveSortValue(c.summary.rowData, sortField, modifiedData, summaryValues)
+                : Math.max(
+                    ...c.adsets.map((as) =>
+                      as.summary
+                        ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
+                        : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
+                    ),
+                    0,
+                  ),
             ),
             0,
           );
-      const tieA = a.summary?.rowData.campaign_id || a.adsets[0]?.summary?.rowData.campaign_id || '';
-      const tieB = b.summary?.rowData.campaign_id || b.adsets[0]?.summary?.rowData.campaign_id || '';
+      const tieA = a.summary?.rowData.account_id || a.campaigns[0]?.summary?.rowData.account_id || '';
+      const tieB = b.summary?.rowData.account_id || b.campaigns[0]?.summary?.rowData.account_id || '';
       return compareBlockValue(va, vb, tieA, tieB, desc);
     });
   }
-
-  accounts.sort((a, b) => {
-    const va = a.summary
-      ? effectiveSortValue(a.summary.rowData, sortField, modifiedData, summaryValues)
-      : Math.max(
-          ...a.campaigns.map((c) =>
-            c.summary
-              ? effectiveSortValue(c.summary.rowData, sortField, modifiedData, summaryValues)
-              : Math.max(
-                  ...c.adsets.map((as) =>
-                    as.summary
-                      ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
-                      : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
-                  ),
-                  0,
-                ),
-          ),
-          0,
-        );
-    const vb = b.summary
-      ? effectiveSortValue(b.summary.rowData, sortField, modifiedData, summaryValues)
-      : Math.max(
-          ...b.campaigns.map((c) =>
-            c.summary
-              ? effectiveSortValue(c.summary.rowData, sortField, modifiedData, summaryValues)
-              : Math.max(
-                  ...c.adsets.map((as) =>
-                    as.summary
-                      ? effectiveSortValue(as.summary.rowData, sortField, modifiedData, summaryValues)
-                      : maxAdSortValue(as.ads, sortField, modifiedData, summaryValues),
-                  ),
-                  0,
-                ),
-          ),
-          0,
-        );
-    const tieA = a.summary?.rowData.account_id || a.campaigns[0]?.summary?.rowData.account_id || '';
-    const tieB = b.summary?.rowData.account_id || b.campaigns[0]?.summary?.rowData.account_id || '';
-    return compareBlockValue(va, vb, tieA, tieB, desc);
-  });
 }
 
 /**
@@ -1060,16 +1079,18 @@ function reorderDomRowsBySortValue(
   allRowData: any[],
   modifiedData: any,
   summaryValues: Record<string, any>,
-  opts?: { translateOnly?: boolean },
+  opts?: { translateOnly?: boolean; reorderScope?: ReportingReorderScope },
 ) {
   const translateOnly = opts?.translateOnly === true;
+  const reorderScope: ReportingReorderScope =
+    opts?.reorderScope === 'adset_under_campaign_only' ? 'adset_under_campaign_only' : 'full';
   const sortConfig = getSortConfig();
   const sortField = sortConfig.field;
   const sortDirection = sortConfig.direction;
   const desc = sortDirection === 'desc';
 
   const accounts = buildReportingHierarchy(allRowData);
-  sortReportingAccountsHierarchy(accounts, sortField, desc, modifiedData, summaryValues);
+  sortReportingAccountsHierarchy(accounts, sortField, desc, modifiedData, summaryValues, reorderScope);
 
   const ordered = flattenReportingHierarchy(accounts);
 
