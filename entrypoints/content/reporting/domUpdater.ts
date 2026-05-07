@@ -963,47 +963,72 @@ function sortReportingAccountsHierarchy(
   });
 }
 
-/** 全量重排前读取当前池内各行的 translateY，升序后不足则按行高补齐，避免 FB 刷新后仍写 index*42 与虚拟列表刻度不一致出现空白行 */
+/**
+ * 全量 appendChild 重排前：为「目标顺序」下的每一行分配一组可用的 translateY 槽位。
+ * 与 dom.ts 的 readReportingRowTranslateYPx 共用读法，避免与 FB 虚拟列表刻度脱节导致空白行。
+ */
 function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
   const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
   const ys: number[] = [];
+
+  // 步骤1：遍历重排后的逻辑顺序，从当前 DOM 读出每行真实 translateY（能读到的都收集）
   for (const item of ordered) {
     const row = item.rowElement as HTMLElement | undefined;
     if (!row) continue;
     const y = readReportingRowTranslateYPx(row);
     if (y != null && Number.isFinite(y)) ys.push(y);
   }
+
+  // 步骤2：从小到大排序，得到当前视口/池内已有的 Y 刻度 multiset
   ys.sort((a, b) => a - b);
+
+  // 步骤3：若读到的 Y 个数少于行数（例如刷新后部分行尚无 transform），从最后一个 Y 起按固定行高 H 向下补齐
   let padBase = ys.length ? ys[ys.length - 1]! + H : 0;
   while (ys.length < ordered.length) {
     ys.push(padBase);
     padBase += H;
   }
+
+  // 步骤4：返回与 ordered 等长的 Y 数组，供按序写回 inner.style.transform
   return ys;
 }
 
 /**
- * 停滚：按「同一广告组 adset_id 下、当前视口内可见的广告统计行」分组（不要求在 DOM 里相邻，中间可有合计行）。
- * 组内若至少一行在排序列上有缓存增量，则整组按合成排序键重排，并把该组**原有** translateY  multiset 置换写回——单行有增量、其它行无增量时也能排到正确相对位置。
+ * 滚动停止后的「仅改 translate、不 appendChild」路径：在虚拟列表内按**合成排序值**纠正**同一广告组**内广告行的相对位置。
+ *
+ * 设计要点：
+ * - 按 adset_id 分组当前视口内的**广告统计行**（有 ad_id + adset_id）；中间夹着合计/系列行也不影响分组。
+ * - 组内只要有一行在「当前 URL 排序列」上有缓存增量，就对**该组全部广告行**按 effectiveSortValue 排序。
+ * - 只置换该组各行**原有的** translateY  multiset 分配给排序后的行，不把组外行的 Y 挪进来，避免误伤合计行。
+ * - 组内仅 1 行可见时无法做组内相对置换，直接跳过该组。
  */
 function applyScrollStopHierarchyTranslateContiguous(
   allRowData: any[],
   modifiedData: any,
   summaryValues: Record<string, any>,
 ): void {
+  // 步骤1：读取当前报表排序列与升降序（与表头 / sort_spec 一致）
   const sortConfig = getSortConfig();
   const sortField = sortConfig.field;
   const desc = sortConfig.direction === 'desc';
+
+  // 步骤2：若当前挂载行里没有任何一行在排序列上有非零缓存增量，则与 FB 原生序一致，整函数提前退出
   if (!anyVisibleRowHasSortFieldCacheDelta(allRowData, sortField, modifiedData, summaryValues)) {
     return;
   }
+
+  // 步骤3：把本次 DOM 读到的展示值合并进「已见排序」缓存，供 effectiveSortValue / getSortFieldCacheDelta 使用
   mergeReportingSeenSortFromRows(allRowData, sortField, modifiedData, summaryValues);
 
+  // 步骤4：只处理带 _reportingRowEl 的行（插件已绑过 DOM 引用的池内行）
   const rows = allRowData.filter((r) => r?.id && r._reportingRowEl);
   if (rows.length === 0) return;
 
+  // Slot：单行在停滚算法里的最小单元（逻辑数据 + 行根 DOM + 当前读到的 translateY）
   type Slot = { rowData: any; row: HTMLElement; y: number };
   const slots: Slot[] = [];
+
+  // 步骤5：为每个池内行读取 translateY；任一行读失败则无法安全置换，整段放弃写 transform
   for (const rowData of rows) {
     const row = rowData._reportingRowEl as HTMLElement;
     const y = readReportingRowTranslateYPx(row);
@@ -1014,18 +1039,22 @@ function applyScrollStopHierarchyTranslateContiguous(
     slots.push({ rowData, row, y });
   }
 
+  // 步骤6：按 y 升序得到「当前视觉自上而下」的全局顺序（同一 y 时用 id 打破平局）
   const visual = [...slots].sort(
     (a, b) => a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id)),
   );
 
+  // 步骤7：闭包 —— 判断该行在当前排序列上是否有「非零」缓存增量（广告读 modifiedData，合计读 summaryValues）
   const hasSortDelta = (s: Slot) =>
     Math.abs(getSortFieldCacheDelta(s.rowData, sortField, modifiedData, summaryValues)) > 1e-9;
 
+  // 步骤8：闭包 —— 仅广告统计行参与组内重排（必须有 ad_id 与 adset_id；合计行返回 false）
   const isAdStatSlot = (s: Slot) =>
     getRowType(s.rowData) === 'ad' &&
     String(s.rowData.ad_id || '').trim() !== '' &&
     String(s.rowData.adset_id || '').trim() !== '';
 
+  // 步骤9：按 adset_id 分桶，把当前视口里属于同一广告组的广告行 slot 放进同一数组
   const byAdset = new Map<string, Slot[]>();
   for (const s of visual) {
     if (!isAdStatSlot(s)) continue;
@@ -1038,6 +1067,7 @@ function applyScrollStopHierarchyTranslateContiguous(
     arr.push(s);
   }
 
+  // 步骤10：闭包 —— 两广告行按「合成排序值」比较；数值相同再比 id，再相同用当前 y 稳定顺序
   const compareEffective = (a: Slot, b: Slot) => {
     const va = effectiveSortValue(a.rowData, sortField, modifiedData, summaryValues);
     const vb = effectiveSortValue(b.rowData, sortField, modifiedData, summaryValues);
@@ -1046,14 +1076,26 @@ function applyScrollStopHierarchyTranslateContiguous(
     return a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id));
   };
 
+  // 步骤11：对每个广告组分别处理，组与组之间互不影响
   for (const segment of byAdset.values()) {
+    // 步骤11a：组内少于 2 条广告行时没有「组内相对顺序」可对换，跳过
     if (segment.length < 2) continue;
+
+    // 步骤11b：组内没有任何一行在排序列带增量，则保持 FB 对该组的纵向顺序，跳过
     if (!segment.some(hasSortDelta)) continue;
+
+    // 步骤11c：收集该组所有行当前的 translateY，升序排列 —— 这是待置换的 Y  multiset（不增不减）
     const ys = [...segment].map((s) => s.y).sort((a, b) => a - b);
+
+    // 步骤11d：按当前 y 排序得到「重排前的视觉顺序」（应与 segment 在 visual 里的相对次序一致）
     const byY = [...segment].sort(
       (a, b) => a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id)),
     );
+
+    // 步骤11e：按合成排序值得到「重排后应有的逻辑顺序」
     const sorted = [...segment].sort(compareEffective);
+
+    // 步骤11f：若按合成值排序后的行 id 序列与按 y 排序的序列完全相同，说明无需写 DOM
     let same = true;
     for (let j = 0; j < sorted.length; j++) {
       if (sorted[j]!.rowData.id !== byY[j]!.rowData.id) {
@@ -1062,6 +1104,8 @@ function applyScrollStopHierarchyTranslateContiguous(
       }
     }
     if (same) continue;
+
+    // 步骤11g：将第 j 小的 Y 分配给合成序第 j 名的行 —— 等价于组内只做 translate 置换，不 appendChild
     sorted.forEach((s, j) => {
       const inner = s.row.firstElementChild as HTMLElement | null;
       if (!inner) return;

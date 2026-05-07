@@ -158,32 +158,55 @@ export function getReportingTableDataRows(): HTMLElement[] {
   return Array.from(element) as HTMLElement[];
 }
 
-/** 读取虚拟行内层 transform 的 translateY（px），与 domUpdater 停滚/重排逻辑一致 */
+/**
+ * 读取报表虚拟列表「单行」外层的纵向偏移 translateY（单位：px）。
+ * 用途：与 domUpdater 停滚置换、extractDataFromDom 按视觉排序共用同一套读法，避免两处解析不一致。
+ *
+ * @param row 表格里的一行 DOM（通常对应 FB 虚拟列表的一个 slot）
+ * @returns 解析到的 translateY；无内层或无 transform 时返回 null
+ */
 export function readReportingRowTranslateYPx(row: HTMLElement): number | null {
+  // 步骤1：Meta 报表行往往在首子节点上写 transform，先取该内层元素
   const inner = row.firstElementChild as HTMLElement | null;
   if (!inner) return null;
+
+  // 步骤2：优先读内联 style（插件改写后一般在这里）；否则读计算样式
   const inline = inner.style.transform?.trim();
   const t =
     inline && inline !== 'none'
       ? inner.style.transform
       : window.getComputedStyle(inner).transform;
+
+  // 步骤3：无有效 transform 字符串则无法得到纵向位置
   if (!t || t === 'none') return null;
+
+  // 步骤4：尝试 CSS matrix(a,b,c,d,tx,ty) —— 第 6 个数为纵向平移 ty
   const matrix = t.match(/^matrix\(([-0-9eE.]+(?:,\s*[-0-9eE.]+){5})\)$/);
   if (matrix) {
     const vals = matrix[1].split(/\s*,\s*/).map(Number);
     if (vals.length >= 6 && Number.isFinite(vals[5])) return vals[5];
   }
+
+  // 步骤5：尝试 matrix3d(...) —— 第 14 个数对应 Y 平移（与 Chrome 生成习惯一致）
   const matrix3d = t.match(/^matrix3d\(([^)]+)\)$/);
   if (matrix3d) {
     const vals = matrix3d[1].split(/\s*,\s*/).map(Number);
     if (vals.length >= 14 && Number.isFinite(vals[13])) return vals[13];
   }
+
+  // 步骤6：尝试 translate(tx, ty) 形式，取第二个参数
   const tr = t.match(/translate\(\s*[^,]+\s*,\s*([-0-9.]+)\s*(?:px)?\s*\)/);
   if (tr) return parseFloat(tr[1]);
+
+  // 步骤7：尝试 translate3d(tx, ty, tz)，取 ty
   const tr3d = t.match(/translate3d\(\s*[^,]+,\s*([-0-9.]+)\s*(?:px)?\s*,/);
   if (tr3d) return parseFloat(tr3d[1]);
+
+  // 步骤8：尝试 translateY(ty)
   const trY = t.match(/translateY\(\s*([-0-9.]+)\s*(?:px)?\s*\)/);
   if (trY) return parseFloat(trY[1]);
+
+  // 步骤9：均不匹配则返回 null（调用方会把该行视为无法参与按 Y 排序）
   return null;
 }
 
@@ -376,7 +399,8 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
       }
     }
     
-    // 遍历数据行提取报表数据，再按虚拟列表 translateY 自上而下排序，与页面视觉顺序一致（popup 等）
+    // ---------- 以下为「按页面视觉顺序」组装 data：getReportingTableDataRows 顺序未必等于虚拟列表自上而下 ----------
+    // 步骤1：先保留「行 DOM + 解析后的 rowData」成对列表，便于后面按 translateY 排序时仍能访问原始行元素
     const extracted: { row: HTMLElement; rowData: any }[] = [];
     for (const row of dataRows) {
       const rowData = extractRowData(row, columnMapping);
@@ -384,17 +408,25 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
         extracted.push({ row: row as HTMLElement, rowData });
       }
     }
+
+    // 步骤2：按 readReportingRowTranslateYPx 升序排序 —— 与当前视口内行的视觉从上到下一致（含合计行、广告行）
     extracted.sort((a, b) => {
+      // 步骤2a：分别读出两行的虚拟列表纵向偏移
       const ya = readReportingRowTranslateYPx(a.row);
       const yb = readReportingRowTranslateYPx(b.row);
+      // 步骤2b：读不到 Y 的排到最后，避免打乱「能确定视觉顺序」的块
       const na = ya == null || !Number.isFinite(ya) ? Number.POSITIVE_INFINITY : ya;
       const nb = yb == null || !Number.isFinite(yb) ? Number.POSITIVE_INFINITY : yb;
+      // 步骤2c：先比 translateY；相同再比 id，保证稳定顺序
       if (na !== nb) return na - nb;
       return String(a.rowData.id || '').localeCompare(String(b.rowData.id || ''));
     });
+
+    // 步骤3：只把已排好序的 rowData 写入 data，供后续 processNames / 减缓存增加值等逻辑使用
     for (const e of extracted) {
       data.push(e.rowData);
     }
+    // ---------- 视觉顺序组装结束 ----------
 
     // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
     const processedData = processNames(data);
