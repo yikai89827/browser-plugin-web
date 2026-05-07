@@ -536,7 +536,9 @@ function initReportingPageObserver(): void {
       
       const element = mutation.target as HTMLElement;
       if (isTooltipElement(element)) return;
-      
+      // 气泡内 style 变化勿当成表格滚动（dialog 不在这里排除：整页可能在 dialog 壳内会误伤）
+      if (element.closest('[role="tooltip"]')) return;
+
       // 检查元素是否在表格内
       let parent = element.parentElement;
       let isInTable = false;
@@ -554,11 +556,12 @@ function initReportingPageObserver(): void {
       if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
         const isHeaderRow = element.getAttribute('role') === 'row';
         if (!isHeaderRow) {
-          const isScrollRelatedElement = element.classList.contains('scrollbar') ||
-                                        element.classList.contains('scroll-container') ||
-                                        element.style.transform !== '' ||
-                                        element.style.top !== '' ||
-                                        element.style.left !== '';
+          // 不要用「任意 transform」：弹窗/虚拟行等大量非滚动 style 会误判并拉起 loading
+          const isScrollRelatedElement =
+            element.classList.contains('scrollbar') ||
+            element.classList.contains('scroll-container') ||
+            element.style.top !== '' ||
+            element.style.left !== '';
           if (isScrollRelatedElement) {
             hasScrollChange = true;
           }
@@ -639,17 +642,19 @@ function initReportingPageObserver(): void {
   // 更新DOM元素
   const applyDomUpdates = async (isScrollRelated: boolean): Promise<void> => {
     if (isScrollRelated) {
-      console.log('滚动已停止，开始显示loading并执行缓存渲染');
+      console.log('滚动已停止，执行缓存渲染（不显示 loading）');
     }
-    
-    createOverlay();
 
-    // 非滚动场景（如表格初次挂载）原先 2s 过长，用户会长时间只看到 loading；缩短后仍略延迟一帧以便 Meta 表格行稳定
-    const waitTime = isScrollRelated ? 250 : 400;
+    const waitTime = isScrollRelated ? 0 : 400;
     setTimeout(async () => {
       const { updateDomElements } = await import('./content/reporting/domUpdater');
-      await updateDomElements({ skipReorder: isScrollRelated });
-      removeOverlay();
+      await updateDomElements({
+        skipReorder: isScrollRelated,
+        scrollStopVisualReorder: isScrollRelated,
+      });
+      if (!isScrollRelated) {
+        removeOverlay();
+      }
     }, waitTime);
   };
   
@@ -673,19 +678,18 @@ function initReportingPageObserver(): void {
       const dateRange = extractDateFromPage();
       console.log('页面日期范围:', dateRange);
 
-      // 缓存检查是异步的，先盖住表格区域，避免「原始值 → 几秒后才加上增加值」的闪烁
-      createOverlay();
-
       const shouldUpdateDom = await checkDateRangeHasModifications(dateRange);
 
       if (shouldUpdateDom) {
-        // 滚动相关：仅补丁数值+footer，不重排，避免虚拟列表空白/错位；回顶静止后再重排见 domUpdater.setupScrollListener
         const isScrollRelated =
           hasScrollChange || hasBodyRowDataSurfaceChange || isScrollLoadingFlag;
+        // 非滚动类变更才先盖 loading；滚动/气泡误触路径不遮罩
+        if (!isScrollRelated) {
+          createOverlay();
+        }
         await applyDomUpdates(isScrollRelated);
       } else {
         console.log('不需要更新DOM元素');
-        removeOverlay();
       }
     } catch (error) {
       console.error('处理表格变化错误:', error);

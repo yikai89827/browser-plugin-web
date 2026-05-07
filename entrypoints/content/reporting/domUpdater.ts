@@ -56,15 +56,20 @@ export function shouldIgnoreReportingPageObserver(): boolean {
   return Date.now() < ignoreReportingObserverUntil || updateDomElementsInFlight;
 }
 
-/** 停滚后统一处理：顶/底一次完整重排，否则仅补丁 */
+/** 停滚后防抖：每次停滚从 DOM 重读行数据 + 缓存合成排序键，仅更新 translate（不 appendChild） */
 let scrollStopUnifiedTimer: ReturnType<typeof setTimeout> | null = null;
 
 export type UpdateDomElementsOptions = {
   /**
-   * 为 true：滚动中/停滚在表格中部——只补丁合成数值与 footer，不改顺序。
-   * 为 false：appendChild + translate 按修改后指标重排（首屏、表头排序、滚到顶/底停稳后等）。
+   * 为 true：只补丁合成数值与 footer，不做 appendChild 重排。
+   * 为 false：appendChild + translate 按修改后指标完整重排（首屏、表头排序变更等）。
    */
   skipReorder?: boolean;
+  /**
+   * 与 skipReorder 同时为 true 时：停滚/滚动类更新在补丁后按当前 DOM 行 + 缓存再算顺序，只写子元素 translate，不 appendChild（适配虚拟列表）。
+   * 仅应由滚动停稳路径或 content 的 isScrollRelated 传入。
+   */
+  scrollStopVisualReorder?: boolean;
 };
 
 let updateDomElementsQueue: Promise<void> = Promise.resolve();
@@ -82,6 +87,7 @@ export function updateDomElements(options?: UpdateDomElementsOptions): Promise<v
 
 async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Promise<void> {
   const skipReorder = options?.skipReorder === true;
+  const scrollStopVisualReorder = options?.scrollStopVisualReorder === true;
   updateDomElementsInFlight = true;
   try {
   // 获取当前排序配置
@@ -207,10 +213,15 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
       updateAdRow(row, matchedModification, rowData);
     }
   });
-  // 滚动中不重排：虚拟列表由 Meta 管理 transform/回收，任何 translate/appendChild 中途介入都易空白错位
+  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：四层排序 + 仅改 translate，Y 取当前 DOM 各行 translate  multiset 重排（保留大偏移、兼顾层级）
   if (!skipReorder) {
+    resetReportingSeenSortMergeCache();
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues);
+    reorderDomRowsBySortValue(allRowData, modifiedData, summaryValues, { translateOnly: false });
+    mergeReportingSeenSortFromRows(allRowData, sortConfig.field, modifiedData, summaryValues);
+  } else if (scrollStopVisualReorder) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    applyScrollStopHierarchyTranslatePermutedYs(allRowData, modifiedData, summaryValues);
   }
   // 更新表格底部合计行
   updateFooterRows(modifiedData, summaryValues);
@@ -512,8 +523,6 @@ function calculateTotalModifications(modifiedData: any): any {
 }
 
 const SCROLL_STOP_DEBOUNCE_MS = 550;
-/** 顶/底判定放宽（含轻微回弹） */
-const SCROLL_EDGE_THRESHOLD_PX = 40;
 
 function isReportingInnerScrollTarget(el: HTMLElement, table: HTMLElement): boolean {
   if (!table.contains(el)) return false;
@@ -549,24 +558,7 @@ export function setupScrollListener() {
     }
     scrollStopUnifiedTimer = setTimeout(() => {
       scrollStopUnifiedTimer = null;
-      const scrollEl = getReportingTableScrollParent();
-      if (!scrollEl?.isConnected) {
-        void updateDomElements({ skipReorder: true });
-        return;
-      }
-      const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-      if (maxScroll < 4) {
-        void updateDomElements({ skipReorder: true });
-        return;
-      }
-      const st = scrollEl.scrollTop;
-      const nearTop = st <= SCROLL_EDGE_THRESHOLD_PX || st < 0;
-      const nearBottom = st >= maxScroll - SCROLL_EDGE_THRESHOLD_PX;
-      if (nearTop || nearBottom) {
-        void updateDomElements({ skipReorder: false });
-      } else {
-        void updateDomElements({ skipReorder: true });
-      }
+      void updateDomElements({ skipReorder: true, scrollStopVisualReorder: true });
     }, SCROLL_STOP_DEBOUNCE_MS);
   };
 
@@ -639,6 +631,45 @@ function effectiveSortValue(
   return v;
 }
 
+/** 与 effectiveSortValue 中「缓存/合计」部分一致：当前排序列上的增加值（不含 DOM 基数） */
+function getSortFieldCacheDelta(
+  rowData: any,
+  sortField: string,
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): number {
+  if (rowData.ad_id && String(rowData.ad_id).trim() !== '') {
+    const m = modifiedData[rowData.id] || modifiedData[rowData.ad_id];
+    if (m && m[sortField] != null) return Number(m[sortField]) || 0;
+    return 0;
+  }
+  const sum =
+    summaryValues[rowData.id] ||
+    (rowData.accountName &&
+      !rowData.ad_id &&
+      !rowData.adset_id &&
+      !rowData.campaign_id &&
+      summaryValues[rowData.accountName]);
+  if (sum && sum[sortField] != null) return Number(sum[sortField]) || 0;
+  return 0;
+}
+
+/** 当前挂载行里是否至少有一行在排序列上有非零缓存增量（否则与 FB 排序一致，无需插件重排） */
+function anyVisibleRowHasSortFieldCacheDelta(
+  allRowData: any[],
+  sortField: string,
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): boolean {
+  for (const rowData of allRowData) {
+    if (!rowData?.id) continue;
+    if (Math.abs(getSortFieldCacheDelta(rowData, sortField, modifiedData, summaryValues)) > 1e-9) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function maxAdSortValue(
   ads: ReportingRowEntry[],
   sortField: string,
@@ -659,6 +690,59 @@ function compareBlockValue(
 ): number {
   if (va !== vb) return desc ? vb - va : va - vb;
   return tieA.localeCompare(tieB);
+}
+
+/** 停滚多次后合并的「已见行」排序键：id → 当前排序列原始值 + 合成值；换排序列/方向时清空 */
+const reportingSeenSortById = new Map<string, { baseValue: number; effectiveValue: number }>();
+let reportingSeenSortSignature = '';
+
+function currentSortSignature(): string {
+  const c = getSortConfig();
+  return `${c.field}\0${c.direction}`;
+}
+
+function resetReportingSeenSortMergeCache(): void {
+  reportingSeenSortById.clear();
+  reportingSeenSortSignature = currentSortSignature();
+}
+
+function ensureReportingSeenSortSignature(): void {
+  const sig = currentSortSignature();
+  if (sig !== reportingSeenSortSignature) {
+    reportingSeenSortById.clear();
+    reportingSeenSortSignature = sig;
+  }
+}
+
+/** 把本次 DOM 中的行并入累积表（与首屏缓存合成更大的 id→键 集合，慢滚到底可逼近全表已见集合） */
+function mergeReportingSeenSortFromRows(
+  allRowData: any[],
+  sortField: string,
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): void {
+  ensureReportingSeenSortSignature();
+  for (const rowData of allRowData) {
+    if (!rowData?.id) continue;
+    const id = String(rowData.id);
+    const baseValue = getFieldValue(rowData, sortField);
+    const effectiveValue = effectiveSortValue(rowData, sortField, modifiedData, summaryValues);
+    reportingSeenSortById.set(id, { baseValue, effectiveValue });
+  }
+}
+
+/** 当前累积的、按合成值排好序的已见 id（滚停多次后变长；换排序列/方向会清空重攒） */
+export function getReportingSeenSortMergedIds(): string[] {
+  ensureReportingSeenSortSignature();
+  const desc = getSortConfig().direction === 'desc';
+  const entries = Array.from(reportingSeenSortById.entries());
+  entries.sort((a, b) => {
+    const va = a[1].effectiveValue;
+    const vb = b[1].effectiveValue;
+    if (va !== vb) return desc ? vb - va : va - vb;
+    return a[0].localeCompare(b[0]);
+  });
+  return entries.map(([id]) => id);
 }
 
 /** 将扁平行序解析为 账户 → 系列 → 组 → 广告 四层树（与报表 UI 展开顺序一致） */
@@ -741,16 +825,14 @@ function flattenReportingHierarchy(accounts: AccountBlock[]): ReportingRowEntry[
   return out;
 }
 
-// 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
-// 仅应在非滚动路径调用；appendChild 后须同步子元素 translate 与 DOM 顺序一致。
-function reorderDomRowsBySortValue(allRowData: any[], modifiedData: any, summaryValues: Record<string, any>) {
-  const sortConfig = getSortConfig();
-  const sortField = sortConfig.field;
-  const sortDirection = sortConfig.direction;
-  const desc = sortDirection === 'desc';
-
-  const accounts = buildReportingHierarchy(allRowData);
-
+/** 四层树内按合成指标排序（与 appendChild 重排前一致） */
+function sortReportingAccountsHierarchy(
+  accounts: AccountBlock[],
+  sortField: string,
+  desc: boolean,
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): void {
   for (const acc of accounts) {
     for (const camp of acc.campaigns) {
       for (const adset of camp.adsets) {
@@ -840,16 +922,112 @@ function reorderDomRowsBySortValue(allRowData: any[], modifiedData: any, summary
     const tieB = b.summary?.rowData.account_id || b.campaigns[0]?.summary?.rowData.account_id || '';
     return compareBlockValue(va, vb, tieA, tieB, desc);
   });
+}
+
+function readTranslateYPx(row: HTMLElement): number | null {
+  const inner = row.firstElementChild as HTMLElement | null;
+  if (!inner) return null;
+  const inline = inner.style.transform?.trim();
+  const t =
+    inline && inline !== 'none'
+      ? inner.style.transform
+      : window.getComputedStyle(inner).transform;
+  if (!t || t === 'none') return null;
+  const matrix = t.match(/^matrix\(([-0-9eE.]+(?:,\s*[-0-9eE.]+){5})\)$/);
+  if (matrix) {
+    const vals = matrix[1].split(/\s*,\s*/).map(Number);
+    if (vals.length >= 6 && Number.isFinite(vals[5])) return vals[5];
+  }
+  const matrix3d = t.match(/^matrix3d\(([^)]+)\)$/);
+  if (matrix3d) {
+    const vals = matrix3d[1].split(/\s*,\s*/).map(Number);
+    if (vals.length >= 14 && Number.isFinite(vals[13])) return vals[13];
+  }
+  const tr = t.match(/translate\(\s*[^,]+\s*,\s*([-0-9.]+)\s*(?:px)?\s*\)/);
+  if (tr) return parseFloat(tr[1]);
+  const tr3d = t.match(/translate3d\(\s*[^,]+,\s*([-0-9.]+)\s*(?:px)?\s*,/);
+  if (tr3d) return parseFloat(tr3d[1]);
+  const trY = t.match(/translateY\(\s*([-0-9.]+)\s*(?:px)?\s*\)/);
+  if (trY) return parseFloat(trY[1]);
+  return null;
+}
+
+/**
+ * 停滚：四层排序 + 仅改 translate；Y 用「当前各行的 translateY  multiset」按升序重排到层级顺序上，
+ * 保留 Meta 虚拟列表在视口内的大偏移量级，避免压成 0..n*42 空白；层级顺序与全量重排一致。
+ */
+function applyScrollStopHierarchyTranslatePermutedYs(
+  allRowData: any[],
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+): void {
+  const sortConfig = getSortConfig();
+  const sortField = sortConfig.field;
+  const desc = sortConfig.direction === 'desc';
+  if (!anyVisibleRowHasSortFieldCacheDelta(allRowData, sortField, modifiedData, summaryValues)) {
+    return;
+  }
+  mergeReportingSeenSortFromRows(allRowData, sortField, modifiedData, summaryValues);
+
+  const accounts = buildReportingHierarchy(allRowData);
+  sortReportingAccountsHierarchy(accounts, sortField, desc, modifiedData, summaryValues);
+  const ordered = flattenReportingHierarchy(accounts);
+  if (ordered.length === 0) return;
+
+  const ys: number[] = [];
+  for (const item of ordered) {
+    const y = readTranslateYPx(item.rowElement);
+    if (y != null && Number.isFinite(y)) ys.push(y);
+  }
+  ys.sort((a, b) => a - b);
+  if (ys.length === 0) {
+    console.warn('停滚层级重排：无法从 DOM 读取 translateY，跳过写 transform 以免空白');
+    return;
+  }
+  let padBase = ys[ys.length - 1]! + REPORTING_VIRTUAL_ROW_HEIGHT_PX;
+  while (ys.length < ordered.length) {
+    ys.push(padBase);
+    padBase += REPORTING_VIRTUAL_ROW_HEIGHT_PX;
+  }
+
+  ordered.forEach((item, i) => {
+    const row = item.rowElement as HTMLElement | undefined;
+    if (!row) return;
+    const inner = row.firstElementChild as HTMLElement | null;
+    if (!inner) return;
+    const ty = ys[i]!;
+    inner.style.transform = `translate(0px, ${ty}px)`;
+  });
+}
+
+// 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
+// translateOnly：仅保留接口；停滚路径已改用 applyScrollStopHierarchyTranslatePermutedYs。
+function reorderDomRowsBySortValue(
+  allRowData: any[],
+  modifiedData: any,
+  summaryValues: Record<string, any>,
+  opts?: { translateOnly?: boolean },
+) {
+  const translateOnly = opts?.translateOnly === true;
+  const sortConfig = getSortConfig();
+  const sortField = sortConfig.field;
+  const sortDirection = sortConfig.direction;
+  const desc = sortDirection === 'desc';
+
+  const accounts = buildReportingHierarchy(allRowData);
+  sortReportingAccountsHierarchy(accounts, sortField, desc, modifiedData, summaryValues);
 
   const ordered = flattenReportingHierarchy(accounts);
 
   const tableBody = ordered[0]?.rowElement?.parentElement;
   if (!tableBody) return;
 
-  for (const item of ordered) {
-    const el = item.rowElement as HTMLElement | undefined;
-    if (el?.parentNode === tableBody) {
-      tableBody.appendChild(el);
+  if (!translateOnly) {
+    for (const item of ordered) {
+      const el = item.rowElement as HTMLElement | undefined;
+      if (el?.parentNode === tableBody) {
+        tableBody.appendChild(el);
+      }
     }
   }
 
