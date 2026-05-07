@@ -71,9 +71,24 @@ export async function getModifiedData(dateOrStartDate?: string, endDate?: string
           if (!mergedData[adId]) {
             mergedData[adId] = {};
           }
-          
-          for (const field of Object.keys(dateData[adId])) {
-            mergedData[adId][field] = (mergedData[adId][field] || 0) + Number(dateData[adId][field]);
+          const entry = dateData[adId] as Record<string, unknown>;
+          for (const field of Object.keys(entry)) {
+            if (field === '_bases' && entry._bases && typeof entry._bases === 'object') {
+              mergedData[adId]._bases = {
+                ...(mergedData[adId]._bases as Record<string, unknown> | undefined),
+                ...(entry._bases as Record<string, unknown>),
+              };
+              continue;
+            }
+            if (['campaign_id', 'adset_id', 'ad_id', 'account_id'].includes(field)) {
+              mergedData[adId][field] = entry[field];
+              continue;
+            }
+            const raw = entry[field];
+            if (typeof raw === 'object' && raw !== null) {
+              continue;
+            }
+            mergedData[adId][field] = (Number(mergedData[adId][field]) || 0) + Number(raw || 0);
           }
         }
       }

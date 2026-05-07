@@ -419,6 +419,28 @@ function parseValueToNumber(text: string): number {
   }
 }
 
+/** 弹窗保存时写入的各列 Meta 原始值；用于覆盖 extractRowData 从 DOM 反推的数值，避免虚拟列表/中间态误判（含小增量如 +1） */
+const REPORTING_CACHE_BASE_METRICS = [
+  'impressions',
+  'reach',
+  'spend',
+  'clicks',
+  'registrations',
+  'purchases',
+] as const;
+
+export function overlayReportingRowDataFromCachedBases(rowData: any, modification: any): void {
+  if (!modification?._bases || typeof modification._bases !== 'object') return;
+  for (const field of REPORTING_CACHE_BASE_METRICS) {
+    const v = modification._bases[field];
+    if (v === undefined || v === null || v === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0 && rowData[field] !== undefined) {
+      rowData[field] = n;
+    }
+  }
+}
+
 // 从DOM提取数据
 export async function extractDataFromDom(): Promise<{ data: any[], columnMapping: any, currencySymbol: string }> {
   try {
@@ -545,6 +567,7 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
           }
           
           if (matchedModification) {
+            overlayReportingRowDataFromCachedBases(rowData, matchedModification);
             console.log('找到匹配的修改数据:', rowData.id, matchedModification);
             // 注意：增加值已在 extractRowData 函数中直接从DOM扣除，此处不再重复扣除
           } else {

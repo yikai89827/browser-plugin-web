@@ -375,6 +375,7 @@ function calculateGroupModifications(ads: any[], modifiedData: any): any {
       // 使用已匹配的修改数据
       const adModifications = ad.modification;
       Object.entries(adModifications).forEach(([field, value]) => {
+        if (field === '_bases' || typeof value === 'object') return;
         if (!modifications[field]) {
           modifications[field] = 0;
         }
@@ -384,6 +385,7 @@ function calculateGroupModifications(ads: any[], modifiedData: any): any {
       // 回退到直接匹配
       const adModifications = modifiedData[ad.id];
       Object.entries(adModifications).forEach(([field, value]) => {
+        if (field === '_bases' || typeof value === 'object') return;
         if (!modifications[field]) {
           modifications[field] = 0;
         }
@@ -433,7 +435,7 @@ function reconcileAdRowNumericBaseFromDomAndCache(
   const scrollableColumnCellsArray = Array.from(scrollableColumn.children[0].children);
 
   for (const [field, rawDelta] of Object.entries(adLevelModifications)) {
-    if (idFields.includes(field)) continue;
+    if (idFields.includes(field) || field === '_bases') continue;
     const delta = Number(rawDelta);
     if (!Number.isFinite(delta) || Math.abs(delta) < 1e-9) continue;
 
@@ -448,6 +450,16 @@ function reconcileAdRowNumericBaseFromDomAndCache(
     const rawText = inner.textContent?.trim() || '';
     const displayed = parseNumber(rawText.replace(/\[\d+\]$/, ''));
     if (!Number.isFinite(displayed)) continue;
+
+    const cacheBaseRaw = adLevelModifications._bases?.[field];
+    const cacheBaseNum =
+      cacheBaseRaw !== undefined && cacheBaseRaw !== null && cacheBaseRaw !== ''
+        ? Number(cacheBaseRaw)
+        : NaN;
+    if (Number.isFinite(cacheBaseNum) && cacheBaseNum >= 0) {
+      rowData[field] = cacheBaseNum;
+      continue;
+    }
 
     const baseAttr = inner.getAttribute('data-display-base');
     const baseFromAttr =
@@ -547,7 +559,7 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
 
   Object.entries(modifications).forEach(([field, value]) => {
     // 跳过ID字段，这些字段不需要处理
-    if (idFields.includes(field)) {
+    if (idFields.includes(field) || field === '_bases') {
       return;
     }
     
@@ -568,6 +580,16 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
       const hasIncreaseAttr0 = increaseAttr0 != null && String(increaseAttr0).trim() !== '';
 
       let originalValue: number;
+      const bases = modifications._bases;
+      const cacheFieldBase =
+        bases &&
+        typeof bases === 'object' &&
+        (bases as Record<string, unknown>)[field] !== undefined &&
+        (bases as Record<string, unknown>)[field] !== null &&
+        (bases as Record<string, unknown>)[field] !== ''
+          ? Number((bases as Record<string, unknown>)[field])
+          : NaN;
+
       // 缓存要写非零增量，但屏显仍等于上次记录的原始基数且 DOM 上仍挂着 data-increase → 合成未画上（如 10138+10000 仍显示 10138），勿用 raw−increase 当基数
       const stuckAtLockedBaseWithIncrease =
         Math.abs(Number(value)) > 1e-9 &&
@@ -577,7 +599,9 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
         !originalText.includes('$') &&
         Math.abs(displayNum - lockedBase) <= 0.501;
 
-      if (stuckAtLockedBaseWithIncrease) {
+      if (Number.isFinite(cacheFieldBase) && cacheFieldBase >= 0) {
+        originalValue = cacheFieldBase;
+      } else if (stuckAtLockedBaseWithIncrease) {
         innermostElement.removeAttribute('data-increase');
         originalValue = lockedBase;
       } else {
@@ -691,6 +715,7 @@ function calculateTotalModifications(modifiedData: any): any {
     if (underscoreCount >= 3) {
       // 这是广告统计行，累加其增加值
       Object.entries(modifications as Record<string, unknown>).forEach(([field, value]) => {
+        if (field === '_bases' || typeof value === 'object') return;
         if (total[field] !== undefined) {
           total[field] += Number(value) || 0;
         }

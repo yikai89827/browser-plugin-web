@@ -359,6 +359,14 @@ const saveChanges = async () => {
         // 保存修改字段和4个id字段，用于渲染时匹配行
         modifications[ad.id] = {
           ...modifiedFields,
+          _bases: {
+            impressions: Number(ad.impressions) || 0,
+            reach: Number(ad.reach) || 0,
+            spend: Number(ad.spend) || 0,
+            clicks: Number(ad.clicks) || 0,
+            registrations: Number(ad.registrations) || 0,
+            purchases: Number(ad.purchases) || 0,
+          },
           campaign_id: ad.campaign_id,
           adset_id: ad.adset_id,
           ad_id: ad.ad_id,
