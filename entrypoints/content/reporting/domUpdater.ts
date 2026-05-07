@@ -213,7 +213,7 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
       updateAdRow(row, matchedModification, rowData);
     }
   });
-  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：四层排序 + 仅改 translate，视口内连续 Y（anchor + i*42）
+  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：扁平按合成指标 + 连续 translate（虚拟列表不全量层级）
   if (!skipReorder) {
     resetReportingSeenSortMergeCache();
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -953,9 +953,8 @@ function readTranslateYPx(row: HTMLElement): number | null {
 }
 
 /**
- * 停滚：四层排序 + 仅改 translate。
- * 视口内 N 行写成**连续** Y：anchor, anchor+42, …（与 Meta 行高一致），anchor 取当前各行的最小 translateY 向下对齐到 42 网格，
- * 等价于「有修改的行插到正确名次后，中间各行整体挪 42 的整数倍」；不再用 multiset 置换（易不连续导致空白）。
+ * 停滚：仅改 translate；视口内连续 Y（anchor + i×行高）。
+ * 虚拟列表只有局部行时四层树不完整，层级排序会把展示次数等指标排错（滚回错位）；此处按当前挂载行**扁平**按合成指标排序，改动面最小。
  */
 function applyScrollStopHierarchyTranslateContiguous(
   allRowData: any[],
@@ -970,29 +969,30 @@ function applyScrollStopHierarchyTranslateContiguous(
   }
   mergeReportingSeenSortFromRows(allRowData, sortField, modifiedData, summaryValues);
 
-  const accounts = buildReportingHierarchy(allRowData);
-  sortReportingAccountsHierarchy(accounts, sortField, desc, modifiedData, summaryValues);
-  const ordered = flattenReportingHierarchy(accounts);
-  if (ordered.length === 0) return;
+  const rows = allRowData.filter((r) => r?.id && r._reportingRowEl);
+  if (rows.length === 0) return;
+  const sorted = [...rows].sort((a, b) => {
+    const va = effectiveSortValue(a, sortField, modifiedData, summaryValues);
+    const vb = effectiveSortValue(b, sortField, modifiedData, summaryValues);
+    return compareBlockValue(va, vb, String(a.id), String(b.id), desc);
+  });
 
   const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
-  const rawYs = ordered
-    .map((item) => readTranslateYPx(item.rowElement))
+  const rawYs = sorted
+    .map((rowData) => readTranslateYPx(rowData._reportingRowEl as HTMLElement))
     .filter((y): y is number => y != null && Number.isFinite(y));
   if (rawYs.length === 0) {
-    console.warn('停滚层级重排：无法从 DOM 读取 translateY，跳过写 transform');
+    console.warn('停滚重排：无法从 DOM 读取 translateY，跳过写 transform');
     return;
   }
   const minY = Math.min(...rawYs);
   const anchorY = Math.floor(minY / H) * H;
 
-  ordered.forEach((item, i) => {
-    const row = item.rowElement as HTMLElement | undefined;
-    if (!row) return;
+  sorted.forEach((rowData, i) => {
+    const row = rowData._reportingRowEl as HTMLElement;
     const inner = row.firstElementChild as HTMLElement | null;
     if (!inner) return;
-    const ty = anchorY + i * H;
-    inner.style.transform = `translate(0px, ${ty}px)`;
+    inner.style.transform = `translate(0px, ${anchorY + i * H}px)`;
   });
 }
 
