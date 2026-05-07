@@ -158,6 +158,35 @@ export function getReportingTableDataRows(): HTMLElement[] {
   return Array.from(element) as HTMLElement[];
 }
 
+/** 读取虚拟行内层 transform 的 translateY（px），与 domUpdater 停滚/重排逻辑一致 */
+export function readReportingRowTranslateYPx(row: HTMLElement): number | null {
+  const inner = row.firstElementChild as HTMLElement | null;
+  if (!inner) return null;
+  const inline = inner.style.transform?.trim();
+  const t =
+    inline && inline !== 'none'
+      ? inner.style.transform
+      : window.getComputedStyle(inner).transform;
+  if (!t || t === 'none') return null;
+  const matrix = t.match(/^matrix\(([-0-9eE.]+(?:,\s*[-0-9eE.]+){5})\)$/);
+  if (matrix) {
+    const vals = matrix[1].split(/\s*,\s*/).map(Number);
+    if (vals.length >= 6 && Number.isFinite(vals[5])) return vals[5];
+  }
+  const matrix3d = t.match(/^matrix3d\(([^)]+)\)$/);
+  if (matrix3d) {
+    const vals = matrix3d[1].split(/\s*,\s*/).map(Number);
+    if (vals.length >= 14 && Number.isFinite(vals[13])) return vals[13];
+  }
+  const tr = t.match(/translate\(\s*[^,]+\s*,\s*([-0-9.]+)\s*(?:px)?\s*\)/);
+  if (tr) return parseFloat(tr[1]);
+  const tr3d = t.match(/translate3d\(\s*[^,]+,\s*([-0-9.]+)\s*(?:px)?\s*,/);
+  if (tr3d) return parseFloat(tr3d[1]);
+  const trY = t.match(/translateY\(\s*([-0-9.]+)\s*(?:px)?\s*\)/);
+  if (trY) return parseFloat(trY[1]);
+  return null;
+}
+
 /**
  * 报表**数据区**纵向滚动容器（排除侧栏透视表等：它们也在 table 内滚动但不包含数据行）。
  * 在「从首行父链向上」的所有 overflow-y 可滚祖先里，取 scrollRange 最大者，一般即主虚拟列表视口。
@@ -315,7 +344,7 @@ function parseValueToNumber(text: string): number {
 // 从DOM提取数据
 export async function extractDataFromDom(): Promise<{ data: any[], columnMapping: any, currencySymbol: string }> {
   try {
-    const data = [];
+    const data: any[] = [];
     const columnMapping = getColumnIndicesSync();
     let currencySymbol = '$'; // 默认货币符号
     
@@ -347,14 +376,26 @@ export async function extractDataFromDom(): Promise<{ data: any[], columnMapping
       }
     }
     
-    // 遍历数据行，提取报表数据
+    // 遍历数据行提取报表数据，再按虚拟列表 translateY 自上而下排序，与页面视觉顺序一致（popup 等）
+    const extracted: { row: HTMLElement; rowData: any }[] = [];
     for (const row of dataRows) {
       const rowData = extractRowData(row, columnMapping);
       if (rowData) {
-        data.push(rowData);
+        extracted.push({ row: row as HTMLElement, rowData });
       }
     }
-    
+    extracted.sort((a, b) => {
+      const ya = readReportingRowTranslateYPx(a.row);
+      const yb = readReportingRowTranslateYPx(b.row);
+      const na = ya == null || !Number.isFinite(ya) ? Number.POSITIVE_INFINITY : ya;
+      const nb = yb == null || !Number.isFinite(yb) ? Number.POSITIVE_INFINITY : yb;
+      if (na !== nb) return na - nb;
+      return String(a.rowData.id || '').localeCompare(String(b.rowData.id || ''));
+    });
+    for (const e of extracted) {
+      data.push(e.rowData);
+    }
+
     // 处理名称赋值，确保所有行都有完整的账户、系列、组和广告名称
     const processedData = processNames(data);
 

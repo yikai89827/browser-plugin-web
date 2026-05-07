@@ -15,6 +15,7 @@ import {
   getSortConfig,
   getFieldValue,
   getRowType,
+  readReportingRowTranslateYPx,
   captureReportingBeforeFirstReorderAnchors,
   areReportingBeforeFirstReorderAnchorsBothInView,
   clearReportingBeforeFirstReorderAnchors,
@@ -962,34 +963,6 @@ function sortReportingAccountsHierarchy(
   });
 }
 
-function readTranslateYPx(row: HTMLElement): number | null {
-  const inner = row.firstElementChild as HTMLElement | null;
-  if (!inner) return null;
-  const inline = inner.style.transform?.trim();
-  const t =
-    inline && inline !== 'none'
-      ? inner.style.transform
-      : window.getComputedStyle(inner).transform;
-  if (!t || t === 'none') return null;
-  const matrix = t.match(/^matrix\(([-0-9eE.]+(?:,\s*[-0-9eE.]+){5})\)$/);
-  if (matrix) {
-    const vals = matrix[1].split(/\s*,\s*/).map(Number);
-    if (vals.length >= 6 && Number.isFinite(vals[5])) return vals[5];
-  }
-  const matrix3d = t.match(/^matrix3d\(([^)]+)\)$/);
-  if (matrix3d) {
-    const vals = matrix3d[1].split(/\s*,\s*/).map(Number);
-    if (vals.length >= 14 && Number.isFinite(vals[13])) return vals[13];
-  }
-  const tr = t.match(/translate\(\s*[^,]+\s*,\s*([-0-9.]+)\s*(?:px)?\s*\)/);
-  if (tr) return parseFloat(tr[1]);
-  const tr3d = t.match(/translate3d\(\s*[^,]+,\s*([-0-9.]+)\s*(?:px)?\s*,/);
-  if (tr3d) return parseFloat(tr3d[1]);
-  const trY = t.match(/translateY\(\s*([-0-9.]+)\s*(?:px)?\s*\)/);
-  if (trY) return parseFloat(trY[1]);
-  return null;
-}
-
 /** 全量重排前读取当前池内各行的 translateY，升序后不足则按行高补齐，避免 FB 刷新后仍写 index*42 与虚拟列表刻度不一致出现空白行 */
 function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
   const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
@@ -997,7 +970,7 @@ function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
   for (const item of ordered) {
     const row = item.rowElement as HTMLElement | undefined;
     if (!row) continue;
-    const y = readTranslateYPx(row);
+    const y = readReportingRowTranslateYPx(row);
     if (y != null && Number.isFinite(y)) ys.push(y);
   }
   ys.sort((a, b) => a - b);
@@ -1010,8 +983,8 @@ function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
 }
 
 /**
- * 停滚：只处理「当前按 translateY 自上而下相邻、且排序列上有缓存增量」的连续段（例如你改动的 3 条广告行）。
- * 段内按合成指标排序，再把该段**原有**的 Y 坐标 multiset 置换分配——等价于段内交换/挪位；段外行的 translate 一律不写。
+ * 停滚：按「同一广告组 adset_id 下、当前视口内可见的广告统计行」分组（不要求在 DOM 里相邻，中间可有合计行）。
+ * 组内若至少一行在排序列上有缓存增量，则整组按合成排序键重排，并把该组**原有** translateY  multiset 置换写回——单行有增量、其它行无增量时也能排到正确相对位置。
  */
 function applyScrollStopHierarchyTranslateContiguous(
   allRowData: any[],
@@ -1033,7 +1006,7 @@ function applyScrollStopHierarchyTranslateContiguous(
   const slots: Slot[] = [];
   for (const rowData of rows) {
     const row = rowData._reportingRowEl as HTMLElement;
-    const y = readTranslateYPx(row);
+    const y = readReportingRowTranslateYPx(row);
     if (y == null || !Number.isFinite(y)) {
       console.warn('停滚重排：存在无法读取 translateY 的行，跳过写 transform');
       return;
@@ -1048,17 +1021,22 @@ function applyScrollStopHierarchyTranslateContiguous(
   const hasSortDelta = (s: Slot) =>
     Math.abs(getSortFieldCacheDelta(s.rowData, sortField, modifiedData, summaryValues)) > 1e-9;
 
-  const runs: number[][] = [];
-  let cur: number[] = [];
-  for (let i = 0; i < visual.length; i++) {
-    if (hasSortDelta(visual[i]!)) {
-      cur.push(i);
-    } else {
-      if (cur.length > 0) runs.push(cur);
-      cur = [];
+  const isAdStatSlot = (s: Slot) =>
+    getRowType(s.rowData) === 'ad' &&
+    String(s.rowData.ad_id || '').trim() !== '' &&
+    String(s.rowData.adset_id || '').trim() !== '';
+
+  const byAdset = new Map<string, Slot[]>();
+  for (const s of visual) {
+    if (!isAdStatSlot(s)) continue;
+    const key = String(s.rowData.adset_id).trim();
+    let arr = byAdset.get(key);
+    if (!arr) {
+      arr = [];
+      byAdset.set(key, arr);
     }
+    arr.push(s);
   }
-  if (cur.length > 0) runs.push(cur);
 
   const compareEffective = (a: Slot, b: Slot) => {
     const va = effectiveSortValue(a.rowData, sortField, modifiedData, summaryValues);
@@ -1068,14 +1046,17 @@ function applyScrollStopHierarchyTranslateContiguous(
     return a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id));
   };
 
-  for (const idxRun of runs) {
-    if (idxRun.length < 2) continue;
-    const segment = idxRun.map((i) => visual[i]!);
+  for (const segment of byAdset.values()) {
+    if (segment.length < 2) continue;
+    if (!segment.some(hasSortDelta)) continue;
     const ys = [...segment].map((s) => s.y).sort((a, b) => a - b);
+    const byY = [...segment].sort(
+      (a, b) => a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id)),
+    );
     const sorted = [...segment].sort(compareEffective);
     let same = true;
     for (let j = 0; j < sorted.length; j++) {
-      if (sorted[j]!.rowData.id !== segment[j]!.rowData.id) {
+      if (sorted[j]!.rowData.id !== byY[j]!.rowData.id) {
         same = false;
         break;
       }
