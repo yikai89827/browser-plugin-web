@@ -641,18 +641,20 @@ function initReportingPageObserver(): void {
   
   // 更新DOM元素
   const applyDomUpdates = async (isScrollRelated: boolean): Promise<void> => {
+    createOverlay();
     if (isScrollRelated) {
-      console.log('滚动已停止，执行缓存渲染（不显示 loading）');
+      console.log('滚动已停止，显示 loading 后执行缓存渲染');
     }
 
     const waitTime = isScrollRelated ? 0 : 400;
     setTimeout(async () => {
-      const { updateDomElements } = await import('./content/reporting/domUpdater');
-      await updateDomElements({
-        skipReorder: isScrollRelated,
-        scrollStopVisualReorder: isScrollRelated,
-      });
-      if (!isScrollRelated) {
+      try {
+        const { updateDomElements } = await import('./content/reporting/domUpdater');
+        await updateDomElements({
+          skipReorder: isScrollRelated,
+          scrollStopVisualReorder: isScrollRelated,
+        });
+      } finally {
         removeOverlay();
       }
     }, waitTime);
@@ -683,10 +685,6 @@ function initReportingPageObserver(): void {
       if (shouldUpdateDom) {
         const isScrollRelated =
           hasScrollChange || hasBodyRowDataSurfaceChange || isScrollLoadingFlag;
-        // 非滚动类变更才先盖 loading；滚动/气泡误触路径不遮罩
-        if (!isScrollRelated) {
-          createOverlay();
-        }
         await applyDomUpdates(isScrollRelated);
       } else {
         console.log('不需要更新DOM元素');

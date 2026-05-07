@@ -17,6 +17,7 @@ import {
   getRowType,
 } from './dom';
 import { getModifiedData } from './cache';
+import { createOverlay, removeOverlay } from '../manage/dom';
 
 /** 虚拟行内容区高度，与 Meta 报表 DOM 一致；appendChild 改顺序后须重写 translate 才能与视觉一致 */
 const REPORTING_VIRTUAL_ROW_HEIGHT_PX = 42;
@@ -213,7 +214,7 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
       updateAdRow(row, matchedModification, rowData);
     }
   });
-  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：扁平按合成指标 + 连续 translate（虚拟列表不全量层级）
+  // 完整重排：appendChild + translate，并重置「已见 id 排序键」缓存；停滚：仅相邻「有排序列增量」的行段内按合成值置换 translate
   if (!skipReorder) {
     resetReportingSeenSortMergeCache();
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -558,7 +559,10 @@ export function setupScrollListener() {
     }
     scrollStopUnifiedTimer = setTimeout(() => {
       scrollStopUnifiedTimer = null;
-      void updateDomElements({ skipReorder: true, scrollStopVisualReorder: true });
+      createOverlay();
+      void updateDomElements({ skipReorder: true, scrollStopVisualReorder: true }).finally(() => {
+        removeOverlay();
+      });
     }, SCROLL_STOP_DEBOUNCE_MS);
   };
 
@@ -953,8 +957,8 @@ function readTranslateYPx(row: HTMLElement): number | null {
 }
 
 /**
- * 停滚：仅改 translate；视口内连续 Y（anchor + i×行高）。
- * 虚拟列表只有局部行时四层树不完整，层级排序会把展示次数等指标排错（滚回错位）；此处按当前挂载行**扁平**按合成指标排序，改动面最小。
+ * 停滚：只处理「当前按 translateY 自上而下相邻、且排序列上有缓存增量」的连续段（例如你改动的 3 条广告行）。
+ * 段内按合成指标排序，再把该段**原有**的 Y 坐标 multiset 置换分配——等价于段内交换/挪位；段外行的 translate 一律不写。
  */
 function applyScrollStopHierarchyTranslateContiguous(
   allRowData: any[],
@@ -971,29 +975,65 @@ function applyScrollStopHierarchyTranslateContiguous(
 
   const rows = allRowData.filter((r) => r?.id && r._reportingRowEl);
   if (rows.length === 0) return;
-  const sorted = [...rows].sort((a, b) => {
-    const va = effectiveSortValue(a, sortField, modifiedData, summaryValues);
-    const vb = effectiveSortValue(b, sortField, modifiedData, summaryValues);
-    return compareBlockValue(va, vb, String(a.id), String(b.id), desc);
-  });
 
-  const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
-  const rawYs = sorted
-    .map((rowData) => readTranslateYPx(rowData._reportingRowEl as HTMLElement))
-    .filter((y): y is number => y != null && Number.isFinite(y));
-  if (rawYs.length === 0) {
-    console.warn('停滚重排：无法从 DOM 读取 translateY，跳过写 transform');
-    return;
-  }
-  const minY = Math.min(...rawYs);
-  const anchorY = Math.floor(minY / H) * H;
-
-  sorted.forEach((rowData, i) => {
+  type Slot = { rowData: any; row: HTMLElement; y: number };
+  const slots: Slot[] = [];
+  for (const rowData of rows) {
     const row = rowData._reportingRowEl as HTMLElement;
-    const inner = row.firstElementChild as HTMLElement | null;
-    if (!inner) return;
-    inner.style.transform = `translate(0px, ${anchorY + i * H}px)`;
-  });
+    const y = readTranslateYPx(row);
+    if (y == null || !Number.isFinite(y)) {
+      console.warn('停滚重排：存在无法读取 translateY 的行，跳过写 transform');
+      return;
+    }
+    slots.push({ rowData, row, y });
+  }
+
+  const visual = [...slots].sort(
+    (a, b) => a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id)),
+  );
+
+  const hasSortDelta = (s: Slot) =>
+    Math.abs(getSortFieldCacheDelta(s.rowData, sortField, modifiedData, summaryValues)) > 1e-9;
+
+  const runs: number[][] = [];
+  let cur: number[] = [];
+  for (let i = 0; i < visual.length; i++) {
+    if (hasSortDelta(visual[i]!)) {
+      cur.push(i);
+    } else {
+      if (cur.length > 0) runs.push(cur);
+      cur = [];
+    }
+  }
+  if (cur.length > 0) runs.push(cur);
+
+  const compareEffective = (a: Slot, b: Slot) => {
+    const va = effectiveSortValue(a.rowData, sortField, modifiedData, summaryValues);
+    const vb = effectiveSortValue(b.rowData, sortField, modifiedData, summaryValues);
+    const c = compareBlockValue(va, vb, String(a.rowData.id), String(b.rowData.id), desc);
+    if (c !== 0) return c;
+    return a.y - b.y || String(a.rowData.id).localeCompare(String(b.rowData.id));
+  };
+
+  for (const idxRun of runs) {
+    if (idxRun.length < 2) continue;
+    const segment = idxRun.map((i) => visual[i]!);
+    const ys = [...segment].map((s) => s.y).sort((a, b) => a - b);
+    const sorted = [...segment].sort(compareEffective);
+    let same = true;
+    for (let j = 0; j < sorted.length; j++) {
+      if (sorted[j]!.rowData.id !== segment[j]!.rowData.id) {
+        same = false;
+        break;
+      }
+    }
+    if (same) continue;
+    sorted.forEach((s, j) => {
+      const inner = s.row.firstElementChild as HTMLElement | null;
+      if (!inner) return;
+      inner.style.transform = `translate(0px, ${ys[j]}px)`;
+    });
+  }
 }
 
 // 按「修改后的指标」对四层块排序：整块账户（账户合计+其下全部）相对其它账户移动；组内同理。
