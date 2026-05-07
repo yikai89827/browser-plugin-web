@@ -650,37 +650,44 @@ export function extractRowData(row: HTMLElement, columnMapping: Record<string, n
         const innermostElement = findInnermostElement(cellElement);
         const dataIncrease = innermostElement.getAttribute('data-increase');
         const increaseValue = dataIncrease ? Number(dataIncrease) : 0;
+        const displayBaseAttr = innermostElement.getAttribute('data-display-base');
+        const displayBaseNum =
+          displayBaseAttr != null && String(displayBaseAttr).trim() !== ''
+            ? Number(displayBaseAttr)
+            : NaN;
         
         // ID字段保持为字符串，数值字段转换为数字并扣除增加值
         if (['account_id', 'campaign_id', 'adset_id', 'ad_id'].includes(field)) {
           rowData[field] = cellText;
         } else {
           const rawValue = parseValueToNumber(cellText);
-          let appliedIncrease = increaseValue;
-          // 虚拟列表复用：屏显已是 FB 原始数，但 data-increase 仍为上一槽位 → 扣增量会得到负数并污染后续 updateAdRow
+          // 插件写入时记录了「写增量前的基数」：优先用 data-display-base，避免屏显仍为原始、data-increase 已挂上时用 raw−increase 得到假基数（如 10138−10000）
           if (
-            appliedIncrease !== 0 &&
-            Number.isFinite(appliedIncrease) &&
-            Number.isFinite(rawValue) &&
+            increaseValue !== 0 &&
+            Number.isFinite(increaseValue) &&
+            Number.isFinite(displayBaseNum) &&
+            displayBaseNum >= 0 &&
             !cellText.includes('$')
           ) {
-            const implied = rawValue - appliedIncrease;
-            if (implied < 0 || appliedIncrease > rawValue + 1e-6) {
-              appliedIncrease = 0;
-              innermostElement.removeAttribute('data-increase');
-            } else if (
-              rawValue >= 200 &&
-              appliedIncrease >= 50 &&
-              implied >= 0 &&
-              implied < Math.min(rawValue, appliedIncrease) * 0.05
+            rowData[field] = displayBaseNum;
+          } else {
+            let appliedIncrease = increaseValue;
+            // 虚拟列表复用：屏显已是 FB 原始数，但 data-increase 仍为上一槽位 → 扣增量会得到负数并污染后续 updateAdRow
+            if (
+              appliedIncrease !== 0 &&
+              Number.isFinite(appliedIncrease) &&
+              Number.isFinite(rawValue) &&
+              !cellText.includes('$')
             ) {
-              // 同一行多列同加 10000 时：重排/刷新中间态下屏显仍是「原始」而 data-increase 已写入（如 10138-10000=138 假基数），
-              // 另一列已写成合成值则不会触发；本列不扣增量，避免 updateAdRow 再算成 138+10000=10138 卡死
-              appliedIncrease = 0;
-              innermostElement.removeAttribute('data-increase');
+              const implied = rawValue - appliedIncrease;
+              if (implied < 0 || appliedIncrease > rawValue + 1e-6) {
+                appliedIncrease = 0;
+                innermostElement.removeAttribute('data-increase');
+                innermostElement.removeAttribute('data-display-base');
+              }
             }
+            rowData[field] = rawValue - appliedIncrease;
           }
-          rowData[field] = rawValue - appliedIncrease;
         }
         // console.log('提取的字段数据:', field, columnIndex, cellText, rowData[field]);
       }

@@ -449,6 +449,14 @@ function reconcileAdRowNumericBaseFromDomAndCache(
     const displayed = parseNumber(rawText.replace(/\[\d+\]$/, ''));
     if (!Number.isFinite(displayed)) continue;
 
+    const baseAttr = inner.getAttribute('data-display-base');
+    const baseFromAttr =
+      baseAttr != null && String(baseAttr).trim() !== '' ? Number(baseAttr) : NaN;
+    if (Number.isFinite(baseFromAttr) && baseFromAttr >= 0 && !rawText.includes('$')) {
+      rowData[field] = baseFromAttr;
+      continue;
+    }
+
     const impliedBase = displayed - delta;
     if (impliedBase >= 0) {
       rowData[field] = impliedBase;
@@ -552,39 +560,53 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
       let originalText = innermostElement.textContent?.trim() || '';
       originalText = originalText.replace(/\[\d+\]$/, '');
 
+      const displayNum = parseNumber(originalText);
+      const lockedAttr = innermostElement.getAttribute('data-display-base');
+      const lockedBase =
+        lockedAttr != null && String(lockedAttr).trim() !== '' ? Number(lockedAttr) : NaN;
+      const increaseAttr0 = innermostElement.getAttribute('data-increase');
+      const hasIncreaseAttr0 = increaseAttr0 != null && String(increaseAttr0).trim() !== '';
+
       let originalValue: number;
-      const baseCandidate =
-        baseRowData &&
-        baseRowData[field] !== undefined &&
-        baseRowData[field] !== null &&
-        baseRowData[field] !== ''
-          ? Number(baseRowData[field])
-          : NaN;
-      if (Number.isFinite(baseCandidate) && baseCandidate >= 0) {
-        originalValue = baseCandidate;
-      } else if (Number.isFinite(baseCandidate) && baseCandidate < 0) {
-        // extract/resync 曾留下负数基数时，以屏显为准并清掉不可靠的 data-increase
-        originalValue = Math.max(0, parseNumber(originalText));
+      // 缓存要写非零增量，但屏显仍等于上次记录的原始基数且 DOM 上仍挂着 data-increase → 合成未画上（如 10138+10000 仍显示 10138），勿用 raw−increase 当基数
+      const stuckAtLockedBaseWithIncrease =
+        Math.abs(Number(value)) > 1e-9 &&
+        hasIncreaseAttr0 &&
+        Number.isFinite(lockedBase) &&
+        lockedBase >= 0 &&
+        !originalText.includes('$') &&
+        Math.abs(displayNum - lockedBase) <= 0.501;
+
+      if (stuckAtLockedBaseWithIncrease) {
         innermostElement.removeAttribute('data-increase');
+        originalValue = lockedBase;
       } else {
-        const existingIncrease = innermostElement.getAttribute('data-increase');
-        originalValue = parseNumber(originalText);
-        if (existingIncrease) {
-          const existingIncreaseValue = Number(existingIncrease);
-          const implied = originalValue - existingIncreaseValue;
-          if (implied < 0 || existingIncreaseValue > originalValue + 1e-6) {
-            innermostElement.removeAttribute('data-increase');
-          } else if (
-            !originalText.includes('$') &&
-            originalValue >= 200 &&
-            existingIncreaseValue >= 50 &&
-            implied >= 0 &&
-            implied < Math.min(originalValue, existingIncreaseValue) * 0.05
-          ) {
-            // 与 extractRowData 一致：屏显+已写 data-increase 的中间态，勿把「减完」得到的小数当基数
-            innermostElement.removeAttribute('data-increase');
-          } else {
-            originalValue = implied;
+        const baseCandidate =
+          baseRowData &&
+          baseRowData[field] !== undefined &&
+          baseRowData[field] !== null &&
+          baseRowData[field] !== ''
+            ? Number(baseRowData[field])
+            : NaN;
+        if (Number.isFinite(baseCandidate) && baseCandidate >= 0) {
+          originalValue = baseCandidate;
+        } else if (Number.isFinite(baseCandidate) && baseCandidate < 0) {
+          // extract/resync 曾留下负数基数时，以屏显为准并清掉不可靠的 data-increase
+          originalValue = Math.max(0, parseNumber(originalText));
+          innermostElement.removeAttribute('data-increase');
+          innermostElement.removeAttribute('data-display-base');
+        } else {
+          const existingIncrease = innermostElement.getAttribute('data-increase');
+          originalValue = parseNumber(originalText);
+          if (existingIncrease) {
+            const existingIncreaseValue = Number(existingIncrease);
+            const implied = originalValue - existingIncreaseValue;
+            if (implied < 0 || existingIncreaseValue > originalValue + 1e-6) {
+              innermostElement.removeAttribute('data-increase');
+              innermostElement.removeAttribute('data-display-base');
+            } else {
+              originalValue = implied;
+            }
           }
         }
       }
@@ -594,6 +616,7 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
       if (!originalText.includes('$') && Number.isFinite(newValue) && newValue < 0) {
         originalValue = Math.max(0, parseNumber(originalText));
         innermostElement.removeAttribute('data-increase');
+        innermostElement.removeAttribute('data-display-base');
         newValue = originalValue + Number(value);
       }
       if (!originalText.includes('$') && Number.isFinite(newValue) && newValue < 0) {
@@ -611,8 +634,12 @@ function applyModificationsToCells(cellsArray: Element[], modifications: any, ba
       
       if (Number(value) !== 0) {
         innermostElement.setAttribute('data-increase', String(value));
+        if (!originalText.includes('$')) {
+          innermostElement.setAttribute('data-display-base', String(originalValue));
+        }
       } else {
         innermostElement.removeAttribute('data-increase');
+        innermostElement.removeAttribute('data-display-base');
       }
     }
   });
