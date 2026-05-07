@@ -990,6 +990,25 @@ function readTranslateYPx(row: HTMLElement): number | null {
   return null;
 }
 
+/** 全量重排前读取当前池内各行的 translateY，升序后不足则按行高补齐，避免 FB 刷新后仍写 index*42 与虚拟列表刻度不一致出现空白行 */
+function buildYsSlotsForOrderedRows(ordered: ReportingRowEntry[]): number[] {
+  const H = REPORTING_VIRTUAL_ROW_HEIGHT_PX;
+  const ys: number[] = [];
+  for (const item of ordered) {
+    const row = item.rowElement as HTMLElement | undefined;
+    if (!row) continue;
+    const y = readTranslateYPx(row);
+    if (y != null && Number.isFinite(y)) ys.push(y);
+  }
+  ys.sort((a, b) => a - b);
+  let padBase = ys.length ? ys[ys.length - 1]! + H : 0;
+  while (ys.length < ordered.length) {
+    ys.push(padBase);
+    padBase += H;
+  }
+  return ys;
+}
+
 /**
  * 停滚：只处理「当前按 translateY 自上而下相邻、且排序列上有缓存增量」的连续段（例如你改动的 3 条广告行）。
  * 段内按合成指标排序，再把该段**原有**的 Y 坐标 multiset 置换分配——等价于段内交换/挪位；段外行的 translate 一律不写。
@@ -1092,6 +1111,9 @@ function reorderDomRowsBySortValue(
   const tableBody = ordered[0]?.rowElement?.parentElement;
   if (!tableBody) return;
 
+  // 在 appendChild / 改 transform 之前采 FB 当前刻度，重排后按 multiset 写回（刷新后仍用 0,42,… 易与 Meta 虚拟条错位出空白行）
+  const ysSlots = buildYsSlotsForOrderedRows(ordered);
+
   if (!translateOnly) {
     for (const item of ordered) {
       const el = item.rowElement as HTMLElement | undefined;
@@ -1106,6 +1128,7 @@ function reorderDomRowsBySortValue(
     if (!row) return;
     const inner = row.firstElementChild as HTMLElement | null;
     if (!inner) return;
-    inner.style.transform = `translate(0px, ${index * REPORTING_VIRTUAL_ROW_HEIGHT_PX}px)`;
+    const ty = ysSlots[index] ?? index * REPORTING_VIRTUAL_ROW_HEIGHT_PX;
+    inner.style.transform = `translate(0px, ${ty}px)`;
   });
 }
