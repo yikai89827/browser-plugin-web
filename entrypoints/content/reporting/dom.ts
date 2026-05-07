@@ -195,6 +195,60 @@ export function getReportingTableScrollParent(): HTMLElement | null {
   });
 }
 
+function rowIntersectsScrollViewport(row: HTMLElement, scrollRoot: HTMLElement): boolean {
+  const rr = row.getBoundingClientRect();
+  const sr = scrollRoot.getBoundingClientRect();
+  return rr.bottom > sr.top && rr.top < sr.bottom && rr.right > sr.left && rr.left < sr.right;
+}
+
+/**
+ * 首次插件写单元格 / appendChild 重排**之前**的视口首尾行 DOM（FB 原始顺序与原始值）。
+ * 往回滚时 FB 会重渲原始序，与当前合成序差很大；用「重排前」两槽判断是否同框到顶，再全量按合成值重排。
+ */
+let reportingBeforeFirstReorderAnchorFirst: HTMLElement | null = null;
+let reportingBeforeFirstReorderAnchorLast: HTMLElement | null = null;
+let reportingBeforeFirstReorderAnchorsCaptured = false;
+
+/** 仅在尚未冻结时调用：在第一次 updateAdRow 之前采首尾（与主表滚动视口相交的池内行） */
+export function captureReportingBeforeFirstReorderAnchors(): void {
+  if (reportingBeforeFirstReorderAnchorsCaptured) return;
+  const scrollRoot = getReportingTableScrollParent();
+  if (!scrollRoot?.isConnected) return;
+  const rows = getReportingTableDataRows();
+  if (!rows.length) return;
+  const visible: HTMLElement[] = [];
+  for (const row of rows) {
+    if (!row?.isConnected) continue;
+    if (rowIntersectsScrollViewport(row, scrollRoot)) {
+      visible.push(row);
+    }
+  }
+  if (visible.length === 0) return;
+  reportingBeforeFirstReorderAnchorFirst = visible[0]!;
+  reportingBeforeFirstReorderAnchorLast = visible[visible.length - 1]!;
+  reportingBeforeFirstReorderAnchorsCaptured = true;
+}
+
+export function clearReportingBeforeFirstReorderAnchors(): void {
+  reportingBeforeFirstReorderAnchorFirst = null;
+  reportingBeforeFirstReorderAnchorLast = null;
+  reportingBeforeFirstReorderAnchorsCaptured = false;
+}
+
+/** 重排前冻结的两锚点是否仍挂载且同时落在主表滚动视口内（滚停到顶，可改走全量合成重排） */
+export function areReportingBeforeFirstReorderAnchorsBothInView(): boolean {
+  if (!reportingBeforeFirstReorderAnchorsCaptured) return false;
+  const a = reportingBeforeFirstReorderAnchorFirst;
+  const b = reportingBeforeFirstReorderAnchorLast;
+  if (!a?.isConnected || !b?.isConnected) {
+    clearReportingBeforeFirstReorderAnchors();
+    return false;
+  }
+  const scrollRoot = getReportingTableScrollParent();
+  if (!scrollRoot?.isConnected) return false;
+  return rowIntersectsScrollViewport(a, scrollRoot) && rowIntersectsScrollViewport(b, scrollRoot);
+}
+
 // 获取表格底部
 export function getReportingTableFooter(): HTMLElement[] {
   const tableContainer = findTableContainer();

@@ -15,6 +15,9 @@ import {
   getSortConfig,
   getFieldValue,
   getRowType,
+  captureReportingBeforeFirstReorderAnchors,
+  areReportingBeforeFirstReorderAnchorsBothInView,
+  clearReportingBeforeFirstReorderAnchors,
 } from './dom';
 import { getModifiedData } from './cache';
 import { createOverlay, removeOverlay } from '../manage/dom';
@@ -87,8 +90,8 @@ export function updateDomElements(options?: UpdateDomElementsOptions): Promise<v
 }
 
 async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Promise<void> {
-  const skipReorder = options?.skipReorder === true;
-  const scrollStopVisualReorder = options?.scrollStopVisualReorder === true;
+  let skipReorder = options?.skipReorder === true;
+  let scrollStopVisualReorder = options?.scrollStopVisualReorder === true;
   updateDomElementsInFlight = true;
   try {
   // 获取当前排序配置
@@ -152,6 +155,19 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
 
   extendObserverSuppressAfterThisRun = true;
 
+  // 滚停：若「首次插件重排前」冻结的视口首尾槽位再次同时进入主表视口，说明 FB 已滚回顶侧；清空锚点后走全量合成重排（不再做停滚段内 translate）
+  if (scrollStopVisualReorder && areReportingBeforeFirstReorderAnchorsBothInView()) {
+    clearReportingBeforeFirstReorderAnchors();
+    skipReorder = false;
+    scrollStopVisualReorder = false;
+    console.log('停滚：重排前锚点均回视口，按合成值全量重排');
+  }
+
+  // 全量重排（含到顶升级、点表头）前丢掉旧冻结，便于下面 capture 采当前 FB 视口作新「重排前」基线
+  if (!skipReorder) {
+    clearReportingBeforeFirstReorderAnchors();
+  }
+
   console.log('找到的数据行数:', dataRows.length);
   
   // 构建ID到行的映射
@@ -186,7 +202,10 @@ async function runUpdateDomElementsOnce(options?: UpdateDomElementsOptions): Pro
   
   // 计算合计行的增加值
   const summaryValues = calculateSummaryValues(allRowData, modifiedData);
-  
+
+  // 首次写单元格 / 重排前冻结视口首尾 DOM（FB 原始布局）；到顶清空后会再采一帧新基线
+  captureReportingBeforeFirstReorderAnchors();
+
   // 第二次遍历，只更新修改过的行和相关的合计行（按 allRowData + 对应 DOM 行，避免与 dataRows 下标错位）
   allRowData.forEach((rowData) => {
     const row = rowData._reportingRowEl as HTMLElement | undefined;
