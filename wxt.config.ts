@@ -38,7 +38,7 @@ export default defineConfig({
   manifest: () => {
     return {
       version: '3',
-      name: '浏览器助手',
+      name: '账户管理',
       host_permissions: [
         "*://*.facebook.com/*",
         "http://localhost/*",

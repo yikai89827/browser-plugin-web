@@ -1,21 +1,24 @@
 import { v4 as uuid } from 'uuid';
-import { HttpClient, http } from '../connect/fetch'
 import { browserStorage } from '../storage';
 import { convertCacheData, getCountryInfo } from '../storage/dataConverter';
 import { Connection } from '../connect/background';
 import { DB } from '../storage/DB';
 import { formatDate } from '..';
 import { goNextTask } from './setTask';
-// import { DB } from '../../utils/storage/DB'
 
+// 动态导入HttpClient，避免构建时问题
+async function getHttpClient() {
+  const { HttpClient } = await import('../connect/fetch');
+  return HttpClient;
+}
 
 //设置请求头
-const setHeader = (headers, token) => {
+const setHeader = (headers: string, token: any) => {
     try {
         if (headers && token) {
             const data = JSON.parse(headers)
             data.push(['Anti-Csrftoken-A2z', token])
-            const header = data?.reduce((obj, item) => {
+            const header = data?.reduce((obj: { [x: string]: any; }, item: any[]) => {
                 obj[item[0]] = item[1]
                 return obj
             }, {})
@@ -49,6 +52,7 @@ export const initRequest = async (baseURL: string) => {
     return new Promise(async (resolve, reject) => {
         try {
             console.log('initRequest')
+            const HttpClient = await getHttpClient();
             const http = new HttpClient({ baseURL })
             const res: any = await http.get('/home?timestamp=' + Date.now())
             resolve(res)
@@ -67,6 +71,7 @@ export const getMerchantMarketplace = async () => {
             const { header, baseURL } = await getRequestBaseInfo()
             if (header && baseURL) {
                 console.log('getMerchantMarketplace')
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const res1: any = await http.get(`/account-switcher/global-and-regional-account/merchantMarketplace?`)
                 console.log('getMerchantMarketplace 请求结果1', res1, res1?.globalAccount?.id)
@@ -86,6 +91,7 @@ export const getConfig = async () => {
             const { header, baseURL } = await getRequestBaseInfo()
             if (header && baseURL) {
                 console.log('getConfig')
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const res: any = await http.get('/coupons/api/config')
                 console.log('getConfig 请求结果', res)
@@ -107,6 +113,7 @@ export const getGlobalAccounts = async () => {
             const { header, baseURL } = await getRequestBaseInfo()
             if (header && baseURL) {
                 console.log('getGlobalAccounts')
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const res: any = await http.get('/account-switcher/global-accounts?timestamp=' + Date.now())
                 console.log('getGlobalAccounts 请求结果', res)
@@ -127,6 +134,7 @@ export const getMerchantInfo = async () => {
             const { header, baseURL } = await getRequestBaseInfo()
             console.log('getMerchantInfo')
             if (header && baseURL) {
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const res: any = await http.get('/coupons/api/merchantInfo')
                 console.log('getMerchantInfo 请求结果', res)
@@ -143,6 +151,7 @@ export const changeSite = async (baseURL: string, queryString: any) => {
         // https://sellercentral.amazon.de/home?mons_sel_dir_mcid=amzn1.merchant.d.AD77BVCTEVXJRW2ODZEVP6BSECZQ&mons_sel_mkid=A1PA6795UKMFR9&mons_sel_dir_paid=amzn1.pa.d.AAZ3IHCLL7CMO7K7Z5T4GMKX4YVQ&timestamp=1748243232947
         try {
             console.log('changeSite')
+            const HttpClient = await getHttpClient();
             const http = new HttpClient({ baseURL })
             const res: any = await http.get('/home' + queryString)
             console.log('changeSite 请求结果')
@@ -159,6 +168,7 @@ export const getLanguages = async () => {
             const { header, baseURL } = await getRequestBaseInfo()
             if (header && baseURL) {
                 console.log('getLanguages')
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const res: any = await http.get('/trim/get-available-locales')
                 console.log('getLanguages 请求结果', res)
@@ -180,6 +190,8 @@ export const changeLanguage = async (item: string) => {
         try {
             const { header, baseURL } = await getRequestBaseInfo()
             if (header && baseURL) {
+                console.log('changeLanguage')
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const res: any = await http.get(`/home?timestamp=${Date.now()}&languageSwitched=1&mons_sel_locale=${item}`)
                 console.log('changeLanguage 请求结果')
@@ -238,6 +250,7 @@ export const fetchCouponData = async (paginationSkip: number = 0, isLast?: boole
             if (header && baseURL) {
                 const url = apiUrl + `?paginationSize=${paginationSize}&paginationSkip=${paginationSkip * paginationSize}`
                 console.log('fetchCouponData', baseURL, apiUrl)
+                const HttpClient = await getHttpClient();
                 const http = new HttpClient({ baseURL, header })
                 const { promotionSearchResultList, promotionTotalCount }: { promotionSearchResultList: any[], promotionTotalCount: number } = await http.get(url)
                 console.log('fetchCouponData 请求结果', apiUrl, promotionSearchResultList, promotionTotalCount)

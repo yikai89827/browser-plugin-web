@@ -1,15 +1,13 @@
 import { goNextTask } from './../scraper/setTask';
 import { browser, Browser } from 'wxt/browser';
-// import { exportList, exportToCsv } from "../../utils/excelExport";
 import { DB } from '../../utils/storage/DB'
 import { browserStorage } from "../../utils/storage";
 import { SYS_API } from "../../apis/apiUrl";
-import { http } from "../../utils/connect/fetch";
 import { setAlarmsTask } from '../connect/alarms';
 import { initTaskList, startTaskList } from '../scraper/setTask';
 import { randomIntInRange } from '..';
-import { changeLanguage } from '../scraper/fetchData';
 import { hideNotificationBadge, showNotificationBadge } from '../../utils/event'
+
 // @ts-ignore
 const TIMEOUT = import.meta.env.WXT_API_TIMEOUT
 // @ts-ignore
@@ -37,22 +35,24 @@ let lastHeartbeat = 0;
 export class Connect<T> {
     private tabId: number = 0
     private activePorts = new Map<any, Browser.runtime.Port>()
-    private port
+    private port: Browser.runtime.Port | undefined
     constructor() {
         this.init()
     }
     init() {
-        browser.runtime?.onConnect?.addListener((port) => {
-            console.log('port, port.name', port, port.name)
-            // this.activePorts.set(port.name, port)
-            // browser.runtime.getBackgroundPage(); // 保持后台页面激活
-            this.activePorts.set(port.sender?.tab?.id, port);
-            this.port = port
-            this.port.onDisconnect.addListener(() => {
-                this.activePorts.delete(this.port.name)
-                console.log('连接断开:', port)
-            })
-            const recieves = {
+        try {
+            browser.runtime?.onConnect?.addListener((port) => {
+                console.log('port, port.name', port, port.name)
+                // this.activePorts.set(port.name, port)
+                // browser.runtime.getBackgroundPage(); // 保持后台页面激活
+                this.activePorts.set(port.sender?.tab?.id, port);
+                this.port = port
+                this.port.onDisconnect.addListener(() => {
+                    this.activePorts.delete(this.port?.name)
+                    console.log('连接断开:', port)
+                })
+                
+                const recieves: any = {
                 async ping(data: any) {
                     // console.log('ping', data)
                     setTimeout(() => {
@@ -123,7 +123,7 @@ export class Connect<T> {
                             return console.log("请输入用户名或密码！");
                         }
                         // const res: any = await http.post(SYS_API.Login, loginForm);
-                        const res = await mockLogin()
+                        const res: any = await mockLogin()
                         console.log("登录结果", res);
                         port?.postMessage({ action: 'login', data: res });
                         if (res?.code == 200) {
@@ -138,6 +138,8 @@ export class Connect<T> {
                 async logout() {//退出
                     console.log('退出账户')
                     try {
+                        // 动态导入http避免构建时问题
+                        const { http } = await import("../../utils/connect/fetch");
                         const res: any = await http.get(SYS_API.Logout, {});
                         console.log("退出结果", res);
                         if (res?.code == 200) {
@@ -156,18 +158,20 @@ export class Connect<T> {
                         port?.postMessage({ action: 'logout', data: error });
                     }
                 },
-                async ctrlTaskStatus(data) {//任务控制===永久暂停
+                async ctrlTaskStatus(data: any) {//任务控制===永久暂停
                     console.log('任务控制', data ? '开启' : '暂停')
                     browserStorage.set('lyCtrlTaskStatus', data ? '1' : '')
                 },
-                async pageCtrlTaskStatus(data) {//页面任务控制=== 暂停一个定时任务间隔
+                async pageCtrlTaskStatus(data: any) {//页面任务控制=== 暂停一个定时任务间隔
                     console.log('页面任务控制', data ? '开启' : '暂停')
                     port?.postMessage({ action: 'pageCtrlTaskStatus', data: Date.now() });
                     browserStorage.set('lyPageCtrlTaskStatus', data ? '1' : '')
                 },
                 async changeLanguage() {//切换语言
                     console.log('切换语言')
-                    changeLanguage('zh_CN')
+                    // 动态导入避免构建时问题
+                    const { changeLanguage: changeLang } = await import('../scraper/fetchData');
+                    changeLang('zh_CN')
                 },
                 async nextTask(){//执行下一个任务
                     console.log('执行下一个任务')
@@ -182,11 +186,14 @@ export class Connect<T> {
                 }
                 recieves[msg?.action] && recieves[msg?.action](msg?.data)
             });
-            return true
+            return true;
         });
+        } catch (e) {
+            console.warn('onConnect not available in this environment');
+        }
     }
     // 监听消息
-    watchMessage(fn?: Function) {
+    watchMessage(fn: any) {
         this.port?.onMessage?.addListener((msg) => {
             // console.log('content收到长连接消息', msg)
             fn && fn(msg)
@@ -200,7 +207,7 @@ export class Connect<T> {
         });
     }
     //广播消息
-    broadcastToContent(message) {
+    broadcastToContent(message: { action: any; data?: string; }) {
         this.activePorts.forEach(port => {
             console.log('broadcastToContent', port?.name, message)
             if (message?.action?.includes('showExportBox')){
