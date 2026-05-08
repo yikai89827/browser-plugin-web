@@ -31,6 +31,8 @@
   },
   "include": [
     "src/site/**/*",
+    "site/src/**/*",
+    "interfaces/**/*",
     "entrypoints/**/*",
     "tests/**/*"
   ]

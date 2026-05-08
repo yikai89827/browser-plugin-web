@@ -94,7 +94,13 @@ export default defineConfig({
       },
       action: {
         default_popup: "popup.html"
-      }
+      },
+      externally_connectable: {
+        matches: [
+          'http://localhost:*/*',
+          'http://127.0.0.1:*/*',
+        ],
+      },
       // "content_security_policy": {
       //   "extension_pages": "script-src 'self' 'unsafe-eval'; connect-src http://localhost:* http://127.0.0.1:* http://192.168.*:*"
       // }
