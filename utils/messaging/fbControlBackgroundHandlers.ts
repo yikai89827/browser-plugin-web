@@ -4,6 +4,7 @@ import {
   fbIdbClearPixelShares,
   fbIdbGetAllAccounts,
   fbIdbGetAllPixelShares,
+  fbIdbMergeAccount,
   fbIdbUpsertAccounts,
   fbIdbUpsertPixelShares,
 } from '../storage/fbControlIndexedDB';
@@ -22,6 +23,15 @@ export async function handleFbControlMessage(message: FbControlIncomingMessage) 
       const rows = (message.data as FbAdAccountRecord[]) || [];
       const n = await fbIdbUpsertAccounts(rows);
       return { success: true, payload: { upserted: n } };
+    }
+
+    case 'FB_CONTROL_MERGE_ACCOUNT': {
+      const patch = message.data as Partial<FbAdAccountRecord> & { accountId: string };
+      if (!patch?.accountId) {
+        return { success: false, error: 'accountId required' };
+      }
+      await fbIdbMergeAccount(patch);
+      return { success: true };
     }
 
     case 'FB_CONTROL_SAVE_PIXEL_SHARES': {

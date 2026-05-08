@@ -5,9 +5,12 @@ import {
   extensionConfigured,
   fetchAccountsFromExtension,
   getStoredExtensionId,
+  mergeAccountInExtension,
   pingExtension,
   setStoredExtensionId,
 } from '../lib/extensionBridge';
+
+const COL_COUNT = 24;
 
 const extensionIdInput = ref(getStoredExtensionId());
 const accounts = ref<FbAdAccountRecord[]>([]);
@@ -16,21 +19,45 @@ const loading = ref(false);
 const errorMsg = ref('');
 const lastUpdated = ref<string>('');
 const extensionOk = ref<boolean | null>(null);
+/** 行多选（仅前端会话，导出等可后续接） */
+const selectedIds = ref<Record<string, boolean>>({});
+
+function haystack(row: FbAdAccountRecord): string {
+  return Object.values(row)
+    .filter((v) => v != null && typeof v !== 'object')
+    .join(' ')
+    .toLowerCase();
+}
 
 const filtered = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) return accounts.value;
-  return accounts.value.filter(
-    (a) =>
-      a.name.toLowerCase().includes(q) ||
-      a.accountId.includes(q) ||
-      (a.status || '').toLowerCase().includes(q)
-  );
+  return accounts.value.filter((a) => haystack(a).includes(q));
 });
 
 function saveExtensionId() {
   setStoredExtensionId(extensionIdInput.value);
 }
+
+function toggleRowSelected(accountId: string) {
+  selectedIds.value = {
+    ...selectedIds.value,
+    [accountId]: !selectedIds.value[accountId],
+  };
+}
+
+function toggleSelectAll(checked: boolean) {
+  const next: Record<string, boolean> = { ...selectedIds.value };
+  for (const row of filtered.value) {
+    next[row.accountId] = checked;
+  }
+  selectedIds.value = next;
+}
+
+const allFilteredSelected = computed(() => {
+  if (!filtered.value.length) return false;
+  return filtered.value.every((r) => selectedIds.value[r.accountId]);
+});
 
 async function testExtension() {
   errorMsg.value = '';
@@ -76,9 +103,39 @@ async function refreshFromExtension() {
   }
 }
 
+function dash(v: unknown) {
+  if (v === null || v === undefined || v === '') return '—';
+  return String(v);
+}
+
 function formatMoney(n?: number) {
   if (n == null || Number.isNaN(n)) return '—';
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function totalSpentCell(row: FbAdAccountRecord) {
+  if (row.totalSpent !== undefined && row.totalSpent !== '') {
+    return typeof row.totalSpent === 'number' ? formatMoney(row.totalSpent) : dash(row.totalSpent);
+  }
+  if (row.paymentAmount) return dash(row.paymentAmount);
+  if (row.spend != null) return formatMoney(row.spend);
+  return '—';
+}
+
+function statusOn(row: FbAdAccountRecord) {
+  const s = (row.status || '').toLowerCase();
+  return s.includes('active') || s === '1' || s.includes('enabled');
+}
+
+async function onToggleFavorite(row: FbAdAccountRecord) {
+  errorMsg.value = '';
+  try {
+    const next = !row.favorite;
+    await mergeAccountInExtension({ accountId: row.accountId, favorite: next });
+    row.favorite = next;
+  } catch (e: any) {
+    errorMsg.value = e?.message || String(e);
+  }
 }
 
 onMounted(() => {
@@ -108,7 +165,7 @@ onMounted(() => {
         </label>
         <button class="btn ghost" type="button" :disabled="loading" @click="testExtension">检测连接</button>
         <button class="btn primary" type="button" :disabled="loading" @click="refreshFromExtension">
-          {{ loading ? '加载中…' : '从扩展刷新' }}
+          {{ loading ? '加载中…' : '更新' }}
         </button>
       </div>
     </div>
@@ -116,44 +173,105 @@ onMounted(() => {
     <p v-if="errorMsg" class="alert">{{ errorMsg }}</p>
 
     <div class="hint">
-      在 Chrome 中打开 Facebook 广告管理相关页面后，扩展内容脚本会自动采集并写入扩展内 IndexedDB；此处仅读取与展示。
+      在 Chrome 中打开 Facebook 广告管理相关页面后，扩展会采集并写入 IndexedDB；下列字段与自有平台广告账号表对齐，未采集项显示为「—」。收藏变更会写回扩展数据库。
     </div>
 
     <div class="search-row">
-      <input v-model="searchQuery" type="search" placeholder="搜索账户名称、ID 或状态…" />
+      <input v-model="searchQuery" type="search" placeholder="搜索：请输入广告账号…" />
     </div>
 
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th class="num">#</th>
+            <th class="chk">
+              <input
+                type="checkbox"
+                :checked="allFilteredSelected"
+                @change="toggleSelectAll(($event.target as HTMLInputElement).checked)"
+              />
+            </th>
+            <th class="num">序号</th>
+            <th class="ico">收藏</th>
             <th>状态</th>
             <th>账号</th>
-            <th>账户 ID</th>
-            <th>管理员数</th>
-            <th>类型</th>
-            <th>付款 / 花费</th>
-            <th>结余</th>
-            <th>日额</th>
+            <th>日限额</th>
+            <th>总花费</th>
+            <th>花费限额</th>
+            <th>已花费</th>
+            <th>余额</th>
+            <th>备注</th>
+            <th>币种</th>
+            <th>账户类型</th>
+            <th>所有者角色</th>
+            <th>支付方法</th>
+            <th>账单期</th>
+            <th>锁定原因</th>
+            <th>创建日期</th>
+            <th>时区</th>
+            <th>原始 ID</th>
+            <th>创建自 BM</th>
+            <th>所属 BM</th>
+            <th>国家编码</th>
             <th>采集时间</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, idx) in filtered" :key="row.accountId">
+            <td class="chk">
+              <input
+                type="checkbox"
+                :checked="!!selectedIds[row.accountId]"
+                @change="toggleRowSelected(row.accountId)"
+              />
+            </td>
             <td class="num">{{ idx + 1 }}</td>
-            <td><span class="dot" :class="row.status?.toLowerCase().includes('active') || row.status === '1' ? 'on' : 'off'" /></td>
-            <td class="name">{{ row.name }}</td>
-            <td class="mono">{{ row.accountId }}</td>
-            <td>{{ row.adminCount ?? '—' }}</td>
-            <td>{{ row.accountType || '—' }}</td>
-            <td>{{ row.paymentAmount != null ? row.paymentAmount : formatMoney(row.spend) }}</td>
-            <td>{{ row.balance ?? '—' }}</td>
-            <td>{{ row.dailyLimit ?? '—' }}</td>
+            <td class="ico">
+              <button
+                type="button"
+                class="star"
+                :class="{ on: row.favorite }"
+                :title="row.favorite ? '取消收藏' : '收藏'"
+                @click="onToggleFavorite(row)"
+              >
+                ★
+              </button>
+            </td>
+            <td><span class="dot" :class="statusOn(row) ? 'on' : 'off'" /></td>
+            <td class="account-cell">
+              <div class="name">{{ dash(row.name) }}</div>
+              <div class="mono sub">{{ dash(row.accountId) }}</div>
+            </td>
+            <td>{{ dash(row.dailyLimit) }}</td>
+            <td>{{ totalSpentCell(row) }}</td>
+            <td>{{ dash(row.spendingLimit) }}</td>
+            <td>{{ dash(row.periodSpent) }}</td>
+            <td>{{ dash(row.balance) }}</td>
+            <td>{{ dash(row.remark) }}</td>
+            <td>{{ dash(row.currency) }}</td>
+            <td>{{ dash(row.accountType) }}</td>
+            <td class="linkish">{{ dash(row.ownerRole) }}</td>
+            <td>{{ dash(row.paymentMethod) }}</td>
+            <td>{{ dash(row.billingPeriod) }}</td>
+            <td class="lock" :class="{ policy: !!row.lockReason }">{{ dash(row.lockReason) }}</td>
+            <td>{{ dash(row.createdDate) }}</td>
+            <td class="small">{{ dash(row.timezone) }}</td>
+            <td class="mono small">{{ dash(row.originalId) }}</td>
+            <td class="bm">
+              <div class="linkish">{{ dash(row.createdFromBmName) }}</div>
+              <div v-if="row.createdFromBmId" class="mono sub">{{ row.createdFromBmId }}</div>
+            </td>
+            <td class="bm">
+              <div class="linkish">{{ dash(row.belongsToBmName) }}</div>
+              <div v-if="row.belongsToBmId" class="mono sub">{{ row.belongsToBmId }}</div>
+            </td>
+            <td>{{ dash(row.countryCode) }}</td>
             <td class="muted small">{{ row.capturedAt ? new Date(row.capturedAt).toLocaleString('zh-CN') : '—' }}</td>
           </tr>
           <tr v-if="!filtered.length">
-            <td colspan="10" class="empty">暂无数据。请确认扩展已加载、扩展 ID 正确，并已在 Facebook 相关页面触发采集。</td>
+            <td :colspan="COL_COUNT" class="empty">
+              暂无数据。请确认扩展已加载、扩展 ID 正确，并已在 Facebook 相关页面触发采集。
+            </td>
           </tr>
         </tbody>
       </table>
@@ -224,7 +342,7 @@ onMounted(() => {
 }
 .search-row input {
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #374151;
@@ -239,14 +357,17 @@ onMounted(() => {
   background: #111827;
 }
 table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
 }
+tbody tr:nth-child(even) { background: #0c1222; }
 th, td {
-  padding: 10px 12px;
+  padding: 8px 10px;
   text-align: left;
   border-bottom: 1px solid #1f2937;
+  vertical-align: middle;
 }
 th {
   background: #0f172a;
@@ -254,10 +375,26 @@ th {
   font-weight: 600;
   white-space: nowrap;
 }
-.num { width: 40px; text-align: right; color: #9ca3af; }
-.name { color: #93c5fd; font-weight: 500; }
+.chk { width: 36px; text-align: center; }
+.num { width: 44px; text-align: right; color: #9ca3af; }
+.ico { width: 44px; text-align: center; }
+.star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: #4b5563;
+  padding: 0;
+}
+.star.on { color: #fbbf24; }
+.account-cell .name { color: #93c5fd; font-weight: 500; }
+.linkish { color: #93c5fd; }
+.sub { margin-top: 2px; }
 .mono { font-family: ui-monospace, monospace; color: #d1d5db; }
-.small { font-size: 12px; }
+.small { font-size: 11px; }
+.bm { min-width: 120px; }
+.lock.policy { color: #f87171; font-weight: 500; }
 .empty {
   text-align: center;
   color: #6b7280;

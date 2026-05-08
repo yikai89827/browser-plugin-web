@@ -77,6 +77,14 @@ export async function fetchAccountsFromExtension() {
   });
 }
 
+/** 合并更新单条账户（收藏、备注等） */
+export async function mergeAccountInExtension(patch: Partial<FbAdAccountRecord> & { accountId: string }) {
+  return sendToExtension({
+    action: 'FB_CONTROL_MERGE_ACCOUNT',
+    data: patch,
+  });
+}
+
 export async function fetchPixelSharesFromExtension() {
   return sendToExtension<{ list: FbPixelShareRecord[] }>({
     action: 'FB_CONTROL_GET_PIXEL_SHARES',
