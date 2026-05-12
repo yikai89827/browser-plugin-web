@@ -3,22 +3,24 @@ import path from 'path';
 import { defineConfig } from 'wxt';
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { hostPermissions } from './config/wxtConfig'
+import { loadEnv } from 'vite';
+
 const httpsRE = /^https:\/\//;
-// import path from 'path'
+const env = loadEnv('development', process.cwd(), 'WXT_');
 
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
-  //@ts-ignore
-  // define: {
-  //   'import.meta.env.WXT_API_URL': WXT_API_URL,
-  //   'import.meta.env.WXT_TASK_INTERVAL': WXT_TASK_INTERVAL,
-  //   'import.meta.env.WXT_PAGE_SIZE': WXT_PAGE_SIZE,
-  //   'import.meta.env.WXT_MODAL_TIMEOUT': WXT_MODAL_TIMEOUT,
-  //   'import.meta.env.WXT_COUPON_API_URL': WXT_COUPON_API_URL,
-  //   'import.meta.env.WXT_API_CONNECTNAME': WXT_API_CONNECTNAME,
-  //   'import.meta.env.WXT_API_TIMEOUT': WXT_API_TIMEOUT,
-  //   'import.meta.env.WXT_API_HEARTBEAT': WXT_API_HEARTBEAT,
-  // },
+  define: {
+    'import.meta.env.WXT_API_URL': JSON.stringify(env.WXT_API_URL),
+    'import.meta.env.WXT_ADMIN_URL': JSON.stringify(env.WXT_ADMIN_URL),
+    'import.meta.env.WXT_TASK_INTERVAL': JSON.stringify(env.WXT_TASK_INTERVAL),
+    'import.meta.env.WXT_PAGE_SIZE': JSON.stringify(env.WXT_PAGE_SIZE),
+    'import.meta.env.WXT_MODAL_TIMEOUT': JSON.stringify(env.WXT_MODAL_TIMEOUT),
+    'import.meta.env.WXT_COUPON_API_URL': JSON.stringify(env.WXT_COUPON_API_URL),
+    'import.meta.env.WXT_API_CONNECTNAME': JSON.stringify(env.WXT_API_CONNECTNAME),
+    'import.meta.env.WXT_API_TIMEOUT': JSON.stringify(env.WXT_API_TIMEOUT),
+    'import.meta.env.WXT_API_HEARTBEAT': JSON.stringify(env.WXT_API_HEARTBEAT),
+  },
   // builder: {
   //   rollupOptions: {
   //     output: {
@@ -43,6 +45,7 @@ export default defineConfig({
         "*://*.facebook.com/*",
         "http://localhost/*",
         "http://127.0.0.1/*",
+        "http://192.168.110.77/*",
       ],
       permissions: [
         "scripting",
@@ -80,6 +83,7 @@ export default defineConfig({
           "*://*.facebook.com/*",
           "http://localhost/*",
           "http://127.0.0.1/*",
+          "http://192.168.110.77/*",
         ],
         "use_dynamic_url": true  // 动态URL防止指纹追踪
       }],
@@ -99,6 +103,7 @@ export default defineConfig({
         matches: [
           'http://localhost:*/*',
           'http://127.0.0.1:*/*',
+          'http://192.168.110.77:*/*',
         ],
       },
       // "content_security_policy": {
