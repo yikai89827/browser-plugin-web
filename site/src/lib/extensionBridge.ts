@@ -5,6 +5,9 @@
  */
 
 import type { FbAdAccountRecord, FbPixelShareRecord } from '../../../interfaces/fbControl';
+import type { FbTokenMeta } from '../../../utils/fb/accessTokenStore';
+
+export type { FbTokenMeta };
 
 const STORAGE_KEY = 'fb_control_extension_id';
 
@@ -88,5 +91,36 @@ export async function mergeAccountInExtension(patch: Partial<FbAdAccountRecord> 
 export async function fetchPixelSharesFromExtension() {
   return sendToExtension<{ list: FbPixelShareRecord[] }>({
     action: 'FB_CONTROL_GET_PIXEL_SHARES',
+  });
+}
+
+export async function getFbTokenMetaFromExtension() {
+  return sendToExtension<FbTokenMeta>({
+    action: 'FB_CONTROL_GET_TOKEN_META',
+  });
+}
+
+export async function syncAdAccountsFromGraphViaExtension() {
+  return sendToExtension<{ upserted: number; total: number }>({
+    action: 'FB_CONTROL_SYNC_AD_ACCOUNTS_FROM_GRAPH',
+  });
+}
+
+export async function setFbAccessTokenInExtension(token: string, sourceHost?: string) {
+  return sendToExtension({
+    action: 'FB_CONTROL_SET_ACCESS_TOKEN',
+    data: { token, sourceHost },
+  });
+}
+
+export async function getFbAccessTokenFromExtension() {
+  return sendToExtension<{ token: string | null }>({
+    action: 'FB_CONTROL_GET_ACCESS_TOKEN',
+  });
+}
+
+export async function clearFbAccessTokenInExtension() {
+  return sendToExtension({
+    action: 'FB_CONTROL_CLEAR_ACCESS_TOKEN',
   });
 }

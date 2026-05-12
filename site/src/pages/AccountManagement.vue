@@ -5,9 +5,14 @@ import {
   extensionConfigured,
   fetchAccountsFromExtension,
   getStoredExtensionId,
+  getFbTokenMetaFromExtension,
   mergeAccountInExtension,
   pingExtension,
   setStoredExtensionId,
+  syncAdAccountsFromGraphViaExtension,
+  setFbAccessTokenInExtension,
+  clearFbAccessTokenInExtension,
+  type FbTokenMeta,
 } from '../lib/extensionBridge';
 
 const COL_COUNT = 24;
@@ -19,6 +24,9 @@ const loading = ref(false);
 const errorMsg = ref('');
 const lastUpdated = ref<string>('');
 const extensionOk = ref<boolean | null>(null);
+const tokenMeta = ref<FbTokenMeta | null>(null);
+const showPasteToken = ref(false);
+const pasteTokenInput = ref('');
 /** 行多选（仅前端会话，导出等可后续接） */
 const selectedIds = ref<Record<string, boolean>>({});
 
@@ -127,6 +135,75 @@ function statusOn(row: FbAdAccountRecord) {
   return s.includes('active') || s === '1' || s.includes('enabled');
 }
 
+async function loadTokenMeta() {
+  errorMsg.value = '';
+  if (!extensionConfigured(extensionIdInput.value)) {
+    tokenMeta.value = null;
+    return;
+  }
+  try {
+    saveExtensionId();
+    const res = await getFbTokenMetaFromExtension();
+    if (!res.success) throw new Error(res.error || '读取 Token 状态失败');
+    tokenMeta.value = (res.payload ?? null) as FbTokenMeta | null;
+  } catch (e: any) {
+    errorMsg.value = e?.message || String(e);
+    tokenMeta.value = null;
+  }
+}
+
+async function syncFromGraph() {
+  errorMsg.value = '';
+  loading.value = true;
+  saveExtensionId();
+  try {
+    if (!extensionConfigured(extensionIdInput.value)) {
+      throw new Error('请先填写扩展 ID');
+    }
+    const res = await syncAdAccountsFromGraphViaExtension();
+    if (!res.success) throw new Error(res.error || 'Graph 同步失败');
+    await refreshFromExtension();
+    await loadTokenMeta();
+  } catch (e: any) {
+    errorMsg.value = e?.message || String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function savePastedToken() {
+  errorMsg.value = '';
+  const t = pasteTokenInput.value.trim();
+  if (!t) {
+    errorMsg.value = '请粘贴 access_token';
+    return;
+  }
+  loading.value = true;
+  try {
+    const res = await setFbAccessTokenInExtension(t, 'local_site_paste');
+    if (!res.success) throw new Error(res.error || '保存失败');
+    showPasteToken.value = false;
+    pasteTokenInput.value = '';
+    await loadTokenMeta();
+  } catch (e: any) {
+    errorMsg.value = e?.message || String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function onClearToken() {
+  if (!confirm('确定清除本地保存的 Facebook access_token？')) return;
+  errorMsg.value = '';
+  try {
+    const res = await clearFbAccessTokenInExtension();
+    if (!res.success) throw new Error(res.error || '清除失败');
+    await loadTokenMeta();
+  } catch (e: any) {
+    errorMsg.value = e?.message || String(e);
+  }
+}
+
 async function onToggleFavorite(row: FbAdAccountRecord) {
   errorMsg.value = '';
   try {
@@ -140,7 +217,9 @@ async function onToggleFavorite(row: FbAdAccountRecord) {
 
 onMounted(() => {
   extensionIdInput.value = getStoredExtensionId();
-  refreshFromExtension().catch(() => {});
+  refreshFromExtension()
+    .then(() => loadTokenMeta())
+    .catch(() => {});
 });
 </script>
 
@@ -170,10 +249,47 @@ onMounted(() => {
       </div>
     </div>
 
+    <div v-if="extensionConfigured(extensionIdInput)" class="token-bar">
+      <div class="token-info">
+        <span class="badge" :class="tokenMeta?.hasToken ? 'ok' : 'warn'">
+          {{ tokenMeta?.hasToken ? 'Token 已保存' : '未捕获 Token' }}
+        </span>
+        <span v-if="tokenMeta?.hasToken && tokenMeta.updatedAt" class="muted token-detail">
+          更新于 {{ new Date(tokenMeta.updatedAt).toLocaleString('zh-CN') }}
+          <template v-if="tokenMeta.sourceHost"> · {{ tokenMeta.sourceHost }}</template>
+          <template v-if="tokenMeta.tokenPrefix"> · {{ tokenMeta.tokenPrefix }}</template>
+        </span>
+      </div>
+      <div class="token-actions">
+        <button class="btn ghost sm" type="button" :disabled="loading" @click="loadTokenMeta">Token 状态</button>
+        <button class="btn primary sm" type="button" :disabled="loading" @click="syncFromGraph">Graph 同步账户</button>
+        <button class="btn ghost sm" type="button" :disabled="loading" @click="showPasteToken = true">粘贴 Token</button>
+        <button class="btn danger sm" type="button" :disabled="loading" @click="onClearToken">清除 Token</button>
+      </div>
+    </div>
+
+    <div v-if="showPasteToken" class="modal-overlay" @click.self="showPasteToken = false">
+      <div class="modal-box">
+        <h3>粘贴 access_token</h3>
+        <p class="muted small">将自动保存到扩展本地 storage，供 Graph 拉取广告账户使用。</p>
+        <textarea v-model="pasteTokenInput" rows="4" placeholder="EAAB…" />
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" @click="showPasteToken = false">取消</button>
+          <button type="button" class="btn primary" :disabled="loading" @click="savePastedToken">保存</button>
+        </div>
+      </div>
+    </div>
+
     <p v-if="errorMsg" class="alert">{{ errorMsg }}</p>
 
     <div class="hint">
-      在 Chrome 中打开 Facebook 广告管理相关页面后，扩展会采集并写入 IndexedDB；下列字段与自有平台广告账号表对齐，未采集项显示为「—」。收藏变更会写回扩展数据库。
+      在 Chrome 中打开并操作
+      <strong>Facebook 广告管理</strong>
+      （任意会请求 Graph 的页面）时，扩展会在后台从请求 URL 中捕获
+      <code>access_token</code>
+      并保存到本地。随后在管理页点击「Graph 同步账户」即可用该 token 调用
+      <code>me/adaccounts</code>
+      写入账户表。收藏等仍写入 IndexedDB。
     </div>
 
     <div class="search-row">
@@ -395,6 +511,58 @@ th {
 .small { font-size: 11px; }
 .bm { min-width: 120px; }
 .lock.policy { color: #f87171; font-weight: 500; }
+.badge.warn { background: #78350f; color: #fcd34d; }
+.token-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: #111827;
+  border-radius: 8px;
+  border: 1px solid #374151;
+}
+.token-info { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.token-detail { font-size: 12px; }
+.token-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn.sm { padding: 6px 12px; font-size: 12px; }
+.btn.danger { background: #7f1d1d; color: #fecaca; }
+.btn.danger:hover { background: #991b1b; }
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.modal-box {
+  width: 420px;
+  max-width: 92vw;
+  padding: 20px;
+  background: #1f2937;
+  border-radius: 10px;
+  border: 1px solid #374151;
+  color: #e5e7eb;
+}
+.modal-box h3 { margin: 0 0 8px; font-size: 16px; }
+.modal-box textarea {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #4b5563;
+  background: #111827;
+  color: #e5e7eb;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .empty {
   text-align: center;
   color: #6b7280;
