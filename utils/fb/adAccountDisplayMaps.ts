@@ -35,16 +35,25 @@ const DISABLE_REASON_ZH: Record<string, string> = {
   UNUSED: '未使用',
 };
 
-/** Meta 文档与社区常见取值；未命中时展示「角色（编码）」 */
+/**
+ * Graph `user_role` 数值枚举（与 Meta 广告账户权限文档常见取值对齐；未收录 ID 仍给可读占位）。
+ * @see https://developers.facebook.com/docs/marketing-api/reference/ad-account
+ */
 const USER_ROLE_NUM_ZH: Record<number, string> = {
+  1: '管理员',
+  2: '一般用户',
+  3: '报表',
   1001: '管理员',
   1002: '广告主',
   1003: '分析师',
   1004: '直销权限',
   1005: '财务编辑',
+  1006: '仅报表',
+  1007: '销售',
 };
 
 const USER_ROLE_STR_ZH: Record<string, string> = {
+  ADMIN: '管理员',
   ADMINISTRATOR: '管理员',
   GENERAL_USER: '普通用户',
   ADVERTISER: '广告主',
@@ -53,6 +62,11 @@ const USER_ROLE_STR_ZH: Record<string, string> = {
   SALES: '销售',
   FINANCE_EDITOR: '财务编辑',
   FINANCE_ANALYST: '财务分析',
+  EMPLOYEE: '员工',
+  VIEWER: '查看者',
+  AGENCY: '代理商',
+  OWNER: '所有者',
+  DEVELOPER: '开发者',
 };
 
 /**
@@ -97,10 +111,38 @@ export function formatUserRoleZh(raw: unknown): string | undefined {
   if (!Number.isNaN(n) && String(n) === s0) {
     if (USER_ROLE_NUM_ZH[n]) return USER_ROLE_NUM_ZH[n];
     if (n >= 1000 && n < 10000) return `角色（${n}）`;
-    return `内部角色编码 ${n}`;
+    /** Meta / BM 侧常见大整数角色 ID，无公开枚举名时标注为系统角色 */
+    if (n > 1_000_000_000) return `系统角色（${n}）`;
+    return `角色码 ${n}`;
   }
-  const key = s0.toUpperCase().replace(/\s+/g, '_');
+  const key = s0.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+  if (USER_ROLE_STR_ZH[key]) return USER_ROLE_STR_ZH[key];
+  /** 兼容已落库的「内部角色编码 xxx」 */
+  const legacy = s0.match(/内部角色编码\s*(\d+)/);
+  if (legacy) {
+    const inner = Number.parseInt(legacy[1], 10);
+    if (!Number.isNaN(inner)) {
+      if (USER_ROLE_NUM_ZH[inner]) return USER_ROLE_NUM_ZH[inner];
+      if (inner > 1_000_000_000) return `系统角色（${inner}）`;
+      return `角色码 ${inner}`;
+    }
+  }
   return USER_ROLE_STR_ZH[key] ?? s0;
+}
+
+/**
+ * 表格「所有者角色」列：优先用原始 `user_role` 再映射，其次解析已格式化文案中的数字。
+ */
+export function formatOwnerRoleForTable(row: { userRoleRaw?: string | number; ownerRole?: string }): string {
+  const fromRaw = formatUserRoleZh(row.userRoleRaw);
+  if (fromRaw) return fromRaw;
+  const stored = row.ownerRole;
+  if (stored != null && String(stored).trim()) {
+    const again = formatUserRoleZh(stored);
+    if (again) return again;
+    return String(stored);
+  }
+  return '—';
 }
 
 /**

@@ -3,11 +3,22 @@ import { ref, watch, onMounted } from 'vue';
 import Dashboard from './pages/Dashboard.vue';
 import AccountManagement from './pages/AccountManagement.vue';
 import PixelSharing from './pages/PixelSharing.vue';
+import { pingExtension, usesExtensionIdFromEnv } from './lib/extensionBridge';
+import {
+  accountsListLastUpdatedDisplay,
+  accountsGraphSyncReady,
+  accountsGraphSyncRunning,
+  requestAccountsGraphSync,
+} from './lib/accountListSyncHub';
 
 const THEME_KEY = 'fb_admin_theme';
 
 const currentPage = ref('dashboard');
 const theme = ref<'dark' | 'light'>('dark');
+
+/** 账户管理：内容区插件检测（不遮挡侧栏与顶栏） */
+type AccountsGateState = 'idle' | 'checking' | 'no_config' | 'disconnected' | 'ready';
+const accountsGate = ref<AccountsGateState>('idle');
 
 onMounted(() => {
   const stored = localStorage.getItem(THEME_KEY);
@@ -26,6 +37,40 @@ const navItems = [
   { id: 'pixels', label: '像素分享', icon: '🔍' },
 ];
 
+async function runAccountsExtensionGate() {
+  accountsGate.value = 'checking';
+  if (!usesExtensionIdFromEnv()) {
+    accountsGate.value = 'no_config';
+    return;
+  }
+  try {
+    const res = await pingExtension();
+    if (res.success && res.payload?.ok) {
+      accountsGate.value = 'ready';
+    } else {
+      accountsGate.value = 'disconnected';
+    }
+  } catch {
+    accountsGate.value = 'disconnected';
+  }
+}
+
+watch(currentPage, (p) => {
+  if (p === 'accounts') {
+    void runAccountsExtensionGate();
+  } else {
+    accountsGate.value = 'idle';
+  }
+});
+
+function openChromeExtensionsPage() {
+  try {
+    window.open('chrome://extensions/', '_blank', 'noopener,noreferrer');
+  } catch {
+    /* ignore */
+  }
+}
+
 const handleNavClick = (pageId: string) => {
   currentPage.value = pageId;
 };
@@ -36,8 +81,23 @@ const handleNavClick = (pageId: string) => {
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="logo">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.68-.22.68-.48v-1.7c-2.78.61-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.26-.45-1.31.1-2.64 0 0 .84-.27 2.75 1.02A9.578 9.578 0 0112 6.8c.85 0 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.33.2 2.38.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.56 4.93.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48C19.13 20.17 22 16.42 22 12c0-5.52-4.48-10-10-10z" fill="#1877f2"/>
+          <svg
+            class="logo-spider"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="13" r="4" fill="currentColor" opacity="0.9" />
+            <circle cx="12" cy="8" r="2.2" fill="currentColor" />
+            <path
+              d="M4 6 L8 9 M20 6 L16 9 M3 11 L8 11 M21 11 L16 11 M4 16 L8 13 M20 16 L16 13 M6 20 L9 15 M18 20 L15 15"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
           </svg>
           <span>FB广告管理</span>
         </div>
@@ -61,6 +121,19 @@ const handleNavClick = (pageId: string) => {
       <header class="content-header">
         <h1>{{ navItems.find(item => item.id === currentPage)?.label }}</h1>
         <div class="header-actions">
+          <template v-if="currentPage === 'accounts' && accountsGate === 'ready'">
+            <span class="accounts-header-meta">
+              最近一次更新时间：{{ accountsListLastUpdatedDisplay || '—' }}
+            </span>
+            <button
+              type="button"
+              class="btn-header-update"
+              :disabled="!accountsGraphSyncReady || accountsGraphSyncRunning"
+              @click="requestAccountsGraphSync"
+            >
+              {{ accountsGraphSyncRunning ? '加载中…' : '更新' }}
+            </button>
+          </template>
           <div class="theme-switch" role="group" aria-label="界面主题">
             <button
               type="button"
@@ -79,16 +152,51 @@ const handleNavClick = (pageId: string) => {
               白天
             </button>
           </div>
-          <button class="btn btn-secondary">设置</button>
           <div class="user-info">
             <span>管理员</span>
           </div>
         </div>
       </header>
       
-      <div class="content-body">
-        <Dashboard v-if="currentPage === 'dashboard'" />
-        <AccountManagement v-else-if="currentPage === 'accounts'" />
+      <div
+        class="content-body"
+        :class="{ 'content-body--accounts-gate': currentPage === 'accounts' }"
+      >
+        <template v-if="currentPage === 'accounts'">
+          <div
+            v-if="accountsGate !== 'ready'"
+            class="accounts-gate-overlay"
+            role="status"
+            aria-live="polite"
+          >
+            <div class="accounts-gate-card">
+              <template v-if="accountsGate === 'checking'">
+                <div class="accounts-gate-spinner" aria-hidden="true"></div>
+                <p class="accounts-gate-title">正在检测扩展连接…</p>
+              </template>
+              <template v-else-if="accountsGate === 'no_config'">
+                <p class="accounts-gate-title">未配置扩展 ID</p>
+                <p class="accounts-gate-desc">
+                  请在 <code>site/.env.development</code>（或 <code>site/.env</code>）中设置
+                  <code>VITE_EXTENSION_ID</code> 后重新运行站点构建。
+                </p>
+              </template>
+              <template v-else>
+                <p class="accounts-gate-title">无法连接到扩展</p>
+                <p class="accounts-gate-desc">
+                  请确认已安装并启用插件，且本站点来源在扩展 manifest 的
+                  <code>externally_connectable</code> 中。可在 Chrome 中打开扩展管理页核对。
+                </p>
+                <div class="accounts-gate-actions">
+                  <button type="button" class="btn-open-ext" @click="openChromeExtensionsPage">打开</button>
+                  <button type="button" class="btn-recheck" @click="runAccountsExtensionGate">重新检测</button>
+                </div>
+              </template>
+            </div>
+          </div>
+          <AccountManagement v-if="accountsGate === 'ready'" />
+        </template>
+        <Dashboard v-else-if="currentPage === 'dashboard'" />
         <PixelSharing v-else-if="currentPage === 'pixels'" />
       </div>
     </main>
@@ -134,6 +242,12 @@ const handleNavClick = (pageId: string) => {
   --fb-dash-table-th: #9ca3af;
   --fb-dash-table-td: #d1d5db;
   --fb-dash-view-all: #93c5fd;
+  --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  --sidebar-text: #f1f5f9;
+  --sidebar-muted: rgba(241, 245, 249, 0.65);
+  --sidebar-border: rgba(148, 163, 184, 0.2);
+  --sidebar-nav-hover: rgba(148, 163, 184, 0.12);
+  --sidebar-logo: #e2e8f0;
 }
 
 .site-container.theme-light {
@@ -181,6 +295,12 @@ const handleNavClick = (pageId: string) => {
   --fb-dash-table-th: #6b7280;
   --fb-dash-table-td: #374151;
   --fb-dash-view-all: #1877f2;
+  --sidebar-bg: #ffffff;
+  --sidebar-text: #0f172a;
+  --sidebar-muted: #64748b;
+  --sidebar-border: #e2e8f0;
+  --sidebar-nav-hover: #f1f5f9;
+  --sidebar-logo: #0f172a;
 }
 
 .site-container.theme-dark {
@@ -196,12 +316,52 @@ const handleNavClick = (pageId: string) => {
   --fb-btn-secondary-hover: #334155;
 }
 
-.sidebar { width: 240px; background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%); color: #fff; flex-direction: column; position: fixed; left: 0; top: 0; bottom: 0; display: flex; }
-.sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-.logo { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 600; }
+.sidebar {
+  width: 240px;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  flex-direction: column;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+}
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--sidebar-text);
+}
+.logo-spider {
+  flex-shrink: 0;
+  color: var(--sidebar-logo);
+}
 .sidebar-nav { flex: 1; padding: 10px; }
-.nav-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: none; background: transparent; color: rgba(255,255,255,0.7); cursor: pointer; border-radius: 8px; transition: all 0.3s; font-size: 14px; }
-.nav-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-muted);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.3s;
+  font-size: 14px;
+}
+.nav-item:hover {
+  background: var(--sidebar-nav-hover);
+  color: var(--sidebar-text);
+}
 .nav-item.active { background: #1877f2; color: #fff; }
 .nav-icon { font-size: 18px; }
 .nav-label { font-weight: 500; }
@@ -226,6 +386,28 @@ const handleNavClick = (pageId: string) => {
 }
 .content-header h1 { font-size: 24px; color: var(--fb-content-header-text); margin: 0; }
 .header-actions { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+.accounts-header-meta {
+  font-size: 13px;
+  color: var(--fb-muted, #9ca3af);
+  white-space: nowrap;
+}
+.btn-header-update {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+}
+.btn-header-update:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.btn-header-update:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .theme-switch {
   display: inline-flex;
   border-radius: 8px;
@@ -268,5 +450,96 @@ const handleNavClick = (pageId: string) => {
   padding: 24px 30px;
   background: var(--fb-content-body-bg);
   color: var(--fb-content-body-text);
+}
+.content-body--accounts-gate {
+  position: relative;
+  min-height: 240px;
+}
+.accounts-gate-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.9);
+}
+.site-container.theme-light .accounts-gate-overlay {
+  background: rgba(245, 247, 250, 0.94);
+}
+.accounts-gate-card {
+  max-width: 420px;
+  padding: 22px 24px;
+  border-radius: 10px;
+  border: 1px solid var(--fb-border, #374151);
+  background: var(--fb-surface-b, #1f2937);
+  color: var(--fb-page-text, #e8eaed);
+  text-align: center;
+}
+.accounts-gate-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.accounts-gate-desc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fb-muted, #9ca3af);
+  text-align: left;
+}
+.accounts-gate-desc code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--fb-surface-a, #111827);
+  border: 1px solid var(--fb-border, #374151);
+}
+.accounts-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+.btn-open-ext {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+}
+.btn-open-ext:hover {
+  filter: brightness(1.08);
+}
+.btn-recheck {
+  border: 1px solid var(--fb-border, #374151);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  background: var(--fb-surface-a, #111827);
+  color: var(--fb-page-text, #e8eaed);
+}
+.btn-recheck:hover {
+  border-color: var(--fb-link, #3b82f6);
+  color: var(--fb-link, #93c5fd);
+}
+.accounts-gate-spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 14px;
+  border: 3px solid rgba(147, 197, 253, 0.25);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: accounts-gate-spin 0.75s linear infinite;
+}
+@keyframes accounts-gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

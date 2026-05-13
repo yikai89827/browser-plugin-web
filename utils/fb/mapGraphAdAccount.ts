@@ -178,6 +178,7 @@ export function mapGraphApiAdAccountToRecord(
         : a.amount_spent_string != null
           ? String(a.amount_spent_string)
           : undefined,
+    userRoleRaw: a.user_role != null ? (typeof a.user_role === 'number' ? a.user_role : String(a.user_role)) : undefined,
     ownerRole: formatUserRoleZh(a.user_role),
     paymentMethod: formatPaymentMethodZh(
       a.funding_source ?? a.payment_method,

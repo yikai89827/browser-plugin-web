@@ -1,12 +1,8 @@
 /**
  * 本地站点通过 externally_connectable 与扩展后台通讯。
  *
- * 扩展 ID 来源（优先级从高到低）：
- * 1. `site/.env.development` / `site/.env` 中的 `VITE_EXTENSION_ID`（构建时注入，适合团队固定配置）
- * 2. sessionStorage（页面输入框，仅在未配置环境变量时使用）
- *
- * 说明：上架 Chrome Web Store 后扩展 ID 固定；本地「加载已解压」时 ID 一般随扩展目录路径稳定，
- * 换目录或换机可能变化，此时更新 .env 即可，无需在页面重复填写。
+ * 扩展 ID 仅来自 `site/.env.development` / `site/.env` 中的 `VITE_EXTENSION_ID`（Vite 构建时注入）。
+ * 本地「加载已解压」时 ID 一般随扩展目录路径稳定，换目录或换机后请更新 .env 并重新构建站点。
  */
 
 import type { FbAdAccountRecord, FbAdAccountPaymentActivity, FbPixelShareRecord } from '../../../interfaces/fbControl';
@@ -48,21 +44,14 @@ function getChrome(): typeof chrome | undefined {
   return typeof chrome !== 'undefined' ? chrome : undefined;
 }
 
-/** 实际用于 chrome.runtime.sendMessage 的扩展 ID：优先 .env，其次页面 session */
+/** 实际用于 chrome.runtime.sendMessage 的扩展 ID（仅 .env） */
 export function getStoredExtensionId(): string {
-  const fromEnv = getExtensionIdFromEnv();
-  if (fromEnv.length >= 8) return fromEnv;
-  const fromSession =
-    typeof sessionStorage !== 'undefined'
-      ? sessionStorage.getItem(STORAGE_KEY) || ''
-      : '';
-  return fromSession.trim();
+  return getExtensionIdFromEnv();
 }
 
-/** 将页面输入的扩展 ID 写入 session（仅在未配置 VITE_EXTENSION_ID 时生效） */
-export function setStoredExtensionId(id: string) {
-  if (usesExtensionIdFromEnv()) return;
-  sessionStorage.setItem(STORAGE_KEY, id.trim());
+/** 已废弃：扩展 ID 不再通过页面或 session 写入，保留空实现以免旧代码报错 */
+export function setStoredExtensionId(_id: string) {
+  void _id;
 }
 
 /** 清除 session 中的临时扩展 ID（仍优先使用 .env） */
@@ -85,7 +74,7 @@ export function sendToExtension<T = unknown>(message: {
   const chromeApi = getChrome();
   if (!extensionConfigured(extId)) {
     return Promise.reject(
-      new Error('请配置 site/.env.development（或 .env）中的 VITE_EXTENSION_ID，或在页面填写扩展 ID')
+      new Error('请在 site/.env.development（或 .env）中配置 VITE_EXTENSION_ID，并重新执行站点构建')
     );
   }
   if (!chromeApi?.runtime?.sendMessage) {

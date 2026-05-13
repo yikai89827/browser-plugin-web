@@ -6,7 +6,6 @@ import {
   fetchPixelSharesFromExtension,
   getStoredExtensionId,
   pingExtension,
-  setStoredExtensionId,
   usesExtensionIdFromEnv,
 } from '../lib/extensionBridge';
 import { fbControlLog } from '../../../utils/fbControlLog';
@@ -14,8 +13,6 @@ import { fbControlLog } from '../../../utils/fbControlLog';
 /**
  * 像素分享管理页：从扩展 IndexedDB 读取由 content script 采集的像素行。
  */
-const extensionIdInput = ref(getStoredExtensionId());
-
 const rows = ref<FbPixelShareRecord[]>([]);
 const searchQuery = ref('');
 const loading = ref(false);
@@ -44,17 +41,12 @@ const filtered = computed(() => {
   });
 });
 
-function saveExtensionId() {
-  setStoredExtensionId(extensionIdInput.value);
-}
-
 async function testExtension() {
   errorMsg.value = '';
   extensionOk.value = null;
-  saveExtensionId();
   fbControlLog('site:pixel-page', '检测扩展连接');
   if (!extensionConfigured()) {
-    errorMsg.value = '请在 site/.env.development 配置 VITE_EXTENSION_ID，或在页面填写扩展 ID';
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
     return;
   }
   try {
@@ -70,11 +62,10 @@ async function testExtension() {
 async function refreshFromExtension() {
   errorMsg.value = '';
   loading.value = true;
-  saveExtensionId();
   fbControlLog('site:pixel-page', '从扩展拉取像素分享列表');
   try {
     if (!extensionConfigured()) {
-      throw new Error('请配置 VITE_EXTENSION_ID 或页面扩展 ID');
+      throw new Error('请在 site/.env.development 中配置 VITE_EXTENSION_ID');
     }
     const res = await fetchPixelSharesFromExtension();
     if (!res.success) throw new Error(res.error || '读取失败');
@@ -102,7 +93,6 @@ function flag(ok?: boolean) {
 }
 
 onMounted(() => {
-  extensionIdInput.value = getStoredExtensionId();
   fbControlLog('site:pixel-page', '页面挂载，自动拉取像素');
   refreshFromExtension().catch(() => {});
 });
@@ -122,15 +112,7 @@ onMounted(() => {
           <span>扩展 ID</span>
           <code class="ext-id-preview" :title="getStoredExtensionId()">{{ getStoredExtensionId().slice(0, 12) }}…</code>
         </div>
-        <label v-else class="ext-id">
-          <span>扩展 ID</span>
-          <input
-            v-model="extensionIdInput"
-            type="text"
-            placeholder="chrome://extensions 中的 ID"
-            @change="saveExtensionId"
-          />
-        </label>
+        <span v-else class="muted tiny">请在 site/.env.development 配置 VITE_EXTENSION_ID</span>
         <button class="btn ghost" type="button" :disabled="loading" @click="testExtension">检测连接</button>
         <button class="btn primary" type="button" :disabled="loading" @click="refreshFromExtension">
           {{ loading ? '加载中…' : '从扩展刷新' }}

@@ -31,6 +31,9 @@ function mergeAdAccount(
   if (incoming.hiddenAdminCount === undefined && p?.hiddenAdminCount !== undefined) {
     out.hiddenAdminCount = p.hiddenAdminCount;
   }
+  if (incoming.userRoleRaw === undefined && p?.userRoleRaw !== undefined) {
+    out.userRoleRaw = p.userRoleRaw;
+  }
   return out;
 }
 

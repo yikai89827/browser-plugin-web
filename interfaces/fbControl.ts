@@ -30,6 +30,8 @@ export interface FbAdAccountRecord {
   accountType?: string;
   /** 所有者角色（如 Admin） */
   ownerRole?: string;
+  /** Graph `user_role` 原始值（便于重新映射展示） */
+  userRoleRaw?: string | number;
   /** 支付方法 */
   paymentMethod?: string;
   /** 账单期 */
