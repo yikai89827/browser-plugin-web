@@ -40,6 +40,19 @@ function parseAmountSpent(v: unknown): number {
   return parseSpend(String(v));
 }
 
+function readBusinessNode(v: unknown): { id?: string; name?: string } {
+  if (v == null) return {};
+  if (typeof v === 'string' || typeof v === 'number') {
+    const id = String(v).trim();
+    return id ? { id } : {};
+  }
+  if (typeof v !== 'object') return {};
+  const o = v as Record<string, unknown>;
+  const id = o.id != null ? String(o.id) : undefined;
+  const name = o.name != null ? String(o.name) : undefined;
+  return { id, name };
+}
+
 /** Graph / 页面脚本中的广告账户 JSON → 表格行 */
 export function mapGraphApiAdAccountToRecord(
   a: Record<string, unknown>,
@@ -56,9 +69,20 @@ export function mapGraphApiAdAccountToRecord(
   if (prepay === true || prepay === 1) accountType = '预付';
   else if (prepay === false || prepay === 0) accountType = '后付费';
 
-  const business = (a.business ?? a.owner_business) as Record<string, unknown> | undefined;
-  const bmId = business?.id != null ? String(business.id) : undefined;
-  const bmName = business?.name != null ? String(business.name) : undefined;
+  const biz = readBusinessNode(a.business);
+  const ownerBiz = readBusinessNode(a.owner_business);
+  const rootBusinessName =
+    a.business_name != null && String(a.business_name).trim()
+      ? String(a.business_name).trim()
+      : undefined;
+
+  /** 创建自 BM：优先 owner_business，否则 business */
+  const createdBmId = ownerBiz.id ?? biz.id;
+  const createdBmName = ownerBiz.name ?? biz.name ?? rootBusinessName;
+
+  /** 所属 BM：优先 business（资产关联），否则与创建一致 */
+  const belongsBmId = biz.id ?? ownerBiz.id;
+  const belongsBmName = biz.name ?? ownerBiz.name ?? rootBusinessName;
   const createdTime = a.created_time != null ? String(a.created_time) : '';
   const createdDate = createdTime.length >= 10 ? createdTime.slice(0, 10) : undefined;
 
@@ -110,21 +134,18 @@ export function mapGraphApiAdAccountToRecord(
         ? String(a.timezone_name ?? a.timezone_id ?? a.timezone_offset_hours_utc)
         : undefined,
     originalId: oid,
-    createdFromBmName: bmName,
-    createdFromBmId: bmId,
-    belongsToBmName: a.business_name != null ? String(a.business_name) : undefined,
-    belongsToBmId:
-      a.business_id != null
-        ? String(a.business_id)
-        : a.owner_business_id != null
-          ? String(a.owner_business_id)
-          : undefined,
+    createdFromBmName: createdBmName,
+    createdFromBmId: createdBmId,
+    belongsToBmName: belongsBmName,
+    belongsToBmId: belongsBmId,
     countryCode:
-      a.country_code != null
-        ? String(a.country_code)
-        : a.country != null
-          ? String(a.country)
-          : undefined,
+      a.business_country_code != null
+        ? String(a.business_country_code).trim() || undefined
+        : a.country_code != null
+          ? String(a.country_code).trim() || undefined
+          : a.country != null
+            ? String(a.country).trim() || undefined
+            : undefined,
     spend: amountSpent,
     capturedAt: now,
     sourceUrl: sourceUrl,

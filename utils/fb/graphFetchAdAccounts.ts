@@ -14,8 +14,11 @@ const AD_ACCOUNT_FIELDS = [
   'balance',
   'spend_cap',
   'min_daily_budget',
-  'business',
-  'owner_business',
+  /** BM 与地址：须展开子字段，否则常只有 id；国家用 business_country_code */
+  'business{id,name}',
+  'owner_business{id,name}',
+  'business_name',
+  'business_country_code',
   'created_time',
   'timezone_name',
   'disable_reason',
@@ -25,11 +28,6 @@ const AD_ACCOUNT_FIELDS = [
   'funding_source',
   'funding_source_details{display_string}',
   'user_role',
-  'business_id',
-  'owner_business_id',
-  'business_name',
-  'country',
-  'country_code',
 ].join(',');
 
 /**
