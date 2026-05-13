@@ -132,8 +132,11 @@ function totalSpentCell(row: FbAdAccountRecord) {
 }
 
 function statusOn(row: FbAdAccountRecord) {
-  const s = (row.status || '').toLowerCase();
-  return s.includes('active') || s === '1' || s.includes('enabled');
+  const s = (row.status || '').trim();
+  const sl = s.toLowerCase();
+  if (!s || s === '未知') return false;
+  if (s.includes('活跃') || s.includes('可投放') || s.includes('运行')) return true;
+  return sl.includes('active') || sl.includes('enabled') || s === '1';
 }
 
 async function loadTokenMeta() {

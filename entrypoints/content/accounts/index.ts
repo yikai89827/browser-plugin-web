@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import {
+  isLikelyFacebookAdAccountId,
   mapGraphApiAdAccountToRecord,
   normalizeAccountId,
 } from '../../../utils/fb/mapGraphAdAccount';
@@ -51,6 +52,7 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
           const idText = idEl?.textContent?.trim() || '';
           const fallbackKey = `row_${index}_${nameText.slice(0, 32)}`;
           const accountId = normalizeAccountId(idText || nameText, fallbackKey);
+          if (!isLikelyFacebookAdAccountId(accountId)) return;
 
           if (nameText || accountId) {
             const spend = parseSpend(spendEl?.textContent);

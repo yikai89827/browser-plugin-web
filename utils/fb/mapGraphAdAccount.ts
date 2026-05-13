@@ -1,4 +1,11 @@
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
+import {
+  formatAccountStatusZh,
+  formatDisableReasonZh,
+  formatPaymentMethodZh,
+  formatUserRoleZh,
+  readFundingSourceDisplay,
+} from './adAccountDisplayMaps';
 
 export function extractNumericAccountId(text: string | null | undefined): string {
   if (!text) return '';
@@ -12,6 +19,12 @@ export function normalizeAccountId(raw: string, fallbackKey: string): string {
   const fromBlob = extractNumericAccountId(raw);
   if (fromBlob) return fromBlob;
   return fallbackKey;
+}
+
+/** 广告账户 ID 为纯数字长串；用于过滤 DOM 误采集的表头/占位行 */
+export function isLikelyFacebookAdAccountId(accountId: string): boolean {
+  const id = accountId.replace(/^act_/i, '').trim();
+  return /^\d{10,}$/.test(id);
 }
 
 function parseSpend(spendText?: string | null): number {
@@ -56,10 +69,12 @@ export function mapGraphApiAdAccountToRecord(
         ? String(a.account_id)
         : accountId;
 
+  const fundingDisplay = readFundingSourceDisplay(a);
+
   return {
     accountId,
     name: String(a.name ?? a.account_name ?? accountId),
-    status: String(a.account_status ?? a.status ?? 'unknown'),
+    status: formatAccountStatusZh(a.account_status ?? a.status ?? 'unknown'),
     currency: currency || undefined,
     accountType,
     balance: balance || undefined,
@@ -77,20 +92,18 @@ export function mapGraphApiAdAccountToRecord(
         : a.amount_spent_string != null
           ? String(a.amount_spent_string)
           : undefined,
-    ownerRole: a.user_role != null ? String(a.user_role) : undefined,
-    paymentMethod:
-      a.funding_source != null
-        ? String(a.funding_source)
-        : a.payment_method != null
-          ? String(a.payment_method)
-          : undefined,
+    ownerRole: formatUserRoleZh(a.user_role),
+    paymentMethod: formatPaymentMethodZh(
+      a.funding_source ?? a.payment_method,
+      fundingDisplay
+    ),
     billingPeriod:
       a.next_bill_date != null
         ? String(a.next_bill_date)
         : a.end_advertiser != null
           ? String(a.end_advertiser)
           : undefined,
-    lockReason: a.disable_reason != null ? String(a.disable_reason) : undefined,
+    lockReason: formatDisableReasonZh(a.disable_reason),
     createdDate,
     timezone:
       (a.timezone_name ?? a.timezone_id ?? a.timezone_offset_hours_utc) != null

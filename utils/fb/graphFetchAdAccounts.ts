@@ -23,6 +23,7 @@ const AD_ACCOUNT_FIELDS = [
   'end_advertiser',
   'next_bill_date',
   'funding_source',
+  'funding_source_details{display_string}',
   'user_role',
   'business_id',
   'owner_business_id',
