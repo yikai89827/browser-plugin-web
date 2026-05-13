@@ -1,7 +1,17 @@
 import { browser } from 'wxt/browser';
 import { browserStorage } from '../../utils/storage';
+import { describeToken } from '@/fb/tokenDebugLog';
 import { extractAccessTokenFromUrl } from '../fb/extractAccessTokenFromUrl';
 import { saveFbAccessToken } from '../fb/accessTokenStore';
+
+function redactPath(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.pathname}`.slice(0, 120);
+  } catch {
+    return url.slice(0, 80);
+  }
+}
 
 function isFacebookRequestUrl(url: string): boolean {
   try {
@@ -28,8 +38,15 @@ async function captureFbTokenFromRequestUrl(url: string): Promise<void> {
   } catch {
     host = 'unknown';
   }
+  console.info(
+    '[fbControl:token] 从请求 URL 解析到 access_token，准备写入本地 storage',
+    { host, path: redactPath(url), token: describeToken(token) }
+  );
   await saveFbAccessToken(token, host);
-  console.log('%c token', 'color:#000;', token);
+  console.info('[fbControl:token] access_token 已保存（含 lyRequestHeadersToken 兼容写入）', {
+    host,
+    token: describeToken(token),
+  });
   // 兼容旧键名（若其它模块读取）
   await browserStorage.set('lyRequestHeadersToken', token);
 }
@@ -48,7 +65,7 @@ export const getWebRequestHeaders = () => {
         if (!url) return { requestHeaders: details.requestHeaders };
 
         void captureFbTokenFromRequestUrl(url).catch((e) =>
-          console.warn('[fbControl] token capture failed', e)
+          console.warn('[fbControl:token] 捕获或保存 token 失败', e)
         );
 
       } catch (error) {

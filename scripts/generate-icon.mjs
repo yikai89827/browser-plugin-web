@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
-// 优化后的蜘蛛图标 SVG 代码 - 添加白色背景
+// 优化后的蜘蛛图标 SVG 代码 - 加粗腿部
 const spiderSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <!-- 白色背景 -->
@@ -25,15 +25,15 @@ const spiderSvg = `
   <circle cx="70" cy="32" r="3" fill="#fff"/>
   <circle cx="58" cy="32" r="1.5" fill="#000"/>
   <circle cx="70" cy="32" r="1.5" fill="#000"/>
-  <!-- 曲线腿部 - 使用贝塞尔曲线 -->
-  <path d="M64 50 Q40 45 20 25" stroke="url(#spiderGradient)" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <path d="M64 50 Q40 55 20 85" stroke="url(#spiderGradient)" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <path d="M64 54 Q38 35 30 12" stroke="url(#spiderGradient)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M64 54 Q38 75 30 116" stroke="url(#spiderGradient)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M64 58 Q92 35 98 12" stroke="url(#spiderGradient)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M64 58 Q92 75 98 116" stroke="url(#spiderGradient)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M64 62 Q96 55 108 85" stroke="url(#spiderGradient)" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <path d="M64 62 Q96 45 108 25" stroke="url(#spiderGradient)" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <!-- 加粗的曲线腿部 -->
+  <path d="M64 50 Q40 45 20 25" stroke="url(#spiderGradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M64 50 Q40 55 20 85" stroke="url(#spiderGradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M64 54 Q38 35 30 12" stroke="url(#spiderGradient)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+  <path d="M64 54 Q38 75 30 116" stroke="url(#spiderGradient)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+  <path d="M64 58 Q92 35 98 12" stroke="url(#spiderGradient)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+  <path d="M64 58 Q92 75 98 116" stroke="url(#spiderGradient)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+  <path d="M64 62 Q96 55 108 85" stroke="url(#spiderGradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M64 62 Q96 45 108 25" stroke="url(#spiderGradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
 </svg>
 `;
 

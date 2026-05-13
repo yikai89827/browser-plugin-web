@@ -7,6 +7,7 @@ import {
 } from '../fb/accessTokenStore';
 import { fetchAdAccountsFromGraph } from '../fb/graphFetchAdAccounts';
 import { looksLikeFbUserToken } from '../fb/extractAccessTokenFromUrl';
+import { describeToken } from '../fb/tokenDebugLog';
 import {
   fbIdbClearAccounts,
   fbIdbClearPixelShares,
@@ -74,6 +75,7 @@ export async function handleFbControlMessage(message: FbControlIncomingMessage) 
     /** 仅建议在受信环境使用；返回完整 token 供自有后台直连 Graph */
     case 'FB_CONTROL_GET_ACCESS_TOKEN': {
       const token = await getFbAccessToken();
+      console.info('[fbControl:token] GET_ACCESS_TOKEN（仅日志脱敏）', describeToken(token));
       return { success: true, payload: { token } };
     }
 
@@ -86,7 +88,12 @@ export async function handleFbControlMessage(message: FbControlIncomingMessage) 
       if (!looksLikeFbUserToken(token)) {
         return { success: false, error: 'token format invalid' };
       }
+      console.info('[fbControl:token] 手动设置 access_token（SET_ACCESS_TOKEN）', {
+        sourceHost: body?.sourceHost || 'manual',
+        token: describeToken(token),
+      });
       await saveFbAccessToken(token, body?.sourceHost || 'manual');
+      console.info('[fbControl:token] 手动设置已落库');
       return { success: true };
     }
 
@@ -95,15 +102,20 @@ export async function handleFbControlMessage(message: FbControlIncomingMessage) 
       return { success: true };
 
     case 'FB_CONTROL_SYNC_AD_ACCOUNTS_FROM_GRAPH': {
+      console.info('[fbControl:graph] 收到「Graph 同步广告账户」请求');
       const token = await getFbAccessToken();
       if (!token) {
+        console.warn('[fbControl:graph] 中止：本地未保存 access_token，请先打开广告管理页自动捕获或粘贴 Token');
         return {
           success: false,
           error: '未保存 access_token。请在已登录的 Facebook 广告管理页操作以自动捕获，或使用「粘贴 Token」保存。',
         };
       }
+      console.info('[fbControl:graph] 已读取本地 token，开始请求 Graph', describeToken(token));
       const rows = await fetchAdAccountsFromGraph(token);
+      console.info('[fbControl:graph] Graph 数据已映射，开始写入 IndexedDB', { rowCount: rows.length });
       const n = await fbIdbUpsertAccounts(rows);
+      console.info('[fbControl:graph] IndexedDB 合并写入完成', { upserted: n, total: rows.length });
       return { success: true, payload: { upserted: n, total: rows.length } };
     }
 
