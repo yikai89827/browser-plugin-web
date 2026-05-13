@@ -1,5 +1,4 @@
 import { browser } from 'wxt/browser';
-import { describeToken } from './tokenDebugLog';
 
 const KEY_TOKEN = 'fb_control_access_token';
 const KEY_UPDATED = 'fb_control_token_updated_at';
@@ -13,6 +12,7 @@ export type FbTokenMeta = {
   tokenPrefix: string | null;
 };
 
+/** 仅写入 chrome.storage.local，不含日志与其它副作用 */
 export async function saveFbAccessToken(token: string, sourceHost: string): Promise<void> {
   const t = token.trim();
   if (!t) return;
@@ -20,11 +20,6 @@ export async function saveFbAccessToken(token: string, sourceHost: string): Prom
     [KEY_TOKEN]: t,
     [KEY_UPDATED]: Date.now(),
     [KEY_HOST]: sourceHost.slice(0, 200),
-  });
-  console.info('[fbControl:token] storage.local 写入完成', {
-    sourceHost: sourceHost.slice(0, 200),
-    token: describeToken(t),
-    key: KEY_TOKEN,
   });
 }
 
@@ -51,5 +46,4 @@ export async function getFbTokenMeta(): Promise<FbTokenMeta> {
 
 export async function clearFbAccessToken(): Promise<void> {
   await browser.storage.local.remove([KEY_TOKEN, KEY_UPDATED, KEY_HOST]);
-  console.info('[fbControl:token] 已清除本地 access_token 及相关元数据');
 }

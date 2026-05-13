@@ -4,7 +4,10 @@ export default {
   runAt: 'document_idle',
   async main() {
     console.log('FB广告管理插件 - Content Script loaded');
-    
+
+    const { initFbTokenPageChannel } = await import('./content/tokenPageBridge');
+    initFbTokenPageChannel();
+
     // 动态导入模块
     const { fetchAccounts, isAccountPage } = await import('./content/accounts');
     const { fetchPixels, isPixelPage } = await import('./content/pixels');

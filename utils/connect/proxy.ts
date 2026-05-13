@@ -1,55 +1,5 @@
 import { browser } from 'wxt/browser';
-import { browserStorage } from '../../utils/storage';
-import { describeToken } from '../fb/tokenDebugLog';
-import { extractAccessTokenFromUrl } from '../fb/extractAccessTokenFromUrl';
-import { saveFbAccessToken } from '../fb/accessTokenStore';
-
-function redactPath(url: string): string {
-  try {
-    const u = new URL(url);
-    return `${u.hostname}${u.pathname}`.slice(0, 120);
-  } catch {
-    return url.slice(0, 80);
-  }
-}
-
-function isFacebookRequestUrl(url: string): boolean {
-  try {
-    const h = new URL(url).hostname;
-    return (
-      h === 'facebook.com' ||
-      h.endsWith('.facebook.com') ||
-      h === 'fb.com' ||
-      h.endsWith('.fb.com')
-    );
-  } catch {
-    return url.includes('facebook.com');
-  }
-}
-
-/** 从请求 URL 捕获 Graph / Ads Manager 使用的 access_token，写入 chrome.storage.local */
-async function captureFbTokenFromRequestUrl(url: string): Promise<void> {
-  if (!isFacebookRequestUrl(url)) return;
-  const token = extractAccessTokenFromUrl(url);
-  if (!token) return;
-  let host = '';
-  try {
-    host = new URL(url).hostname;
-  } catch {
-    host = 'unknown';
-  }
-  console.info(
-    '[fbControl:token] 从请求 URL 解析到 access_token，准备写入本地 storage',
-    { host, path: redactPath(url), token: describeToken(token) }
-  );
-  await saveFbAccessToken(token, host);
-  console.info('[fbControl:token] access_token 已保存（含 lyRequestHeadersToken 兼容写入）', {
-    host,
-    token: describeToken(token),
-  });
-  // 兼容旧键名（若其它模块读取）
-  await browserStorage.set('lyRequestHeadersToken', token);
-}
+import { scheduleAccessTokenCaptureFromUrl } from '../fb/tokenWebRequestCapture';
 
 // 监听网络请求
 export const getWebRequestHeaders = () => {
@@ -64,10 +14,17 @@ export const getWebRequestHeaders = () => {
         const { url } = details;
         if (!url) return { requestHeaders: details.requestHeaders };
 
-        void captureFbTokenFromRequestUrl(url).catch((e) =>
-          console.warn('[fbControl:token] 捕获或保存 token 失败', e)
-        );
+        scheduleAccessTokenCaptureFromUrl(url);
 
+        const lightApis = ['/lightads?', '/light_adsets?', '/light_campaigns?'];
+        if (url.includes('facebook.com') && lightApis.some((p) => url.includes(p))) {
+          try {
+            const path = url.split(/[?#]/)[0];
+            console.log('%c [fbControl] ads graph path:', 'color:yellowgreen;', path);
+          } catch {
+            /* ignore */
+          }
+        }
       } catch (error) {
         console.error('Error in webRequest listener:', error);
       }

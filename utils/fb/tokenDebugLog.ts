@@ -12,3 +12,14 @@ export function redactUrlForLog(url: string): string {
     return '(invalid-url)';
   }
 }
+
+/** 请求日志用：主机 + 路径截断（不含 query） */
+export function shortUrlPathForLog(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.pathname}`.slice(0, 120);
+  } catch {
+    return url.slice(0, 80);
+  }
+}
+

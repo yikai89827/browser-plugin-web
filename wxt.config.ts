@@ -79,14 +79,20 @@ export default defineConfig({
       },
 
       web_accessible_resources: [{
-        resources: ['*.js', "*.csv", "*.xlsx"],
-        matches: [
-          "*://*.facebook.com/*",
-          "http://localhost/*",
-          "http://127.0.0.1/*",
-          "http://192.168.110.77/*",
+        resources: [
+          'fb-control-token-probe.js',
+          '*.js',
+          '*.csv',
+          '*.xlsx',
         ],
-        "use_dynamic_url": true  // 动态URL防止指纹追踪
+        matches: [
+          '*://*.facebook.com/*',
+          '*://*.business.facebook.com/*',
+          'http://localhost/*',
+          'http://127.0.0.1/*',
+          'http://192.168.110.77/*',
+        ],
+        use_dynamic_url: true,
       }],
       // 使用commands代替部分action操作
       commands: {
