@@ -1,7 +1,12 @@
 /**
  * 本地站点通过 externally_connectable 与扩展后台通讯。
- * 开发时在 `site/.env.development` 中设置 VITE_EXTENSION_ID=chrome 扩展 ID；
- * 或在页面「扩展 ID」输入框中临时填写（会写入 sessionStorage）。
+ *
+ * 扩展 ID 来源（优先级从高到低）：
+ * 1. `site/.env.development` / `site/.env` 中的 `VITE_EXTENSION_ID`（构建时注入，适合团队固定配置）
+ * 2. sessionStorage（页面输入框，仅在未配置环境变量时使用）
+ *
+ * 说明：上架 Chrome Web Store 后扩展 ID 固定；本地「加载已解压」时 ID 一般随扩展目录路径稳定，
+ * 换目录或换机可能变化，此时更新 .env 即可，无需在页面重复填写。
  */
 
 import type { FbAdAccountRecord, FbPixelShareRecord } from '../../../interfaces/fbControl';
@@ -10,6 +15,17 @@ import type { FbTokenMeta } from '../../../utils/fb/accessTokenStore';
 export type { FbTokenMeta };
 
 const STORAGE_KEY = 'fb_control_extension_id';
+
+/** 仅来自 Vite 环境变量（.env），不含 session */
+export function getExtensionIdFromEnv(): string {
+  const v = import.meta.env.VITE_EXTENSION_ID;
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+/** 是否已在配置文件中填写有效扩展 ID（长度与 Chrome ID 一致即可） */
+export function usesExtensionIdFromEnv(): boolean {
+  return getExtensionIdFromEnv().length >= 8;
+}
 
 export type ExtensionResponse<T = unknown> = {
   success: boolean;
@@ -21,17 +37,28 @@ function getChrome(): typeof chrome | undefined {
   return typeof chrome !== 'undefined' ? chrome : undefined;
 }
 
+/** 实际用于 chrome.runtime.sendMessage 的扩展 ID：优先 .env，其次页面 session */
 export function getStoredExtensionId(): string {
+  const fromEnv = getExtensionIdFromEnv();
+  if (fromEnv.length >= 8) return fromEnv;
   const fromSession =
     typeof sessionStorage !== 'undefined'
       ? sessionStorage.getItem(STORAGE_KEY) || ''
       : '';
-  const fromEnv = (import.meta.env.VITE_EXTENSION_ID as string) || '';
-  return (fromSession || fromEnv).trim();
+  return fromSession.trim();
 }
 
+/** 将页面输入的扩展 ID 写入 session（仅在未配置 VITE_EXTENSION_ID 时生效） */
 export function setStoredExtensionId(id: string) {
+  if (usesExtensionIdFromEnv()) return;
   sessionStorage.setItem(STORAGE_KEY, id.trim());
+}
+
+/** 清除 session 中的临时扩展 ID（仍优先使用 .env） */
+export function clearExtensionIdSessionOverride() {
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(STORAGE_KEY);
+  }
 }
 
 export function extensionConfigured(id?: string): boolean {
@@ -46,7 +73,9 @@ export function sendToExtension<T = unknown>(message: {
   const extId = getStoredExtensionId();
   const chromeApi = getChrome();
   if (!extensionConfigured(extId)) {
-    return Promise.reject(new Error('请先在 .env.development 配置 VITE_EXTENSION_ID，或在页面填写扩展 ID'));
+    return Promise.reject(
+      new Error('请配置 site/.env.development（或 .env）中的 VITE_EXTENSION_ID，或在页面填写扩展 ID')
+    );
   }
   if (!chromeApi?.runtime?.sendMessage) {
     return Promise.reject(new Error('当前环境无 chrome.runtime（请用 Chrome 打开本地站点并已安装扩展）'));

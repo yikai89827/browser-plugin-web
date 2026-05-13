@@ -2,9 +2,7 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
   color-scheme: light dark;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -12,15 +10,22 @@
   -webkit-text-size-adjust: 100%;
 }
 
-#app {
-  min-height: 400px;
-  overflow: hidden;
-  padding: 15px;
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  width: 100%;
 }
 
 body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  display: block;
+  background: #1a1a2e;
+}
+
+#app {
+  min-height: 0;
+  width: 100%;
+  padding: 0;
+  overflow: visible;
 }

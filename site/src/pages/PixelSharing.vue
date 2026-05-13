@@ -7,6 +7,7 @@ import {
   getStoredExtensionId,
   pingExtension,
   setStoredExtensionId,
+  usesExtensionIdFromEnv,
 } from '../lib/extensionBridge';
 
 const extensionIdInput = ref(getStoredExtensionId());
@@ -46,8 +47,8 @@ async function testExtension() {
   errorMsg.value = '';
   extensionOk.value = null;
   saveExtensionId();
-  if (!extensionConfigured(extensionIdInput.value)) {
-    errorMsg.value = '请填写有效的扩展 ID';
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 配置 VITE_EXTENSION_ID，或在页面填写扩展 ID';
     return;
   }
   try {
@@ -65,8 +66,8 @@ async function refreshFromExtension() {
   loading.value = true;
   saveExtensionId();
   try {
-    if (!extensionConfigured(extensionIdInput.value)) {
-      throw new Error('请先填写扩展 ID');
+    if (!extensionConfigured()) {
+      throw new Error('请配置 VITE_EXTENSION_ID 或页面扩展 ID');
     }
     const res = await fetchPixelSharesFromExtension();
     if (!res.success) throw new Error(res.error || '读取失败');
@@ -108,7 +109,11 @@ onMounted(() => {
         <span v-else-if="extensionOk === false" class="badge err">扩展未连接</span>
       </div>
       <div class="toolbar-actions">
-        <label class="ext-id">
+        <div v-if="usesExtensionIdFromEnv()" class="ext-id ext-id--env">
+          <span>扩展 ID</span>
+          <code class="ext-id-preview" :title="getStoredExtensionId()">{{ getStoredExtensionId().slice(0, 12) }}…</code>
+        </div>
+        <label v-else class="ext-id">
           <span>扩展 ID</span>
           <input
             v-model="extensionIdInput"
@@ -213,6 +218,19 @@ onMounted(() => {
   color: #e5e7eb;
   font-size: 12px;
 }
+.ext-id--env { flex-wrap: wrap; align-items: center; }
+.ext-id-preview {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #111827;
+  border: 1px solid #374151;
+  color: #93c5fd;
+  font-size: 12px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tiny { font-size: 11px; }
 .btn {
   border: none;
   border-radius: 6px;

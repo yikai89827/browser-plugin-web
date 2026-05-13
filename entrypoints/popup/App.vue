@@ -40,32 +40,28 @@ const openAdmin = async () => {
 
 <template>
   <div class="popup-container">
-    <!-- 头部 -->
-    <div class="header">
-      <div class="logo-section">
-        <span class="logo">🕷️</span>
+    <header class="header">
+      <div class="brand-row">
+        <span class="logo" aria-hidden="true">🕷️</span>
         <span class="title">fbControl</span>
-        <span class="subtitle">便捷操作面板</span>
       </div>
-    </div>
-    
-    <!-- 功能按钮区域 -->
+      <p class="subtitle">便捷操作面板</p>
+    </header>
+
     <div class="button-area">
-      <!-- 切换按钮组 -->
       <div class="switch-buttons">
-        <button class="switch-btn" @click="switchToNewBM">
+        <button type="button" class="switch-btn" @click="switchToNewBM">
           <span class="arrow">→</span>
           <span>切换到BM新界面</span>
         </button>
-        <button class="switch-btn" @click="switchToOldBM">
+        <button type="button" class="switch-btn" @click="switchToOldBM">
           <span class="arrow">←</span>
           <span>切换到BM旧界面</span>
         </button>
       </div>
-      
-      <!-- 打开后台按钮 -->
-      <button class="admin-btn" @click="openAdmin">
-        <span class="icon">📊</span>
+
+      <button type="button" class="admin-btn" @click="openAdmin">
+        <span class="icon" aria-hidden="true">📊</span>
         <span>打开 fbControl 控制台</span>
       </button>
     </div>
@@ -74,19 +70,24 @@ const openAdmin = async () => {
 
 <style scoped>
 .popup-container {
-  width: 320px;
-  min-height: 200px;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  padding: 20px;
+  width: 300px;
   box-sizing: border-box;
+  margin: 0 auto;
+  padding: 14px 14px 14px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
 }
 
 .header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  margin-bottom: 20px;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 0 2px;
 }
 
-.logo-section {
+.brand-row {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -94,83 +95,98 @@ const openAdmin = async () => {
 }
 
 .logo {
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .title {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   color: #fff;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
 }
 
 .subtitle {
+  margin: 0;
   font-size: 12px;
-  color: #8b8b8b;
-  margin-left: 4px;
+  color: #9ca3af;
+  line-height: 1.3;
 }
 
 .button-area {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .switch-buttons {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .switch-btn {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 12px 10px;
+  gap: 4px;
+  padding: 10px 8px;
   background: #2a2a4a;
   border: none;
   border-radius: 8px;
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 
 .switch-btn:hover {
   background: #3a3a6a;
-  transform: translateY(-2px);
+}
+
+.switch-btn:active {
+  transform: scale(0.98);
 }
 
 .arrow {
-  font-size: 14px;
+  font-size: 13px;
   color: #4facfe;
+  flex-shrink: 0;
 }
 
 .admin-btn {
   width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px 20px;
+  padding: 12px 16px;
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   border: none;
   border-radius: 8px;
   color: #fff;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+  transition: filter 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 3px 12px rgba(79, 172, 254, 0.35);
 }
 
 .admin-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
+  filter: brightness(1.05);
+}
+
+.admin-btn:active {
+  transform: scale(0.99);
 }
 
 .icon {
-  font-size: 18px;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 </style>
