@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { browserStorage } from '../../utils/storage';
-import { describeToken } from '@/fb/tokenDebugLog';
+import { describeToken } from '../fb/tokenDebugLog';
 import { extractAccessTokenFromUrl } from '../fb/extractAccessTokenFromUrl';
 import { saveFbAccessToken } from '../fb/accessTokenStore';
 

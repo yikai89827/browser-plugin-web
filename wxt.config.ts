@@ -30,11 +30,12 @@ export default defineConfig({
   //     }
   //   }
   // },
-  plugins: [tsconfigPaths()],
+  plugins: [tsconfigPaths({
+    tsconfigPath: path.resolve(__dirname, './tsconfig.json')
+  })],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './utils'),  // 核心路径映射
-      '@/*': path.resolve(__dirname, './utils/*')  // 通配符支持
+      '@': path.resolve(__dirname, './utils')
     }
   },
   manifest: () => {
