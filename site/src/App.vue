@@ -233,6 +233,19 @@ const handleNavClick = (pageId: string) => {
   --fb-pager-select-border: #4b5563;
   --fb-pager-select-text: #e5e7eb;
   --fb-code-border: #374151;
+  --fb-scrollbar-track: #0c1220;
+  --fb-scrollbar-thumb: #475569;
+  --fb-scrollbar-thumb-hover: #64748b;
+  --fb-btn-pay-bg: #1e3a5f;
+  --fb-btn-pay-text: #93c5fd;
+  --fb-btn-pay-border: #3b82f6;
+  --fb-btn-pay-hover-bg: #254a73;
+  --fb-btn-pay-alt-bg: #1f2937;
+  --fb-btn-pay-alt-border: #4b5563;
+  --fb-btn-pay-empty-text: #9ca3af;
+  --fb-btn-pay-err-text: #f87171;
+  --fb-btn-pay-err-border: #7f1d1d;
+  --fb-btn-pay-spin-dim: rgba(147, 197, 253, 0.35);
   --fb-dash-card-bg: #111827;
   --fb-dash-card-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
   --fb-dash-stat-value: #f1f5f9;
@@ -286,6 +299,19 @@ const handleNavClick = (pageId: string) => {
   --fb-pager-select-border: #d1d5db;
   --fb-pager-select-text: #111827;
   --fb-code-border: #e5e7eb;
+  --fb-scrollbar-track: #e2e8f0;
+  --fb-scrollbar-thumb: #94a3b8;
+  --fb-scrollbar-thumb-hover: #64748b;
+  --fb-btn-pay-bg: #eff6ff;
+  --fb-btn-pay-text: #1d4ed8;
+  --fb-btn-pay-border: #93c5fd;
+  --fb-btn-pay-hover-bg: #dbeafe;
+  --fb-btn-pay-alt-bg: #f3f4f6;
+  --fb-btn-pay-alt-border: #e5e7eb;
+  --fb-btn-pay-empty-text: #9ca3af;
+  --fb-btn-pay-err-text: #dc2626;
+  --fb-btn-pay-err-border: #fecaca;
+  --fb-btn-pay-spin-dim: rgba(29, 78, 216, 0.28);
   --fb-dash-card-bg: #ffffff;
   --fb-dash-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   --fb-dash-stat-value: #1a1a2e;
@@ -314,6 +340,19 @@ const handleNavClick = (pageId: string) => {
   --fb-btn-secondary-bg: #1e293b;
   --fb-btn-secondary-text: #e5e7eb;
   --fb-btn-secondary-hover: #334155;
+  --fb-scrollbar-track: #0c1220;
+  --fb-scrollbar-thumb: #475569;
+  --fb-scrollbar-thumb-hover: #64748b;
+  --fb-btn-pay-bg: #1e3a5f;
+  --fb-btn-pay-text: #93c5fd;
+  --fb-btn-pay-border: #3b82f6;
+  --fb-btn-pay-hover-bg: #254a73;
+  --fb-btn-pay-alt-bg: #1f2937;
+  --fb-btn-pay-alt-border: #4b5563;
+  --fb-btn-pay-empty-text: #9ca3af;
+  --fb-btn-pay-err-text: #f87171;
+  --fb-btn-pay-err-border: #7f1d1d;
+  --fb-btn-pay-spin-dim: rgba(147, 197, 253, 0.35);
 }
 
 .sidebar {

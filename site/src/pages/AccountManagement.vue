@@ -180,10 +180,28 @@ function coalesceNum(v: unknown, alt = 0): number {
   return alt;
 }
 
+/** 从可能带货币符号的字符串中解析排序用数字，失败则返回 alt；「不限额」等视为极大值便于升序排在金额之后 */
+function parseMoneyishForSort(raw: unknown, alt = -1e18): number {
+  if (raw == null || raw === '') return alt;
+  if (typeof raw === 'number' && !Number.isNaN(raw)) return raw;
+  const s = String(raw).trim();
+  if (!s || s === '—' || s === '-') return alt;
+  if (/不限/.test(s)) return 1e18;
+  const normalized = s.replace(/,/g, '');
+  const cleaned = normalized.replace(/[^\d.-]/g, '');
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : alt;
+}
+
 function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number {
   switch (key) {
-    case 'accountId':
-      return row.accountId;
+    case 'accountId': {
+      const raw = String(row.accountId || '')
+        .replace(/^act_/i, '')
+        .trim();
+      const n = Number(raw);
+      return Number.isFinite(n) && raw !== '' ? n : coalesceStr(row.accountId);
+    }
     case 'name':
       return coalesceStr(row.name);
     case 'status':
@@ -193,23 +211,23 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'adminCount':
       return coalesceNum(row.adminCount);
     case 'hiddenAdminCount':
-      return coalesceNum(row.hiddenAdminCount, -1);
+      return coalesceNum(row.hiddenAdminCount, -1e18);
     case 'accountKindLabel':
       return coalesceStr(row.accountKindLabel);
     case 'billingMinor':
-      return coalesceNum(row.billingAmountMinor ?? row.balanceMinor, -1e18);
+      return parseMoneyishForSort(billingAmountCell(row), -1e18);
     case 'threshold':
-      return coalesceNum(row.paymentThresholdMinor ?? row.spendCapMinor, -1e18);
+      return parseMoneyishForSort(thresholdCell(row), -1e18);
     case 'dailyLimit':
-      return coalesceNum(row.minDailyBudgetMinor, coalesceNum(row.dailyLimit));
+      return parseMoneyishForSort(dailyLimitCell(row), -1e18);
     case 'totalSpent':
-      return coalesceNum(row.totalSpentMinor, typeof row.totalSpent === 'number' ? row.totalSpent : 0);
+      return parseMoneyishForSort(totalSpentCell(row), -1e18);
     case 'spendingLimit':
-      return coalesceNum(row.spendCapMinor);
+      return parseMoneyishForSort(spendingLimitCell(row), -1e18);
     case 'periodSpent':
-      return coalesceStr(row.periodSpent);
+      return parseMoneyishForSort(periodSpentCell(row), -1e18);
     case 'balance':
-      return coalesceNum(row.balanceMinor);
+      return parseMoneyishForSort(balanceCell(row), -1e18);
     case 'remark':
       return coalesceStr(row.remark);
     case 'currency':
@@ -220,8 +238,13 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
       return formatOwnerRoleForTable(row).toLowerCase();
     case 'paymentMethod':
       return coalesceStr(row.paymentMethod);
-    case 'billingPeriod':
-      return coalesceStr(row.billingPeriod);
+    case 'billingPeriod': {
+      const s = row.billingPeriod;
+      if (s == null || s === '') return -1e18;
+      const d = new Date(String(s));
+      const t = d.getTime();
+      return Number.isNaN(t) ? -1e17 : t;
+    }
     case 'lockReason':
       return coalesceStr(row.lockReason);
     case 'createdDate':
@@ -245,23 +268,29 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
   }
 }
 
+function compareRowsBySortKey(a: FbAdAccountRecord, b: FbAdAccountRecord, key: SortKey, dir: 1 | -1): number {
+  const va = getSortableValue(a, key);
+  const vb = getSortableValue(b, key);
+  if (typeof va === 'number' && typeof vb === 'number') {
+    if (Object.is(va, vb)) return 0;
+    return va < vb ? -dir : dir;
+  }
+  const sa = String(va);
+  const sb = String(vb);
+  const cmp = sa.localeCompare(sb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+  if (cmp === 0) return 0;
+  return cmp > 0 ? dir : -dir;
+}
+
 const sortedFiltered = computed(() => {
   const list = [...filtered.value];
   const key = sortCol.value;
   if (!key) return list;
   const dir = sortDir.value === 'asc' ? 1 : -1;
   list.sort((a, b) => {
-    const va = getSortableValue(a, key);
-    const vb = getSortableValue(b, key);
-    if (typeof va === 'number' && typeof vb === 'number') {
-      if (va !== vb) return va < vb ? -1 * dir : 1 * dir;
-      return 0;
-    }
-    const sa = String(va);
-    const sb = String(vb);
-    if (sa < sb) return -1 * dir;
-    if (sa > sb) return 1 * dir;
-    return 0;
+    const primary = compareRowsBySortKey(a, b, key, dir);
+    if (primary !== 0) return primary;
+    return String(a.accountId).localeCompare(String(b.accountId), undefined, { numeric: true });
   });
   return list;
 });
@@ -870,6 +899,32 @@ async function saveRenameModal() {
   }
 }
 
+/** Excel 列宽估算：全角/CJK 记 2，ASCII 记 1（与 Excel 默认列宽习惯接近） */
+function excelColWidthUnits(v: unknown): number {
+  const s = String(v ?? '');
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0x4e00 && c <= 0x9fff) n += 2;
+    else if (c > 127) n += 2;
+    else n += 1;
+  }
+  return n;
+}
+
+/** 表头与各数据行同列取最大显示宽度后写入工作表 !cols */
+function applyExcelColumnWidths(ws: import('xlsx').WorkSheet, dataRows: Record<string, unknown>[]) {
+  if (!dataRows.length) return;
+  const keys = Object.keys(dataRows[0]);
+  ws['!cols'] = keys.map((key) => {
+    let wch = excelColWidthUnits(key);
+    for (const row of dataRows) {
+      wch = Math.max(wch, excelColWidthUnits(row[key]));
+    }
+    return { wch: Math.min(Math.max(wch + 1, 6), 80) };
+  });
+}
+
 /** 导出当前勾选、且在当前筛选+排序结果中的行为 .xlsx（与表格列一致） */
 function exportAccountsToExcel() {
   const ids = selectedIds.value;
@@ -910,8 +965,9 @@ function exportAccountsToExcel() {
     所属BM名称: row.belongsToBmName ?? '',
     所属BM_ID: row.belongsToBmId ?? '',
     国家编码: row.countryCode ?? '',
-  }));
+  })) as Record<string, unknown>[];
   const ws = XLSX.utils.json_to_sheet(rows);
+  applyExcelColumnWidths(ws, rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '广告账户');
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -1566,6 +1622,23 @@ onUnmounted(() => {
   border-radius: 8px;
   border: 1px solid var(--fb-border, #374151);
   background: var(--fb-surface-a, #111827);
+  scrollbar-width: thin;
+  scrollbar-color: var(--fb-scrollbar-thumb, #475569) var(--fb-scrollbar-track, #0c1220);
+}
+.table-wrap::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.table-wrap::-webkit-scrollbar-track {
+  background: var(--fb-scrollbar-track, #0c1220);
+  border-radius: 4px;
+}
+.table-wrap::-webkit-scrollbar-thumb {
+  background: var(--fb-scrollbar-thumb, #475569);
+  border-radius: 4px;
+}
+.table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--fb-scrollbar-thumb-hover, #64748b);
 }
 .table-wrap tbody td[title] {
   cursor: help;
@@ -1691,6 +1764,9 @@ tbody td.sticky-col {
 }
 .btn-icon-account {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--fb-link, #60a5fa);
@@ -1698,6 +1774,7 @@ tbody td.sticky-col {
   font-size: 14px;
   line-height: 1;
   padding: 0 2px;
+  transform: scaleX(-1);
 }
 .btn-icon-account:hover {
   color: #93c5fd;
@@ -1810,14 +1887,21 @@ tbody td.sticky-col {
   padding: 4px 10px;
   font-size: 12px;
   border-radius: 6px;
-  border: 1px solid #3b82f6;
-  background: #1e3a5f;
-  color: #93c5fd;
+  border: 1px solid var(--fb-btn-pay-border, #3b82f6);
+  background: var(--fb-btn-pay-bg, #1e3a5f);
+  color: var(--fb-btn-pay-text, #93c5fd);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+.btn-pay:hover:not(:disabled) {
+  background: var(--fb-btn-pay-hover-bg, #254a73);
+}
+.btn-pay--empty:hover:not(:disabled),
+.btn-pay--err:hover:not(:disabled) {
+  background: var(--fb-btn-pay-alt-bg, #1f2937);
 }
 .btn-pay:disabled {
   opacity: 0.85;
@@ -1825,21 +1909,26 @@ tbody td.sticky-col {
 }
 .btn-pay--empty,
 .btn-pay--err {
-  border-color: #4b5563;
-  background: #1f2937;
+  border-color: var(--fb-btn-pay-alt-border, #4b5563);
+  background: var(--fb-btn-pay-alt-bg, #1f2937);
   cursor: pointer;
   opacity: 1;
 }
-.btn-pay--empty { color: #9ca3af; }
-.btn-pay--err { color: #f87171; border-color: #7f1d1d; }
+.btn-pay--empty {
+  color: var(--fb-btn-pay-empty-text, #9ca3af);
+}
+.btn-pay--err {
+  color: var(--fb-btn-pay-err-text, #f87171);
+  border-color: var(--fb-btn-pay-err-border, #7f1d1d);
+}
 .btn-pay--loading { cursor: wait; }
 
 .pay-spin {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid rgba(147, 197, 253, 0.35);
-  border-top-color: #93c5fd;
+  border: 2px solid var(--fb-btn-pay-spin-dim, rgba(147, 197, 253, 0.35));
+  border-top-color: var(--fb-btn-pay-text, #93c5fd);
   border-radius: 50%;
   animation: pay-spin-anim 0.65s linear infinite;
 }
@@ -1862,6 +1951,23 @@ tbody td.sticky-col {
   border: 1px solid var(--fb-border, #374151);
   border-radius: 8px;
   background: var(--fb-surface-a, #111827);
+  scrollbar-width: thin;
+  scrollbar-color: var(--fb-scrollbar-thumb, #475569) var(--fb-scrollbar-track, #0c1220);
+}
+.pay-table-wrap::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.pay-table-wrap::-webkit-scrollbar-track {
+  background: var(--fb-scrollbar-track, #0c1220);
+  border-radius: 4px;
+}
+.pay-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--fb-scrollbar-thumb, #475569);
+  border-radius: 4px;
+}
+.pay-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--fb-scrollbar-thumb-hover, #64748b);
 }
 .pay-table {
   width: 100%;
@@ -2014,16 +2120,29 @@ tbody td.sticky-col {
 .sort-carets {
   display: inline-flex;
   flex-direction: column;
-  line-height: 0.55;
-  font-size: 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  margin-left: 4px;
   vertical-align: middle;
-  opacity: 0.35;
+  font-size: 10px;
+  line-height: 1;
 }
-.sort-th--on .sort-carets {
+.sort-th:not(.sort-th--on) .sort-carets .caret {
+  color: var(--fb-muted, #6b7280);
+  opacity: 0.45;
+}
+.sort-th--on .sort-carets .caret:not(.on) {
+  opacity: 0.22;
+  color: var(--fb-muted, #6b7280);
+  transform: scale(0.92);
+}
+.sort-th--on .sort-carets .caret.on {
   opacity: 1;
-}
-.sort-th .caret.on {
-  color: var(--fb-link, #60a5fa);
+  color: #38bdf8;
+  font-weight: 700;
+  font-size: 11px;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
 }
 
 .remark-cell {
@@ -2041,6 +2160,9 @@ tbody td.sticky-col {
 }
 .btn-icon-edit {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--fb-link, #93c5fd);
@@ -2049,6 +2171,7 @@ tbody td.sticky-col {
   line-height: 1;
   padding: 4px 6px;
   border-radius: 4px;
+  transform: scaleX(-1);
 }
 .btn-icon-edit:hover {
   background: var(--fb-ghost-bg, #374151);

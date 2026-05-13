@@ -112,7 +112,7 @@ export function formatUserRoleZh(raw: unknown): string | undefined {
     if (USER_ROLE_NUM_ZH[n]) return USER_ROLE_NUM_ZH[n];
     if (n >= 1000 && n < 10000) return `角色（${n}）`;
     /** Meta / BM 侧常见大整数角色 ID，无公开枚举名时标注为系统角色 */
-    if (n > 1_000_000_000) return `系统角色（${n}）`;
+    if (n > 1_000_000_000) return `管理员`;
     return `角色码 ${n}`;
   }
   const key = s0.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
