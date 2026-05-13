@@ -58,6 +58,27 @@ export function adAccountTasksForSubId(subId: string | undefined): string[] {
   }
 }
 
+/** 把 Graph `error` 拼成可读字符串，便于批量结果里直接看到子码与用户文案。 */
+function formatGraphErrorBody(json: Record<string, unknown>, httpStatus: number): string {
+  const err = json.error as {
+    message?: string;
+    error_user_msg?: string;
+    error_user_title?: string;
+    code?: number;
+    error_subcode?: number;
+  } | undefined;
+  if (!err?.message && !err?.error_user_msg) {
+    return `HTTP ${httpStatus}`;
+  }
+  const parts: string[] = [];
+  if (err.message) parts.push(err.message);
+  if (err.error_user_msg && err.error_user_msg !== err.message) parts.push(err.error_user_msg);
+  if (err.error_user_title) parts.push(`(${err.error_user_title})`);
+  if (err.code != null) parts.push(`code=${err.code}`);
+  if (err.error_subcode != null) parts.push(`subcode=${err.error_subcode}`);
+  return parts.join(' | ');
+}
+
 async function graphJson(
   url: string,
   init: RequestInit
@@ -140,9 +161,10 @@ async function postAdAccountField(
   }
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}`;
   const res = await fetch(url, { method: 'POST', body });
-  const json = (await res.json()) as { error?: { message?: string } };
-  if (!res.ok || json.error?.message) {
-    throw new Error(json.error?.message || `HTTP ${res.status}`);
+  const json = (await res.json()) as Record<string, unknown>;
+  const err = json.error as { message?: string } | undefined;
+  if (!res.ok || err?.message) {
+    throw new Error(formatGraphErrorBody(json, res.status));
   }
 }
 
@@ -283,9 +305,9 @@ export async function executeAdAccountBatchOperation(
       body.set('adaccount_ids', idsJson);
       const url = `https://graph.facebook.com/${GRAPH_VERSION}/${bmId}/adaccounts`;
       const res = await fetch(url, { method: 'POST', body });
-      const json = (await res.json()) as { error?: { message?: string } };
-      if (!res.ok || json.error?.message) {
-        const msg = json.error?.message || `HTTP ${res.status}`;
+      const json = (await res.json()) as Record<string, unknown>;
+      if (!res.ok || (json.error as { message?: string } | undefined)?.message) {
+        const msg = formatGraphErrorBody(json, res.status);
         for (const accountId of accounts) {
           pushResult(accountId, '失败', msg);
         }
