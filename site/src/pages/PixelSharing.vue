@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
-import { extensionConfigured, fetchPixelSharesFromExtension } from '../lib/extensionBridge';
+import { extensionConfigured, collectPixelSharesFromActiveFacebookTab, fetchPixelSharesFromExtension } from '../lib/extensionBridge';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import ExtensionMenuGate from '../components/ExtensionMenuGate.vue';
 import {
@@ -267,6 +267,15 @@ async function refreshFromExtension() {
   try {
     if (!extensionConfigured()) {
       throw new Error('请在 site/.env.development 中配置 VITE_EXTENSION_ID');
+    }
+    try {
+      await collectPixelSharesFromActiveFacebookTab();
+    } catch (e: unknown) {
+      fbControlLog(
+        'site:pixel-page',
+        '活动页采集跳过（可忽略：若当前 Chrome 活动标签不是 Facebook）',
+        e instanceof Error ? e.message : e
+      );
     }
     const res = await fetchPixelSharesFromExtension();
     if (!res.success) throw new Error(res.error || '读取失败');

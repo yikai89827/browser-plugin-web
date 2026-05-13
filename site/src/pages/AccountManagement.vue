@@ -4,11 +4,13 @@ import * as XLSX from 'xlsx';
 import type { FbAdAccountRecord, FbAdAccountPaymentActivity } from '../../../interfaces/fbControl';
 import {
   extensionConfigured,
+  executeAdAccountBatchFromSite,
   fetchAccountsFromExtension,
   fetchAdAccountPaymentActivitiesFromExtension,
   fetchAdAccountAssignedUsersFromExtension,
   mergeAccountInExtension,
   syncAdAccountsFromGraphViaExtension,
+  type AdAccountBatchResultRow,
 } from '../lib/extensionBridge';
 import {
   markAccountsListFetched,
@@ -64,6 +66,8 @@ const moreWrapRef = ref<HTMLElement | null>(null);
 /** 右侧批量操作抽屉（UI 与选项见 BatchOperationDrawer + batchOperationPresets） */
 const batchDrawerOpen = ref(false);
 const batchDrawerKey = ref('');
+const batchDrawerResults = ref<AdAccountBatchResultRow[]>([]);
+const batchDrawerRunning = ref(false);
 
 const batchDrawerPreset = computed(() =>
   batchDrawerOpen.value && batchDrawerKey.value ? getBatchDrawerPreset(batchDrawerKey.value) : null
@@ -838,6 +842,8 @@ function resetAdvFilterInsideModal() {
 function openBatchDrawer(key: string) {
   if (!selectedCount.value) return;
   moreMenuOpen.value = false;
+  batchDrawerResults.value = [];
+  batchDrawerRunning.value = false;
   batchDrawerKey.value = key;
   batchDrawerOpen.value = true;
 }
@@ -971,19 +977,42 @@ function exportAccountsToExcel() {
 function closeBatchDrawer() {
   batchDrawerOpen.value = false;
   batchDrawerKey.value = '';
+  batchDrawerResults.value = [];
+  batchDrawerRunning.value = false;
 }
 
-function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
+async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
   errorMsg.value = '';
-  fbControlLog('site:account-page', '批量操作提交（占位）', {
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    return;
+  }
+  batchDrawerRunning.value = true;
+  batchDrawerResults.value = [];
+  fbControlLog('site:account-page', '批量操作 Graph 执行开始', {
     entryKey: payload.entryKey,
     operationId: payload.operationId,
     subId: payload.subId,
     accountCount: payload.selectedAccountIds.length,
-    useDefaultInterval: payload.useDefaultInterval,
-    friendCheckOk: payload.friendCheckOk,
-    uidsLines: payload.uidsText ? payload.uidsText.split(/\r?\n/).filter(Boolean).length : 0,
   });
+  try {
+    const rows = await executeAdAccountBatchFromSite(payload);
+    batchDrawerResults.value = rows;
+    fbControlLog('site:account-page', '批量操作 Graph 执行完成', { rows: rows.length });
+    if (payload.operationId === 'account_rename') {
+      await refreshFromExtension();
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errorMsg.value = msg;
+    batchDrawerResults.value = payload.selectedAccountIds.map((accountId) => ({
+      accountId,
+      status: '失败',
+      detail: msg,
+    }));
+  } finally {
+    batchDrawerRunning.value = false;
+  }
 }
 
 onMounted(() => {
@@ -1526,6 +1555,8 @@ onUnmounted(() => {
       :open="batchDrawerOpen"
       :preset="batchDrawerPreset"
       :selected-account-ids="selectedAccountIds"
+      :batch-results="batchDrawerResults"
+      :batch-running="batchDrawerRunning"
       @close="closeBatchDrawer"
       @confirm="onBatchDrawerConfirm"
     />

@@ -9,7 +9,14 @@ import type { FbAdAccountRecord, FbAdAccountPaymentActivity, FbPixelShareRecord 
 import type { FbTokenMeta } from '../../../utils/fb/accessTokenStore';
 import { fetchAdAccountPaymentActivities } from '../../../utils/fb/graphFetchAdAccountPaymentActivities';
 import { fetchAdAccountAssignedUserCount } from '../../../utils/fb/graphFetchAdAccountAssignedUsers';
+import {
+  executeAdAccountBatchOperation,
+  verifyFacebookUserIdsForBatch,
+  type AdAccountBatchResultRow,
+} from '../../../utils/fb/graphAdAccountBatchOperations';
+export type { AdAccountBatchResultRow } from '../../../utils/fb/graphAdAccountBatchOperations';
 import { fbControlLog } from '../../../utils/fbControlLog';
+import type { BatchDrawerSubmitPayload } from './batchOperationTypes';
 
 export type { FbTokenMeta };
 
@@ -119,6 +126,12 @@ export async function mergeAccountInExtension(patch: Partial<FbAdAccountRecord> 
   });
 }
 
+export async function collectPixelSharesFromActiveFacebookTab() {
+  return sendToExtension<unknown>({
+    action: 'FB_CONTROL_COLLECT_PIXEL_SHARES_FROM_ACTIVE_TAB',
+  });
+}
+
 export async function fetchPixelSharesFromExtension() {
   return sendToExtension<{ list: FbPixelShareRecord[] }>({
     action: 'FB_CONTROL_GET_PIXEL_SHARES',
@@ -207,6 +220,56 @@ export async function fetchAdAccountAssignedUsersFromExtension(
     const msg = e instanceof Error ? e.message : String(e);
     return { success: false, error: msg };
   }
+}
+
+/**
+ * 批量抽屉「检测好友」步骤：用 Graph 校验 UID 是否存在且 token 可读（非真实好友关系）。
+ */
+export async function verifyFacebookUidsForBatchSite(
+  uidsText: string
+): Promise<{ ok: boolean; message: string }> {
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: msg };
+  }
+  if (!tokenRes.success) {
+    return { ok: false, message: tokenRes.error || '读取 token 失败' };
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    return { ok: false, message: '未保存 access_token，无法校验 UID' };
+  }
+  return verifyFacebookUserIdsForBatch(token, uidsText);
+}
+
+/**
+ * 在页面内使用扩展保存的 token 执行批量广告账户 Graph 操作（授权 / 限额 / 加 BM 等）。
+ */
+export async function executeAdAccountBatchFromSite(
+  payload: BatchDrawerSubmitPayload
+): Promise<AdAccountBatchResultRow[]> {
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(msg);
+  }
+  if (!tokenRes.success) {
+    throw new Error(tokenRes.error || '读取 token 失败');
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    throw new Error('未保存 access_token，无法执行批量操作');
+  }
+  fbControlLog('extension-bridge', 'executeAdAccountBatchFromSite', {
+    operationId: payload.operationId,
+    accounts: payload.selectedAccountIds.length,
+  });
+  return executeAdAccountBatchOperation(token, payload);
 }
 
 export async function clearFbAccessTokenInExtension() {

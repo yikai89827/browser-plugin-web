@@ -1,6 +1,7 @@
+import { browser } from 'wxt/browser';
 import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
 import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
-import { fbControlLog } from '../../fbControlLog';
+import { fbControlError, fbControlLog } from '../../fbControlLog';
 import {
   fbIdbClearPixelShares,
   fbIdbGetAllPixelShares,
@@ -31,6 +32,34 @@ export async function handleFbControlPixelMessage(
       fbControlLog('messaging:pixels', 'FB_CONTROL_CLEAR_PIXEL_SHARES');
       await fbIdbClearPixelShares();
       return { success: true };
+
+    /** 向当前窗口活动标签页注入的 content 发 `fetchPageData`，在 Facebook 页触发像素/账户采集并写入 IndexedDB */
+    case 'FB_CONTROL_COLLECT_PIXEL_SHARES_FROM_ACTIVE_TAB': {
+      fbControlLog('messaging:pixels', 'FB_CONTROL_COLLECT_PIXEL_SHARES_FROM_ACTIVE_TAB');
+      const tabs = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+      const tab = tabs[0];
+      if (!tab?.id || !tab.url) {
+        return { success: false, error: '没有可用的活动标签页' };
+      }
+      if (!/facebook\.com/i.test(tab.url)) {
+        return {
+          success: false,
+          error: '当前活动标签页不是 Facebook 域名，请打开 business.facebook.com 并带上 business_id 后再试',
+        };
+      }
+      try {
+        const res = await browser.tabs.sendMessage(tab.id, { action: 'fetchPageData' });
+        fbControlLog('messaging:pixels', 'fetchPageData 已返回', { tabId: tab.id, res });
+        return { success: true, payload: res };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        fbControlError('messaging:pixels', 'fetchPageData 失败', e);
+        return {
+          success: false,
+          error: `${msg}（请确认该页已注入 fbControl 扩展、且为 BM/数据集/事件管理相关页面）`,
+        };
+      }
+    }
 
     default:
       return null;

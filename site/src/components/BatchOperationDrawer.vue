@@ -3,10 +3,15 @@ import { ref, watch, computed } from 'vue';
 import type { BatchDrawerPreset, BatchDrawerSubmitPayload, BatchOperationId } from '../lib/batchOperationTypes';
 import { getBatchOperationUi } from '../lib/batchOperationPresets';
 
+import { verifyFacebookUidsForBatchSite } from '../lib/extensionBridge';
+
 const props = defineProps<{
   open: boolean;
   preset: BatchDrawerPreset | null;
   selectedAccountIds: string[];
+  /** 父组件在 Graph 批量执行完成后写入，用于「结果」页 */
+  batchResults?: { accountId: string; status: string; detail: string }[];
+  batchRunning?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -22,7 +27,16 @@ const useDefaultInterval = ref(true);
 const friendCheckStatus = ref<'idle' | 'running' | 'ok' | 'err'>('idle');
 const friendCheckMsg = ref('');
 
-const resultRows = ref<{ accountId: string; status: string; detail: string }[]>([]);
+const resultRows = computed(() => props.batchResults ?? []);
+
+watch(
+  () => [props.open, props.batchResults?.length, props.batchRunning] as const,
+  ([isOpen, n, running]) => {
+    if (isOpen && n && n > 0 && !running) {
+      drawerTab.value = 'result';
+    }
+  }
+);
 
 const ui = computed(() => getBatchOperationUi(selectedOpId.value));
 
@@ -45,6 +59,7 @@ const friendGateOk = computed(() => {
 
 const confirmDisabled = computed(() => {
   if (!props.preset || !props.selectedAccountIds.length) return true;
+  if (props.batchRunning) return true;
   if (!inputGateOk.value) return true;
   if (!friendGateOk.value) return true;
   return false;
@@ -53,7 +68,6 @@ const confirmDisabled = computed(() => {
 function resetForm() {
   const p = props.preset;
   if (!p) return;
-  resultRows.value = [];
   selectedOpId.value = p.defaultOperationId;
   selectedSubId.value = p.defaultSubId ?? (p.subOptions?.[0]?.id ?? '');
   uidsText.value = '';
@@ -89,7 +103,7 @@ function onBackdropClick() {
   emit('close');
 }
 
-function onFriendCheck() {
+async function onFriendCheck() {
   if (!ui.value.step2) return;
   if (!uidsText.value.trim()) {
     friendCheckMsg.value = '请先填写 UID 或主页地址';
@@ -97,10 +111,14 @@ function onFriendCheck() {
   }
   friendCheckMsg.value = '';
   friendCheckStatus.value = 'running';
-  window.setTimeout(() => {
-    friendCheckStatus.value = 'ok';
-    friendCheckMsg.value = '检测完成（占位：后续对接扩展 / Graph）';
-  }, 650);
+  try {
+    const r = await verifyFacebookUidsForBatchSite(uidsText.value);
+    friendCheckStatus.value = r.ok ? 'ok' : 'err';
+    friendCheckMsg.value = r.message;
+  } catch (e: unknown) {
+    friendCheckStatus.value = 'err';
+    friendCheckMsg.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 function onConfirm() {
@@ -115,12 +133,6 @@ function onConfirm() {
     selectedAccountIds: [...props.selectedAccountIds],
   };
   emit('confirm', payload);
-  resultRows.value = props.selectedAccountIds.map((id) => ({
-    accountId: id,
-    status: '已提交',
-    detail: `${props.preset.operations.find((o) => o.id === selectedOpId.value)?.label ?? selectedOpId.value}（待扩展执行）`,
-  }));
-  drawerTab.value = 'result';
 }
 </script>
 
@@ -161,6 +173,7 @@ function onConfirm() {
 
         <div class="bod-batch-body">
           <template v-if="drawerTab === 'op'">
+            <p v-if="batchRunning" class="bod-batch-running muted">正在通过 Graph 执行批量操作…</p>
             <div class="bod-batch-op-root">
               <select v-model="selectedOpId" class="bod-batch-select bod-batch-select--main">
                 <option v-for="op in preset.operations" :key="op.id" :value="op.id">{{ op.label }}</option>
@@ -221,7 +234,7 @@ function onConfirm() {
           </template>
 
           <template v-else>
-            <p v-if="!resultRows.length" class="bod-result-empty muted">暂无结果，请先在「操作」中提交。</p>
+            <p v-if="!resultRows.length && !batchRunning" class="bod-result-empty muted">暂无结果，提交后在此查看每个账户的执行结果。</p>
             <div v-else class="bod-result-table-wrap">
               <table class="bod-result-table">
                 <thead>
@@ -361,6 +374,10 @@ function onConfirm() {
   overflow: auto;
   padding: 16px 18px;
   min-height: 0;
+}
+.bod-batch-running {
+  margin: 0 0 12px;
+  font-size: 12px;
 }
 .bod-batch-op-root {
   display: flex;
