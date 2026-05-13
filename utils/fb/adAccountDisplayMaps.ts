@@ -55,6 +55,9 @@ const USER_ROLE_STR_ZH: Record<string, string> = {
   FINANCE_ANALYST: '财务分析',
 };
 
+/**
+ * 将 Graph `account_status` 数值或字符串转为中文状态文案。
+ */
 export function formatAccountStatusZh(raw: unknown): string {
   if (raw == null || raw === '') return '未知';
   const s0 = String(raw).trim();
@@ -65,7 +68,9 @@ export function formatAccountStatusZh(raw: unknown): string {
   return s0 || '未知';
 }
 
-/** 无锁定时返回 undefined，表格显示「—」且不标红 */
+/**
+ * 将 `disable_reason` 转为中文；无锁定时返回 `undefined`（表格显示「—」）。
+ */
 export function formatDisableReasonZh(raw: unknown): string | undefined {
   if (raw == null || raw === '') return undefined;
   const s0 = String(raw).trim();
@@ -82,6 +87,9 @@ export function formatDisableReasonZh(raw: unknown): string | undefined {
   return DISABLE_REASON_ZH[upper] ?? s0;
 }
 
+/**
+ * 将 `user_role` 数值或枚举字符串转为中文角色说明。
+ */
 export function formatUserRoleZh(raw: unknown): string | undefined {
   if (raw == null || raw === '') return undefined;
   const s0 = String(raw).trim();
@@ -95,6 +103,9 @@ export function formatUserRoleZh(raw: unknown): string | undefined {
   return USER_ROLE_STR_ZH[key] ?? s0;
 }
 
+/**
+ * 从 Graph 返回的 `funding_source_details` 读取人类可读支付文案。
+ */
 export function readFundingSourceDisplay(a: Record<string, unknown>): string | undefined {
   const d = a.funding_source_details as Record<string, unknown> | undefined;
   if (d && d.display_string != null) {
@@ -104,6 +115,9 @@ export function readFundingSourceDisplay(a: Record<string, unknown>): string | u
   return undefined;
 }
 
+/**
+ * 组合「资金源展示串」与原始 funding_source：优先展示 Meta 返回的 `display_string`。
+ */
 export function formatPaymentMethodZh(
   fundingSource: unknown,
   displayFromDetails?: string

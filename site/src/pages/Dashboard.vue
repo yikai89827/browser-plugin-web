@@ -203,27 +203,40 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.dashboard { width: 100%; }
+.dashboard { width: 100%; min-width: 0; }
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 24px; }
-.stat-card { background: #fff; border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.stat-card {
+  background: var(--fb-dash-card-bg, #fff);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--fb-dash-card-shadow, 0 2px 8px rgba(0,0,0,0.05));
+}
 .stat-icon { width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
 .stat-icon.accounts { background: linear-gradient(135deg, #1877f2, #166fe5); }
 .stat-icon.pixels { background: linear-gradient(135deg, #00d4aa, #00b894); }
 .stat-icon.shares { background: linear-gradient(135deg, #ff9f43, #ee5a24); }
 .stat-icon.pending { background: linear-gradient(135deg, #ffa502, #ff7f50); }
-.stat-value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
-.stat-label { font-size: 14px; color: #6b7280; }
+.stat-value { font-size: 28px; font-weight: 700; color: var(--fb-dash-stat-value, #1a1a2e); }
+.stat-label { font-size: 14px; color: var(--fb-dash-stat-label, #6b7280); }
 .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
-.data-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); overflow: hidden; }
-.card-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f3f4f6; }
-.card-header h2 { font-size: 16px; color: #1a1a2e; }
-.view-all { background: none; border: none; color: #1877f2; font-size: 14px; cursor: pointer; }
+.data-card {
+  background: var(--fb-dash-card-bg, #fff);
+  border-radius: 12px;
+  box-shadow: var(--fb-dash-card-shadow, 0 2px 8px rgba(0,0,0,0.05));
+  overflow: hidden;
+}
+.card-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--fb-dash-card-header-border, #f3f4f6); }
+.card-header h2 { font-size: 16px; color: var(--fb-dash-stat-value, #1a1a2e); }
+.view-all { background: none; border: none; color: var(--fb-dash-view-all, #1877f2); font-size: 14px; cursor: pointer; }
 .card-body { padding: 16px; }
 .data-table { width: 100%; border-collapse: collapse; }
-.data-table th, .data-table td { padding: 12px 8px; text-align: left; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
-.data-table th { font-weight: 600; color: #6b7280; }
-.data-table td { color: #374151; }
-.data-table .empty { text-align: center; color: #9ca3af; }
+.data-table th, .data-table td { padding: 12px 8px; text-align: left; border-bottom: 1px solid var(--fb-dash-table-border, #f3f4f6); font-size: 14px; }
+.data-table th { font-weight: 600; color: var(--fb-dash-table-th, #6b7280); }
+.data-table td { color: var(--fb-dash-table-td, #374151); }
+.data-table .empty { text-align: center; color: var(--fb-muted, #9ca3af); }
 .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; background: #fee2e2; color: #dc2626; }
 .status-badge.active { background: #d1fae5; color: #059669; }
 .action-btn { padding: 4px 10px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; margin-right: 8px; }

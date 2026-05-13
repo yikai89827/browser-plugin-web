@@ -1,4 +1,5 @@
 import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
+import { fbControlLog } from '../../fbControlLog';
 import {
   clearFbAccessToken,
   getFbAccessToken,
@@ -14,11 +15,12 @@ export async function handleFbControlTokenMessage(
 ): Promise<FbControlMessageResult> {
   switch (message.action) {
     case 'FB_CONTROL_GET_TOKEN_META':
+      fbControlLog('messaging:token', 'FB_CONTROL_GET_TOKEN_META');
       return { success: true, payload: await getFbTokenMeta() };
 
     case 'FB_CONTROL_GET_ACCESS_TOKEN': {
       const token = await getFbAccessToken();
-      console.info('[fbControl:token] GET_ACCESS_TOKEN（仅日志脱敏）', describeToken(token));
+      fbControlLog('messaging:token', 'FB_CONTROL_GET_ACCESS_TOKEN（脱敏）', describeToken(token));
       return { success: true, payload: { token } };
     }
 
@@ -31,18 +33,18 @@ export async function handleFbControlTokenMessage(
       if (!looksLikeFbUserToken(token)) {
         return { success: false, error: 'token format invalid' };
       }
-      console.info('[fbControl:token] 手动设置 access_token（SET_ACCESS_TOKEN）', {
+      fbControlLog('messaging:token', 'FB_CONTROL_SET_ACCESS_TOKEN', {
         sourceHost: body?.sourceHost || 'manual',
         token: describeToken(token),
       });
       await saveFbAccessToken(token, body?.sourceHost || 'manual');
-      console.info('[fbControl:token] 手动设置已落库');
+      fbControlLog('messaging:token', 'SET_ACCESS_TOKEN 已落库');
       return { success: true };
     }
 
     case 'FB_CONTROL_CLEAR_ACCESS_TOKEN':
       await clearFbAccessToken();
-      console.info('[fbControl:token] 已清除本地 access_token 及相关元数据');
+      fbControlLog('messaging:token', 'FB_CONTROL_CLEAR_ACCESS_TOKEN 完成');
       return { success: true };
 
     default:

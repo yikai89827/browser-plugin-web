@@ -1,4 +1,4 @@
-/** 从 Graph / Ads Manager 等请求的 URL 中解析 access_token（查询串或 hash） */
+/** 从 Graph / Ads Manager 等请求的 URL 中解析 `access_token`（查询串或 hash） */
 export function extractAccessTokenFromUrl(rawUrl: string): string | null {
   if (!rawUrl || !rawUrl.includes('access_token')) return null;
   try {
@@ -19,6 +19,9 @@ export function extractAccessTokenFromUrl(rawUrl: string): string | null {
   }
 }
 
+/**
+ * 启发式判断字符串是否像 Facebook 用户/会话 access_token（长度与字符集）。
+ */
 export function looksLikeFbUserToken(t: string): boolean {
   if (!t || t.length < 30) return false;
   // 常见为 EAA… 类用户/会话 token；也允许其它长度足够的字母数字串

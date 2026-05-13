@@ -7,12 +7,18 @@ import {
   readFundingSourceDisplay,
 } from './adAccountDisplayMaps';
 
+/**
+ * 从任意字符串中提取连续 10 位以上的数字，视为可能的广告账户 ID 片段。
+ */
 export function extractNumericAccountId(text: string | null | undefined): string {
   if (!text) return '';
   const m = text.match(/\b(\d{10,})\b/);
   return m ? m[1] : '';
 }
 
+/**
+ * 规范化广告账户主键：优先纯数字长串，否则从文本中提取数字，最后使用调用方提供的 fallback。
+ */
 export function normalizeAccountId(raw: string, fallbackKey: string): string {
   const trimmed = (raw || '').replace(/^act_/i, '').trim();
   if (/^\d{10,}$/.test(trimmed)) return trimmed;
@@ -21,12 +27,15 @@ export function normalizeAccountId(raw: string, fallbackKey: string): string {
   return fallbackKey;
 }
 
-/** 广告账户 ID 为纯数字长串；用于过滤 DOM 误采集的表头/占位行 */
+/**
+ * 判断是否为可信的 Facebook 广告账户数字 ID（用于过滤 DOM 误采集行）。
+ */
 export function isLikelyFacebookAdAccountId(accountId: string): boolean {
   const id = accountId.replace(/^act_/i, '').trim();
   return /^\d{10,}$/.test(id);
 }
 
+/** 从展示用花费字符串解析为 number */
 function parseSpend(spendText?: string | null): number {
   if (!spendText) return 0;
   const cleaned = spendText.replace(/[^0-9.-]/g, '');
@@ -34,12 +43,47 @@ function parseSpend(spendText?: string | null): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
+/** Graph 金额类整数字段：通常为账户币种「最小单位」（如美分） */
+function parseMinorInt(v: unknown): number | undefined {
+  if (v == null || v === '') return undefined;
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.round(v);
+  const s = String(v).trim();
+  if (!s) return undefined;
+  const n = parseInt(s, 10);
+  return Number.isNaN(n) ? undefined : n;
+}
+
+/** Graph `account_type` → 与产品「账号类型」列对齐的简短英文标签 */
+function formatAccountKindLabel(raw: unknown): string | undefined {
+  if (raw == null || raw === '') return undefined;
+  const k = String(raw).trim().toUpperCase();
+  const map: Record<string, string> = {
+    GENERAL: 'Business',
+    CORPORATE: 'Corporate',
+    INHOUSE_AGENCY: 'In-house agency',
+    EXTERNAL_AGENCY: 'Agency',
+    PERSONAL: 'Personal',
+    GOVERNMENT: 'Government',
+    NONPROFIT: 'Nonprofit',
+    WHITELISTED: 'Whitelisted',
+    APP_DEVELOPER: 'App developer',
+    BROADCAST: 'Broadcast',
+    STUDY: 'Study',
+    MEDICAL: 'Medical',
+    POLITICAL: 'Political',
+    NONE: 'None',
+  };
+  return map[k] || k.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** 解析 Graph `amount_spent` 等字段为数字型花费（主单位，用于无法按「最小单位」解析时的回退） */
 function parseAmountSpent(v: unknown): number {
   if (v == null) return 0;
   if (typeof v === 'number') return v;
   return parseSpend(String(v));
 }
 
+/** 解析 Graph `business` / `owner_business` 节点或纯 id 字符串 */
 function readBusinessNode(v: unknown): { id?: string; name?: string } {
   if (v == null) return {};
   if (typeof v === 'string' || typeof v === 'number') {
@@ -53,7 +97,9 @@ function readBusinessNode(v: unknown): { id?: string; name?: string } {
   return { id, name };
 }
 
-/** Graph / 页面脚本中的广告账户 JSON → 表格行 */
+/**
+ * 将单条 Graph / 页面脚本广告账户 JSON 映射为本地 `FbAdAccountRecord`（含中文枚举展示字段）。
+ */
 export function mapGraphApiAdAccountToRecord(
   a: Record<string, unknown>,
   accountId: string,
@@ -61,9 +107,18 @@ export function mapGraphApiAdAccountToRecord(
   sourceUrl: string
 ): FbAdAccountRecord {
   const currency = String(a.currency ?? '');
-  const balance = a.balance != null ? String(a.balance) : '';
-  const spendCap = a.spend_cap != null ? String(a.spend_cap) : '';
-  const amountSpent = parseAmountSpent(a.amount_spent ?? a.amount_spent_string ?? a.spend);
+  const balanceRaw = a.balance;
+  const spendCapRaw = a.spend_cap;
+  const minDailyRaw = a.min_daily_budget;
+  const balanceStr = balanceRaw != null ? String(balanceRaw) : '';
+  const spendCap = spendCapRaw != null ? String(spendCapRaw) : '';
+  const amountSpentMinor = parseMinorInt(a.amount_spent ?? a.amount_spent_string ?? a.spend);
+  const amountSpentMajor =
+    amountSpentMinor != null ? amountSpentMinor / 100 : parseAmountSpent(a.amount_spent ?? a.amount_spent_string ?? a.spend);
+  const balanceMinor = parseMinorInt(balanceRaw);
+  const spendCapMinor = parseMinorInt(spendCapRaw);
+  const minDailyBudgetMinor = parseMinorInt(minDailyRaw);
+  const accountKindLabel = formatAccountKindLabel(a.account_type);
   const prepay = a.is_prepay_account;
   let accountType: string | undefined;
   if (prepay === true || prepay === 1) accountType = '预付';
@@ -101,7 +156,14 @@ export function mapGraphApiAdAccountToRecord(
     status: formatAccountStatusZh(a.account_status ?? a.status ?? 'unknown'),
     currency: currency || undefined,
     accountType,
-    balance: balance || undefined,
+    accountKindLabel,
+    balance: balanceStr || undefined,
+    balanceMinor,
+    billingAmountMinor: balanceMinor,
+    paymentThresholdMinor: spendCapMinor,
+    spendCapMinor,
+    minDailyBudgetMinor,
+    totalSpentMinor: amountSpentMinor,
     dailyLimit:
       a.min_daily_budget != null
         ? String(a.min_daily_budget)
@@ -109,7 +171,7 @@ export function mapGraphApiAdAccountToRecord(
           ? spendCap
           : undefined,
     spendingLimit: spendCap || undefined,
-    totalSpent: amountSpent,
+    totalSpent: amountSpentMajor,
     periodSpent:
       a.amount_spent != null
         ? String(a.amount_spent)
@@ -146,7 +208,7 @@ export function mapGraphApiAdAccountToRecord(
           : a.country != null
             ? String(a.country).trim() || undefined
             : undefined,
-    spend: amountSpent,
+    spend: amountSpentMajor,
     capturedAt: now,
     sourceUrl: sourceUrl,
   };

@@ -4,6 +4,9 @@ import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAc
 
 const GRAPH_VERSION = 'v21.0';
 
+/**
+ * Graph `me/adaccounts` 请求字段列表（逗号拼接）。含 BM 嵌套、资金源展示、业务国家等。
+ */
 const AD_ACCOUNT_FIELDS = [
   'id',
   'account_id',
@@ -28,10 +31,11 @@ const AD_ACCOUNT_FIELDS = [
   'funding_source',
   'funding_source_details{display_string}',
   'user_role',
+  'account_type',
 ].join(',');
 
 /**
- * 使用用户 access_token 调用 Graph `me/adaccounts`，分页拉全量并映射为本地行。
+ * 使用用户 `access_token` 分页调用 `GET /me/adaccounts`，映射为 `FbAdAccountRecord[]`。
  */
 export async function fetchAdAccountsFromGraph(accessToken: string): Promise<FbAdAccountRecord[]> {
   console.info('[fbControl:graph] 开始拉取广告账户', {

@@ -57,6 +57,27 @@ export interface FbAdAccountRecord {
   secondaryStatus?: string;
   /** 管理员数量（若采集） */
   adminCount?: number;
+  /** 推送状态（自有平台 / 后续对接） */
+  pushStatus?: string;
+  /**
+   * 账号类型展示（如 Graph `account_type`：GENERAL → Business），与预付/后付的 `accountType` 区分。
+   */
+  accountKindLabel?: string;
+  /** 账单金额（Graph balance 等，单位：币种最小单位，如美分） */
+  billingAmountMinor?: number;
+  /** 支付/花费门槛（如 spend_cap，单位：币种最小单位；0 常表示不限） */
+  paymentThresholdMinor?: number;
+  /** 隐藏管理员：assigned_users 数量（点击「加载」后写入） */
+  hiddenAdminCount?: number;
+
+  /** Graph amount_spent 原始最小单位（便于展示时与余额口径一致） */
+  totalSpentMinor?: number;
+  /** Graph balance 整数最小单位 */
+  balanceMinor?: number;
+  /** spend_cap 最小单位 */
+  spendCapMinor?: number;
+  /** min_daily_budget 最小单位 */
+  minDailyBudgetMinor?: number;
   /** 兼容旧字段：付款展示文案 */
   paymentAmount?: string;
   /** 兼容旧字段：花费数值（可与 totalSpent 二选一） */
@@ -64,6 +85,17 @@ export interface FbAdAccountRecord {
   /** 插件采集时间戳 */
   capturedAt: number;
   sourceUrl?: string;
+}
+
+/** 广告账户「支付/计费」类活动一行（来自 Graph activities） */
+export interface FbAdAccountPaymentActivity {
+  eventTime?: string;
+  eventType?: string;
+  translatedEventType?: string;
+  objectName?: string;
+  objectType?: string;
+  /** 合并 extra_data / 关联对象等摘要 */
+  detail?: string;
 }
 
 /** 像素分享 — 与「像素分享」表对齐 */

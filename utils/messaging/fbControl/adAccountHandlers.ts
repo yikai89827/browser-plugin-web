@@ -1,5 +1,8 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
+import { fbControlLog, fbControlWarn } from '../../fbControlLog';
+import { getFbAccessToken } from '../../fb/accessTokenStore';
+import { fetchAdAccountPaymentActivities } from '../../fb/graphFetchAdAccountPaymentActivities';
 import { syncAdAccountsFromGraphToIndexedDb } from '../../fb/graphAdAccountSyncService';
 import {
   fbIdbClearAccounts,
@@ -15,7 +18,9 @@ export async function handleFbControlAdAccountMessage(
   switch (message.action) {
     case 'FB_CONTROL_SAVE_ACCOUNTS': {
       const rows = (message.data as FbAdAccountRecord[]) || [];
+      fbControlLog('messaging:accounts', 'FB_CONTROL_SAVE_ACCOUNTS', { count: rows.length });
       const upserted = await fbIdbUpsertAccounts(rows);
+      fbControlLog('messaging:accounts', 'SAVE_ACCOUNTS 完成', { upserted });
       return { success: true, payload: { upserted } };
     }
 
@@ -24,25 +29,53 @@ export async function handleFbControlAdAccountMessage(
       if (!patch?.accountId) {
         return { success: false, error: 'accountId required' };
       }
+      fbControlLog('messaging:accounts', 'FB_CONTROL_MERGE_ACCOUNT', { accountId: patch.accountId });
       await fbIdbMergeAccount(patch);
       return { success: true };
     }
 
     case 'FB_CONTROL_GET_ACCOUNTS': {
+      fbControlLog('messaging:accounts', 'FB_CONTROL_GET_ACCOUNTS');
       const list = await fbIdbGetAllAccounts();
+      fbControlLog('messaging:accounts', 'GET_ACCOUNTS 返回', { count: list.length });
       return { success: true, payload: { list } };
     }
 
     case 'FB_CONTROL_CLEAR_ACCOUNTS':
+      fbControlLog('messaging:accounts', 'FB_CONTROL_CLEAR_ACCOUNTS');
       await fbIdbClearAccounts();
       return { success: true };
 
     case 'FB_CONTROL_SYNC_AD_ACCOUNTS_FROM_GRAPH': {
+      fbControlLog('messaging:accounts', 'FB_CONTROL_SYNC_AD_ACCOUNTS_FROM_GRAPH 开始');
       const r = await syncAdAccountsFromGraphToIndexedDb();
       if (!r.ok) {
+        fbControlWarn('messaging:accounts', 'Graph 同步失败', r.error);
         return { success: false, error: r.error };
       }
+      fbControlLog('messaging:accounts', 'Graph 同步成功', { upserted: r.upserted, total: r.total });
       return { success: true, payload: { upserted: r.upserted, total: r.total } };
+    }
+
+    case 'FB_CONTROL_FETCH_AD_ACCOUNT_PAYMENTS': {
+      const body = message.data as { accountId?: string } | undefined;
+      const accountId = body?.accountId?.trim();
+      if (!accountId) {
+        return { success: false, error: 'accountId required' };
+      }
+      fbControlLog('messaging:accounts', 'FB_CONTROL_FETCH_AD_ACCOUNT_PAYMENTS', { accountId });
+      const token = await getFbAccessToken();
+      if (!token) {
+        return { success: false, error: '未保存 access_token，无法查询支付记录' };
+      }
+      try {
+        const result = await fetchAdAccountPaymentActivities(token, accountId);
+        return { success: true, payload: result };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        fbControlWarn('messaging:accounts', '支付记录 Graph 失败', msg);
+        return { success: false, error: msg };
+      }
     }
 
     default:

@@ -1,27 +1,33 @@
 import { browser } from 'wxt/browser';
 import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
+import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 
 export type { FbPixelShareRecord };
 
+/** 生成像素分享行的稳定主键（像素 + BM） */
 function stablePixelShareId(pixelId: string, bmId: string): string {
   const p = pixelId || 'unknown_pixel';
   const b = bmId || 'no_bm';
   return `${p}::${b}`;
 }
 
+/** 将像素采集结果写入扩展 IndexedDB */
 async function persistPixelShares(rows: FbPixelShareRecord[]) {
   if (!rows.length) return;
   try {
+    fbControlLog('content:pixels', 'persistPixelShares', { count: rows.length });
     await browser.runtime.sendMessage({
       action: 'FB_CONTROL_SAVE_PIXEL_SHARES',
       data: rows,
     });
-    console.log(`[fbControl] persisted ${rows.length} pixel share rows to extension IndexedDB`);
   } catch (e) {
-    console.error('[fbControl] persist pixel shares failed', e);
+    fbControlError('content:pixels', 'persistPixelShares 失败', e);
   }
 }
 
+/**
+ * 在事件管理 / 数据集相关页从 DOM 或内嵌 JSON 采集像素与分享信息。
+ */
 export async function fetchPixels(): Promise<FbPixelShareRecord[]> {
   const pixels: FbPixelShareRecord[] = [];
   const now = Date.now();
@@ -29,6 +35,7 @@ export async function fetchPixels(): Promise<FbPixelShareRecord[]> {
 
   try {
     if (url.includes('/events_manager2/') || url.includes('/business/events/') || url.includes('datasets')) {
+      fbControlLog('content:pixels', '开始 DOM 扫描像素行', { url });
       const pixelRows = document.querySelectorAll(
         '[data-testid*="pixel-row"], [data-testid*="event-pixel"], [role="row"]'
       );
@@ -59,11 +66,12 @@ export async function fetchPixels(): Promise<FbPixelShareRecord[]> {
             });
           }
         } catch (err) {
-          console.error('Error parsing pixel row:', err);
+          fbControlError('content:pixels', '解析单行 DOM 失败', err);
         }
       });
 
       if (pixels.length === 0) {
+        fbControlLog('content:pixels', 'DOM 无行，尝试页面内嵌 pixelsData');
         const pageData = extractPageData();
         if (pageData?.pixels?.length) {
           for (let i = 0; i < pageData.pixels.length; i++) {
@@ -85,17 +93,18 @@ export async function fetchPixels(): Promise<FbPixelShareRecord[]> {
         }
       }
 
-      console.log(`[fbControl] collected ${pixels.length} pixel / share rows`);
+      fbControlLog('content:pixels', '采集完成', { count: pixels.length });
     }
 
     await persistPixelShares(pixels);
     return pixels;
   } catch (error) {
-    console.error('Error fetching pixels:', error);
+    fbControlError('content:pixels', 'fetchPixels 失败', error);
     throw error;
   }
 }
 
+/** 从 script 标签解析 pixelsData / eventsManagerData */
 function extractPageData(): { pixels?: any[] } | null {
   try {
     const scripts: NodeListOf<HTMLScriptElement> = document.querySelectorAll('script');
@@ -110,11 +119,12 @@ function extractPageData(): { pixels?: any[] } | null {
       }
     }
   } catch (error) {
-    console.error('Error extracting page data:', error);
+    fbControlError('content:pixels', 'extractPageData 失败', error);
   }
   return null;
 }
 
+/** 当前 URL 是否为像素 / 事件管理相关页 */
 export function isPixelPage(): boolean {
   const u = window.location.href;
   return (

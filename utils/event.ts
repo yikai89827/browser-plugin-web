@@ -1,49 +1,56 @@
 import { browser } from 'wxt/browser';
+import { fbControlError, fbControlLog } from './fbControlLog';
 
-export const initEvent = ()=>{
-    try {
-        if (browser.runtime && browser.runtime.onInstalled) {
-            browser.runtime.onInstalled.addListener((details) => {
-                if (details.reason === "install") {
-                    console.log("窗口被安装!");
-                } else if (details.reason === "update") {
-                    console.log("窗口被更新!");
-                }
-            });
+/**
+ * 注册扩展生命周期相关监听器（安装、更新、浏览器启动），用于调试或后续扩展。
+ */
+export const initEvent = () => {
+  try {
+    if (browser.runtime && browser.runtime.onInstalled) {
+      browser.runtime.onInstalled.addListener((details) => {
+        if (details.reason === 'install') {
+          fbControlLog('event', '扩展已安装');
+        } else if (details.reason === 'update') {
+          fbControlLog('event', '扩展已更新', { previousVersion: details.previousVersion });
         }
-        if (browser.runtime && browser.runtime.onStartup) {
-            browser.runtime.onStartup.addListener(() => {
-                console.log("浏览器启动时!");
-            });
-        }
-    } catch (error) {
-        console.error('初始化事件失败:', error);
+      });
     }
-}
+    if (browser.runtime && browser.runtime.onStartup) {
+      browser.runtime.onStartup.addListener(() => {
+        fbControlLog('event', '浏览器启动（扩展 onStartup）');
+      });
+    }
+  } catch (error) {
+    fbControlError('event', 'initEvent 失败', error);
+  }
+};
 
-// 显示通知红点
-export const showNotificationBadge = async (count?: number)=> {
-    try {
-        console.log('setBadgeText', browser, browser.browserAction)
-        await browser.action?.setBadgeText({
-            text: count ? String(count) : '●' // 数字或圆点
-        });
-        await browser.action?.setBadgeBackgroundColor({
-            color: '#FF0000' // 红色背景
-        });
-        await browser.action?.setBadgeTextColor({
-            color: '#FFFFFF' // 文字颜色
-        });
-    } catch (error) {
-        console.error('设置通知红点失败:', error);
-    }
-}
+/**
+ * 在工具栏图标上显示红点或数字角标（需 manifest 声明 action）。
+ */
+export const showNotificationBadge = async (count?: number) => {
+  try {
+    fbControlLog('event', '设置角标', { count });
+    await browser.action?.setBadgeText({
+      text: count ? String(count) : '●',
+    });
+    await browser.action?.setBadgeBackgroundColor({
+      color: '#FF0000',
+    });
+    await browser.action?.setBadgeTextColor({
+      color: '#FFFFFF',
+    });
+  } catch (error) {
+    fbControlError('event', '设置角标失败', error);
+  }
+};
 
-// 隐藏红点
-export const hideNotificationBadge = async ()=> {
-    try {
-        await browser.action?.setBadgeText({ text: '' });
-    } catch (error) {
-        console.error('清除通知红点失败:', error);
-    }
-}
+/** 清除工具栏角标 */
+export const hideNotificationBadge = async () => {
+  try {
+    await browser.action?.setBadgeText({ text: '' });
+    fbControlLog('event', '角标已清除');
+  } catch (error) {
+    fbControlError('event', '清除角标失败', error);
+  }
+};

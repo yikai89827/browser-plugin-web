@@ -9,8 +9,13 @@ import {
   setStoredExtensionId,
   usesExtensionIdFromEnv,
 } from '../lib/extensionBridge';
+import { fbControlLog } from '../../../utils/fbControlLog';
 
+/**
+ * 像素分享管理页：从扩展 IndexedDB 读取由 content script 采集的像素行。
+ */
 const extensionIdInput = ref(getStoredExtensionId());
+
 const rows = ref<FbPixelShareRecord[]>([]);
 const searchQuery = ref('');
 const loading = ref(false);
@@ -47,6 +52,7 @@ async function testExtension() {
   errorMsg.value = '';
   extensionOk.value = null;
   saveExtensionId();
+  fbControlLog('site:pixel-page', '检测扩展连接');
   if (!extensionConfigured()) {
     errorMsg.value = '请在 site/.env.development 配置 VITE_EXTENSION_ID，或在页面填写扩展 ID';
     return;
@@ -65,6 +71,7 @@ async function refreshFromExtension() {
   errorMsg.value = '';
   loading.value = true;
   saveExtensionId();
+  fbControlLog('site:pixel-page', '从扩展拉取像素分享列表');
   try {
     if (!extensionConfigured()) {
       throw new Error('请配置 VITE_EXTENSION_ID 或页面扩展 ID');
@@ -80,6 +87,7 @@ async function refreshFromExtension() {
       hour: '2-digit',
       minute: '2-digit',
     });
+    fbControlLog('site:pixel-page', '像素列表已更新', { count: rows.value.length });
   } catch (e: any) {
     errorMsg.value = e?.message || String(e);
   } finally {
@@ -95,6 +103,7 @@ function flag(ok?: boolean) {
 
 onMounted(() => {
   extensionIdInput.value = getStoredExtensionId();
+  fbControlLog('site:pixel-page', '页面挂载，自动拉取像素');
   refreshFromExtension().catch(() => {});
 });
 </script>
@@ -185,7 +194,13 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.fb-page { color: #e8eaed; }
+.fb-page {
+  color: var(--fb-page-text, #e8eaed);
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -194,37 +209,37 @@ onMounted(() => {
   justify-content: space-between;
   margin-bottom: 12px;
   padding: 12px 14px;
-  background: #1f2937;
+  background: var(--fb-surface-b, #1f2937);
   border-radius: 8px;
-  border: 1px solid #374151;
+  border: 1px solid var(--fb-border, #374151);
 }
 .meta { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.muted { color: #9ca3af; }
+.muted { color: var(--fb-muted, #9ca3af); }
 .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ext-id {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--fb-muted, #9ca3af);
 }
 .ext-id input {
   width: 260px;
   max-width: 50vw;
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #4b5563;
-  background: #111827;
-  color: #e5e7eb;
+  border: 1px solid var(--fb-input-border, #4b5563);
+  background: var(--fb-input-bg, #111827);
+  color: var(--fb-input-text, #e5e7eb);
   font-size: 12px;
 }
 .ext-id--env { flex-wrap: wrap; align-items: center; }
 .ext-id-preview {
   padding: 4px 10px;
   border-radius: 6px;
-  background: #111827;
-  border: 1px solid #374151;
-  color: #93c5fd;
+  background: var(--fb-input-bg, #111827);
+  border: 1px solid var(--fb-code-border, #374151);
+  color: var(--fb-link, #93c5fd);
   font-size: 12px;
   max-width: 220px;
   overflow: hidden;
@@ -240,7 +255,7 @@ onMounted(() => {
 }
 .btn.primary { background: #2563eb; color: #fff; }
 .btn.primary:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn.ghost { background: #374151; color: #e5e7eb; }
+.btn.ghost { background: var(--fb-ghost-bg, #374151); color: var(--fb-ghost-text, #e5e7eb); }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
 .badge.ok { background: #064e3b; color: #6ee7b7; }
 .badge.err { background: #7f1d1d; color: #fecaca; }
@@ -254,7 +269,7 @@ onMounted(() => {
 }
 .hint {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--fb-muted, #9ca3af);
   margin-bottom: 12px;
   line-height: 1.5;
 }
@@ -263,43 +278,48 @@ onMounted(() => {
   max-width: 420px;
   padding: 8px 12px;
   border-radius: 6px;
-  border: 1px solid #374151;
-  background: #111827;
-  color: #e5e7eb;
+  border: 1px solid var(--fb-border, #374151);
+  background: var(--fb-input-bg, #111827);
+  color: var(--fb-input-text, #e5e7eb);
   margin-bottom: 12px;
 }
 .table-wrap {
-  overflow: auto;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
   border-radius: 8px;
-  border: 1px solid #374151;
-  background: #111827;
+  border: 1px solid var(--fb-border, #374151);
+  background: var(--fb-surface-a, #111827);
 }
 table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
 th, td {
   padding: 10px 12px;
   text-align: left;
-  border-bottom: 1px solid #1f2937;
+  border-bottom: 1px solid var(--fb-cell-border, #1f2937);
   vertical-align: top;
 }
 th {
-  background: #0f172a;
-  color: #9ca3af;
+  background: var(--fb-th-bg, #0f172a);
+  color: var(--fb-th-text, #9ca3af);
   font-weight: 600;
   white-space: nowrap;
 }
-.num { width: 40px; text-align: right; color: #9ca3af; }
-.primary { color: #93c5fd; font-weight: 500; }
-.sub { font-size: 12px; color: #9ca3af; margin-top: 2px; }
-.mono { font-family: ui-monospace, monospace; }
+.num { width: 40px; text-align: right; color: var(--fb-muted, #9ca3af); }
+.primary { color: var(--fb-link, #93c5fd); font-weight: 500; }
+.sub { font-size: 12px; color: var(--fb-muted, #9ca3af); margin-top: 2px; }
+.mono { font-family: ui-monospace, monospace; color: var(--fb-mono, #d1d5db); }
 .small { font-size: 12px; }
 .center { text-align: center; }
 .empty {
   text-align: center;
-  color: #6b7280;
+  color: var(--fb-muted, #6b7280);
   padding: 28px 12px;
 }
 </style>

@@ -1,10 +1,11 @@
 import { browser } from 'wxt/browser';
+import { fbControlError, fbControlLog } from '../fbControlLog';
 import { scheduleAccessTokenCaptureFromUrl } from '../fb/tokenWebRequestCapture';
 
-// 监听网络请求
+/** 注册 `webRequest.onBeforeSendHeaders`，从 Facebook 系请求 URL 中调度 token 捕获 */
 export const getWebRequestHeaders = () => {
   if (!browser || !browser.webRequest) {
-    console.error('browser.webRequest is not available');
+    fbControlError('proxy', 'webRequest 不可用，跳过 onBeforeSendHeaders');
     return;
   }
 
@@ -20,13 +21,13 @@ export const getWebRequestHeaders = () => {
         if (url.includes('facebook.com') && lightApis.some((p) => url.includes(p))) {
           try {
             const path = url.split(/[?#]/)[0];
-            console.log('%c [fbControl] ads graph path:', 'color:yellowgreen;', path);
+            fbControlLog('proxy', 'Light Ads Graph 请求', { path });
           } catch {
             /* ignore */
           }
         }
       } catch (error) {
-        console.error('Error in webRequest listener:', error);
+        fbControlError('proxy', 'onBeforeSendHeaders 回调异常', error);
       }
       return { requestHeaders: details.requestHeaders };
     },
@@ -34,25 +35,22 @@ export const getWebRequestHeaders = () => {
     ['requestHeaders']
   );
 
-  console.log('Web request listener added successfully');
+  fbControlLog('proxy', '已注册 onBeforeSendHeaders（全 URL）');
 };
 
-// 监听响应头事件
+/** 注册 `onHeadersReceived`，仅做调试级 URL 打印（可选） */
 export const getWebResponseHeaders = () => {
   if (!browser || !browser.webRequest) {
-    console.error('browser.webRequest is not available');
+    fbControlError('proxy', 'webRequest 不可用，跳过 onHeadersReceived');
     return;
   }
 
   browser.webRequest.onHeadersReceived.addListener(
     (details) => {
       try {
-        const { url, method } = details;
-        if (url && (url.includes('facebook.com') || url.includes('baidu.com'))) {
-          console.log('%c 响应地址:', 'color:green;', url, method);
-        }
+        /* onHeadersReceived：保留钩子位；默认不打日志以免刷屏 */
       } catch (error) {
-        console.error('Error in webResponse listener:', error);
+        fbControlError('proxy', 'onHeadersReceived 回调异常', error);
       }
       return { responseHeaders: details.responseHeaders };
     },
@@ -60,20 +58,23 @@ export const getWebResponseHeaders = () => {
     ['responseHeaders']
   );
 
-  console.log('Web response listener added successfully');
+  fbControlLog('proxy', '已注册 onHeadersReceived');
 };
 
+/** 透传 API 响应（占位，供业务扩展） */
 export const processApiResponse = (response: any): any => {
   return response;
 };
 
+/** 预留：可按 URL 改写请求（当前恒返回 undefined） */
 async function handleApiRequest(url: string): Promise<{ redirectUrl?: string } | undefined> {
   return undefined;
 }
 
+/** 注册 `onBeforeRequest` 拦截 Light Ads GET（当前未改写） */
 export const interceptApiRequests = () => {
   if (!browser || !browser.webRequest) {
-    console.error('browser.webRequest is not available');
+    fbControlError('proxy', 'webRequest 不可用，跳过 onBeforeRequest');
     return;
   }
 
@@ -88,7 +89,7 @@ export const interceptApiRequests = () => {
           return handleApiRequest(url);
         }
       } catch (error) {
-        console.error('Error in API request interceptor:', error);
+        fbControlError('proxy', 'onBeforeRequest 回调异常', error);
       }
       return {};
     },
@@ -96,7 +97,8 @@ export const interceptApiRequests = () => {
     ['blocking']
   );
 
-  console.log('API request interceptor added successfully');
+  fbControlLog('proxy', '已注册 onBeforeRequest（Light Ads 路径）');
 };
 
+/** 预留系统代理入口（未实现） */
 export const setProxy = () => {};

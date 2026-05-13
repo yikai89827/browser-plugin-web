@@ -1,4 +1,5 @@
 import type { FbAdAccountRecord, FbPixelShareRecord } from '../../interfaces/fbControl';
+import { fbControlError, fbControlLog } from '../fbControlLog';
 
 const DB_NAME = 'fb_control_extension';
 const DB_VERSION = 1;
@@ -27,13 +28,20 @@ function mergeAdAccount(
   ) {
     out.remark = p.remark;
   }
+  if (incoming.hiddenAdminCount === undefined && p?.hiddenAdminCount !== undefined) {
+    out.hiddenAdminCount = p.hiddenAdminCount;
+  }
   return out;
 }
 
+/** 打开或升级 IndexedDB；失败时通过 Promise reject */
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => {
+      fbControlError('idb', 'openDb 失败', req.error);
+      reject(req.error);
+    };
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = (ev) => {
       const db = (ev.target as IDBOpenDBRequest).result;
@@ -47,6 +55,7 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+/** 按键读取单条广告账户 */
 export async function fbIdbGetAccount(accountId: string): Promise<FbAdAccountRecord | undefined> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -63,6 +72,10 @@ export async function fbIdbGetAccount(accountId: string): Promise<FbAdAccountRec
   });
 }
 
+/**
+ * 批量合并写入广告账户；与已有行按 `accountId` 合并，保留收藏/备注等本地字段。
+ * @returns 本次参与合并的传入行数（非库内总行数）
+ */
 export async function fbIdbUpsertAccounts(rows: FbAdAccountRecord[]): Promise<number> {
   if (!rows.length) return 0;
   const existing = await fbIdbGetAllAccounts();
@@ -93,10 +106,11 @@ export async function fbIdbUpsertAccounts(rows: FbAdAccountRecord[]): Promise<nu
       reject(tx.error);
     };
   });
+  fbControlLog('idb', 'fbIdbUpsertAccounts 完成', { incomingRows: count, storeSizeAfter: map.size });
   return count;
 }
 
-/** 局部更新单条（如站点上改收藏、备注） */
+/** 局部更新单条账户（如站点改收藏、备注） */
 export async function fbIdbMergeAccount(
   patch: Partial<FbAdAccountRecord> & { accountId: string }
 ): Promise<void> {
@@ -113,6 +127,7 @@ export async function fbIdbMergeAccount(
   await fbIdbUpsertAccounts([incoming]);
 }
 
+/** 批量写入像素分享记录 */
 export async function fbIdbUpsertPixelShares(rows: FbPixelShareRecord[]): Promise<number> {
   if (!rows.length) return 0;
   const db = await openDb();
@@ -138,9 +153,11 @@ export async function fbIdbUpsertPixelShares(rows: FbPixelShareRecord[]): Promis
       reject(tx.error);
     };
   });
+  fbControlLog('idb', 'fbIdbUpsertPixelShares 完成', { upserted: count });
   return count;
 }
 
+/** 读取全部广告账户 */
 export async function fbIdbGetAllAccounts(): Promise<FbAdAccountRecord[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -158,6 +175,7 @@ export async function fbIdbGetAllAccounts(): Promise<FbAdAccountRecord[]> {
   });
 }
 
+/** 读取全部像素分享 */
 export async function fbIdbGetAllPixelShares(): Promise<FbPixelShareRecord[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -175,9 +193,10 @@ export async function fbIdbGetAllPixelShares(): Promise<FbPixelShareRecord[]> {
   });
 }
 
+/** 清空广告账户表 */
 export async function fbIdbClearAccounts(): Promise<void> {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_ACCOUNTS, 'readwrite');
     tx.objectStore(STORE_ACCOUNTS).clear();
     tx.oncomplete = () => {
@@ -193,11 +212,13 @@ export async function fbIdbClearAccounts(): Promise<void> {
       reject(tx.error);
     };
   });
+  fbControlLog('idb', 'fbIdbClearAccounts 完成');
 }
 
+/** 清空像素分享表 */
 export async function fbIdbClearPixelShares(): Promise<void> {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_PIXELS, 'readwrite');
     tx.objectStore(STORE_PIXELS).clear();
     tx.oncomplete = () => {
@@ -213,4 +234,5 @@ export async function fbIdbClearPixelShares(): Promise<void> {
       reject(tx.error);
     };
   });
+  fbControlLog('idb', 'fbIdbClearPixelShares 完成');
 }

@@ -1,4 +1,5 @@
-import type { FbControlIncomingMessage } from './types';
+import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
+import { fbControlLog } from '../../fbControlLog';
 import { handleFbControlAdAccountMessage } from './adAccountHandlers';
 import { handleFbControlPixelMessage } from './pixelHandlers';
 import { handleFbControlTokenMessage } from './tokenHandlers';
@@ -12,6 +13,7 @@ export async function handleFbControlMessage(
   message: FbControlIncomingMessage
 ): Promise<FbControlMessageResult> {
   if (message.action === 'FB_CONTROL_PING') {
+    fbControlLog('messaging:bus', 'FB_CONTROL_PING');
     return { success: true, payload: { ok: true, version: 1 } };
   }
 
@@ -24,5 +26,6 @@ export async function handleFbControlMessage(
   const pixelRes = await handleFbControlPixelMessage(message);
   if (pixelRes !== null) return pixelRes;
 
+  fbControlLog('messaging:bus', '未匹配 fbControl action', { action: message.action });
   return null;
 }

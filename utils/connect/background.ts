@@ -8,6 +8,10 @@ import { initTaskList, startTaskList } from '../scraper/setTask';
 import { randomIntInRange } from '..';
 import { hideNotificationBadge, showNotificationBadge } from '../../utils/event'
 
+/**
+ * 后台脚本与内容脚本的长连接（`runtime.connect` Port）、任务队列与心跳。
+ * 与 fbControl 的 `runtime.sendMessage` 流程并存，服务遗留采集/任务逻辑。
+ */
 // @ts-ignore
 const TIMEOUT = import.meta.env.WXT_API_TIMEOUT
 // @ts-ignore

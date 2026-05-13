@@ -5,9 +5,11 @@ import {
   mapGraphApiAdAccountToRecord,
   normalizeAccountId,
 } from '../../../utils/fb/mapGraphAdAccount';
+import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 
 export type { FbAdAccountRecord };
 
+/** 从 DOM 文本解析花费数字 */
 function parseSpend(spendText?: string | null): number {
   if (!spendText) return 0;
   const cleaned = spendText.replace(/[^0-9.-]/g, '');
@@ -15,19 +17,23 @@ function parseSpend(spendText?: string | null): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
+/** 将采集结果发送到后台 `FB_CONTROL_SAVE_ACCOUNTS` */
 async function persistAccounts(rows: FbAdAccountRecord[]) {
   if (!rows.length) return;
   try {
+    fbControlLog('content:accounts', 'persistAccounts', { count: rows.length });
     await browser.runtime.sendMessage({
       action: 'FB_CONTROL_SAVE_ACCOUNTS',
       data: rows,
     });
-    console.log(`[fbControl] persisted ${rows.length} accounts to extension IndexedDB`);
   } catch (e) {
-    console.error('[fbControl] persist accounts failed', e);
+    fbControlError('content:accounts', 'persistAccounts 失败', e);
   }
 }
 
+/**
+ * 在广告管理 / BM 账户列表页从 DOM（或页面内嵌 JSON）采集广告账户并持久化。
+ */
 export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
   const accounts: FbAdAccountRecord[] = [];
   const now = Date.now();
@@ -35,6 +41,7 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
 
   try {
     if (url.includes('/adsmanager/manage/') || url.includes('business.facebook.com')) {
+      fbControlLog('content:accounts', '开始 DOM 扫描账户行', { url });
       const accountRows = document.querySelectorAll(
         '[data-testid*="account-row"], [role="row"]'
       );
@@ -68,11 +75,12 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
             });
           }
         } catch (err) {
-          console.error('Error parsing account row:', err);
+          fbControlError('content:accounts', '解析单行 DOM 失败', err);
         }
       });
 
       if (accounts.length === 0) {
+        fbControlLog('content:accounts', 'DOM 无行，尝试 adsManagerContext 内嵌 JSON');
         const pageData = extractPageData();
         const list = pageData?.accounts ?? pageData?.adaccounts ?? pageData?.ad_accounts;
         if (Array.isArray(list) && list.length) {
@@ -87,17 +95,18 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
         }
       }
 
-      console.log(`[fbControl] collected ${accounts.length} ad accounts`);
+      fbControlLog('content:accounts', '采集完成', { count: accounts.length });
     }
 
     await persistAccounts(accounts);
     return accounts;
   } catch (error) {
-    console.error('Error fetching accounts:', error);
+    fbControlError('content:accounts', 'fetchAccounts 失败', error);
     throw error;
   }
 }
 
+/** 从页面 script 中解析 `adsManagerContext` JSON（回退数据源） */
 function extractPageData(): { accounts?: any[]; adaccounts?: any[]; ad_accounts?: any[] } | null {
   try {
     const scripts: NodeListOf<HTMLScriptElement> = document.querySelectorAll('script');
@@ -112,11 +121,12 @@ function extractPageData(): { accounts?: any[]; adaccounts?: any[]; ad_accounts?
       }
     }
   } catch (error) {
-    console.error('Error extracting page data:', error);
+    fbControlError('content:accounts', 'extractPageData 失败', error);
   }
   return null;
 }
 
+/** 当前 URL 是否为广告账户相关管理页 */
 export function isAccountPage(): boolean {
   return (
     window.location.href.includes('/adsmanager/manage/') ||
