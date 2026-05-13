@@ -17,6 +17,9 @@ import {
 } from '../lib/accountListSyncHub';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
+import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
+import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
+import type { BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
 
 const COL_COUNT = 30;
 
@@ -58,9 +61,13 @@ const nameDraft = ref('');
 const moreMenuOpen = ref(false);
 const moreWrapRef = ref<HTMLElement | null>(null);
 
-/** 右侧批量操作抽屉 */
+/** 右侧批量操作抽屉（UI 与选项见 BatchOperationDrawer + batchOperationPresets） */
 const batchDrawerOpen = ref(false);
 const batchDrawerKey = ref('');
+
+const batchDrawerPreset = computed(() =>
+  batchDrawerOpen.value && batchDrawerKey.value ? getBatchDrawerPreset(batchDrawerKey.value) : null
+);
 
 function payState(accountId: string): 'idle' | 'loading' | 'empty' | 'error' {
   return paymentUi[accountId] ?? 'idle';
@@ -828,20 +835,6 @@ function resetAdvFilterInsideModal() {
   advDraft.statusKind = 'any';
 }
 
-const BATCH_DRAWER_LABELS: Record<string, string> = {
-  addAuth: '增加授权',
-  removeAuth: '删除授权',
-  addBm: '添加到 BM',
-  setLimit: '设置限额',
-  resetLimit: '重置限额',
-  removeAdmin: '移除管理员',
-  accountPush: '账号推送',
-  bmPartner: 'BM 合作伙伴',
-  accountRename: '账号重命名',
-  updateCompany: '更新公司信息',
-  batchPaymentRecords: '支付记录',
-};
-
 function openBatchDrawer(key: string) {
   if (!selectedCount.value) return;
   moreMenuOpen.value = false;
@@ -980,8 +973,17 @@ function closeBatchDrawer() {
   batchDrawerKey.value = '';
 }
 
-function batchDrawerTitle(): string {
-  return BATCH_DRAWER_LABELS[batchDrawerKey.value] || '批量操作';
+function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
+  errorMsg.value = '';
+  fbControlLog('site:account-page', '批量操作提交（占位）', {
+    entryKey: payload.entryKey,
+    operationId: payload.operationId,
+    subId: payload.subId,
+    accountCount: payload.selectedAccountIds.length,
+    useDefaultInterval: payload.useDefaultInterval,
+    friendCheckOk: payload.friendCheckOk,
+    uidsLines: payload.uidsText ? payload.uidsText.split(/\r?\n/).filter(Boolean).length : 0,
+  });
 }
 
 onMounted(() => {
@@ -1520,28 +1522,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="batchDrawerOpen" class="drawer-backdrop" @click.self="closeBatchDrawer"></div>
-    <aside class="drawer-panel" :class="{ 'drawer-panel--open': batchDrawerOpen }">
-      <div class="drawer-head">
-        <h3>{{ batchDrawerTitle() }}</h3>
-        <button type="button" class="drawer-close" aria-label="关闭" @click="closeBatchDrawer">×</button>
-      </div>
-      <div class="drawer-body">
-        <p class="muted">
-          已选择 <strong>{{ selectedCount }}</strong> 个广告账户。以下为占位说明，后续可对接扩展 / Graph 能力。
-        </p>
-        <ul class="drawer-list">
-          <li v-for="id in selectedAccountIds" :key="id" class="mono small">
-            {{ id }}
-          </li>
-        </ul>
-        <p v-if="!selectedCount" class="muted">请先在表格中勾选账户。</p>
-      </div>
-      <div class="drawer-foot">
-        <button type="button" class="btn ghost" @click="closeBatchDrawer">关闭</button>
-        <button type="button" class="btn primary" disabled>执行（待接入）</button>
-      </div>
-    </aside>
+    <BatchOperationDrawer
+      :open="batchDrawerOpen"
+      :preset="batchDrawerPreset"
+      :selected-account-ids="selectedAccountIds"
+      @close="closeBatchDrawer"
+      @confirm="onBatchDrawerConfirm"
+    />
   </div>
 </template>
 
@@ -2218,71 +2205,6 @@ tbody td.sticky-col {
   margin-top: 16px;
 }
 
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 2500;
-}
-.drawer-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: min(440px, 94vw);
-  height: 100vh;
-  z-index: 2600;
-  background: var(--fb-modal-bg, #1f2937);
-  color: var(--fb-modal-text, #e5e7eb);
-  border-left: 1px solid var(--fb-modal-border, #374151);
-  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
-  transform: translateX(100%);
-  transition: transform 0.28s ease;
-  display: flex;
-  flex-direction: column;
-}
-.drawer-panel--open {
-  transform: translateX(0);
-}
-.drawer-head {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--fb-border, #374151);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-}
-.drawer-head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-.drawer-close {
-  border: none;
-  background: transparent;
-  color: var(--fb-muted, #9ca3af);
-  font-size: 26px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
-}
-.drawer-body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px 20px;
-}
-.drawer-foot {
-  padding: 12px 20px;
-  border-top: 1px solid var(--fb-border, #374151);
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.drawer-list {
-  max-height: 42vh;
-  overflow: auto;
-  margin: 10px 0 0;
-  padding-left: 18px;
-}
 .owner-role-cell {
   white-space: nowrap;
   max-width: 160px;

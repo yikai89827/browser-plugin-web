@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed } from 'vue';
 import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
 import {
   extensionConfigured,
@@ -9,6 +9,7 @@ import {
   usesExtensionIdFromEnv,
 } from '../lib/extensionBridge';
 import { fbControlLog } from '../../../utils/fbControlLog';
+import ExtensionMenuGate from '../components/ExtensionMenuGate.vue';
 
 /**
  * 像素分享管理页：从扩展 IndexedDB 读取由 content script 采集的像素行。
@@ -92,14 +93,16 @@ function flag(ok?: boolean) {
   return '—';
 }
 
-onMounted(() => {
-  fbControlLog('site:pixel-page', '页面挂载，自动拉取像素');
-  refreshFromExtension().catch(() => {});
-});
+function onExtensionMenuReady() {
+  extensionOk.value = true;
+  fbControlLog('site:pixel-page', '扩展已连通，拉取像素列表');
+  void refreshFromExtension();
+}
 </script>
 
 <template>
-  <div class="fb-page">
+  <ExtensionMenuGate @ready="onExtensionMenuReady">
+    <div class="fb-page">
     <div class="toolbar">
       <div class="meta">
         <span v-if="lastUpdated">上次更新 | {{ lastUpdated }}</span>
@@ -172,7 +175,8 @@ onMounted(() => {
         </tbody>
       </table>
     </div>
-  </div>
+    </div>
+  </ExtensionMenuGate>
 </template>
 
 <style scoped>
