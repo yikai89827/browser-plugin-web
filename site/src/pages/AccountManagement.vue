@@ -1632,6 +1632,7 @@ onUnmounted(() => {
 }
 table {
   width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
@@ -1668,37 +1669,37 @@ tbody td.sticky-col {
 }
 .sticky-chk {
   left: 0;
-  width: 40px;
-  min-width: 40px;
-  max-width: 40px;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
   box-sizing: border-box;
 }
 .sticky-num {
-  left: 40px;
+  left: 44px;
+  width: 56px;
+  min-width: 56px;
+  max-width: 56px;
+  box-sizing: border-box;
+}
+.sticky-ico {
+  left: 100px;
   width: 52px;
   min-width: 52px;
   max-width: 52px;
   box-sizing: border-box;
 }
-.sticky-ico {
-  left: 92px;
-  width: 48px;
-  min-width: 48px;
-  max-width: 48px;
-  box-sizing: border-box;
-}
 .sticky-status {
-  left: 140px;
-  width: 56px;
-  min-width: 56px;
-  max-width: 56px;
+  left: 152px;
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
   box-sizing: border-box;
   text-align: center;
 }
 .sticky-account {
-  left: 196px;
-  min-width: 200px;
-  max-width: 300px;
+  left: 216px;
+  min-width: 240px;
+  max-width: 380px;
   box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.55);
 }
 .admin-badge {
@@ -1719,13 +1720,13 @@ tbody td.sticky-col {
   margin-left: 8px;
 }
 .btn-pay--sm {
-  min-width: 56px;
+  min-width: 64px;
   padding: 4px 8px;
   font-size: 11px;
 }
-.chk { width: 40px; min-width: 40px; max-width: 40px; text-align: center; box-sizing: border-box; }
-.num { width: 52px; min-width: 52px; text-align: right; color: var(--fb-muted, #9ca3af); }
-.ico { width: 48px; min-width: 48px; max-width: 48px; text-align: center; }
+.chk { width: 44px; min-width: 44px; max-width: 44px; text-align: center; box-sizing: border-box; }
+.num { width: 56px; min-width: 56px; text-align: right; color: var(--fb-muted, #9ca3af); }
+.ico { width: 52px; min-width: 52px; max-width: 52px; text-align: center; }
 .star {
   background: none;
   border: none;
@@ -1771,7 +1772,7 @@ tbody td.sticky-col {
 .sub { margin-top: 2px; }
 .mono { font-family: ui-monospace, monospace; color: var(--fb-mono, #d1d5db); }
 .small { font-size: 11px; }
-.bm { min-width: 120px; }
+.bm { min-width: 140px; }
 .lock.policy { color: #f87171; font-weight: 500; }
 .badge.warn { background: #78350f; color: #fcd34d; }
 .btn.sm { padding: 6px 12px; font-size: 12px; }
@@ -1870,7 +1871,7 @@ tbody td.sticky-col {
 
 .pay-cell { white-space: nowrap; }
 .btn-pay {
-  min-width: 72px;
+  min-width: 84px;
   padding: 4px 10px;
   font-size: 12px;
   border-radius: 6px;

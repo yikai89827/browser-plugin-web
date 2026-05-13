@@ -8,6 +8,12 @@ import {
   requestAccountsGraphSync,
 } from './lib/accountListSyncHub';
 import { accountsShellExtensionReady } from './lib/accountsRouteGate';
+import {
+  pixelListLastUpdatedDisplay,
+  pixelListRefreshRunning,
+  requestPixelListRefresh,
+  pixelsShellExtensionReady,
+} from './lib/pixelListHub';
 
 const THEME_KEY = 'fb_admin_theme';
 
@@ -96,6 +102,19 @@ function navItemActive(item: { path: string }) {
               @click="requestAccountsGraphSync"
             >
               {{ accountsGraphSyncRunning ? '加载中…' : '更新' }}
+            </button>
+          </template>
+          <template v-if="route.name === 'pixels' && pixelsShellExtensionReady">
+            <span class="accounts-header-meta">
+              最近一次更新时间：{{ pixelListLastUpdatedDisplay || '—' }}
+            </span>
+            <button
+              type="button"
+              class="btn-header-update"
+              :disabled="pixelListRefreshRunning"
+              @click="requestPixelListRefresh"
+            >
+              {{ pixelListRefreshRunning ? '加载中…' : '更新' }}
             </button>
           </template>
           <div class="theme-switch" role="group" aria-label="界面主题">

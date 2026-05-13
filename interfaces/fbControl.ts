@@ -113,6 +113,10 @@ export interface FbPixelShareRecord {
   role?: string;
   shareOk?: boolean;
   bmShareOk?: boolean;
+  /** 收藏（扩展未写入时可在站点会话内本地切换） */
+  favorite?: boolean;
+  /** 关联广告账户 ID，「广告账号」列加载用 */
+  adAccountId?: string;
   capturedAt: number;
   sourceUrl?: string;
 }
