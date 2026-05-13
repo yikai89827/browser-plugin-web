@@ -123,7 +123,7 @@ export function formatUserRoleZh(raw: unknown): string | undefined {
     const inner = Number.parseInt(legacy[1], 10);
     if (!Number.isNaN(inner)) {
       if (USER_ROLE_NUM_ZH[inner]) return USER_ROLE_NUM_ZH[inner];
-      if (inner > 1_000_000_000) return `系统角色（${inner}）`;
+      if (inner > 1_000_000_000) return `系统角色`;
       return `角色码 ${inner}`;
     }
   }
@@ -169,4 +169,48 @@ export function formatPaymentMethodZh(
   const s = String(fundingSource).trim();
   if (/^\d{8,}$/.test(s)) return `支付渠道（ID：${s}）`;
   return s;
+}
+
+/** Graph `account_type` 枚举键，或与 `mapGraphAdAccount` 一致的英文短标签 */
+const ACCOUNT_KIND_ZH: Record<string, string> = {
+  PERSONAL: '个人',
+  GENERAL: '商业',
+  BUSINESS: '商业',
+  CORPORATE: '商业',
+  INHOUSE_AGENCY: '商业',
+  IN_HOUSE_AGENCY: '商业',
+  EXTERNAL_AGENCY: '商业',
+  AGENCY: '商业',
+  GOVERNMENT: '政府',
+  NONPROFIT: '非营利',
+  WHITELISTED: '白名单',
+  APP_DEVELOPER: '应用开发者',
+  BROADCAST: '广播',
+  STUDY: '研究',
+  MEDICAL: '医疗',
+  POLITICAL: '政治',
+  NONE: '—',
+};
+
+function normalizeAccountKindEnumKey(s: string): string {
+  return s
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+/**
+ * 表格「账号类型」列：将 Graph `account_type` / 已落库的英文标签转为中文（主类为「商业」「个人」）。
+ */
+export function formatAccountKindLabelZh(raw?: string | null): string {
+  if (raw == null) return '';
+  const t = String(raw).trim();
+  if (!t) return '';
+  if (t === '个人' || t === '商业') return t;
+  if (t === '—') return '—';
+  const key = normalizeAccountKindEnumKey(t);
+  if (ACCOUNT_KIND_ZH[key]) return ACCOUNT_KIND_ZH[key];
+  return t;
 }

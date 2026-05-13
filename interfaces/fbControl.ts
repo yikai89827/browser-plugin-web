@@ -62,7 +62,7 @@ export interface FbAdAccountRecord {
   /** 推送状态（自有平台 / 后续对接） */
   pushStatus?: string;
   /**
-   * 账号类型展示（如 Graph `account_type`：GENERAL → Business），与预付/后付的 `accountType` 区分。
+   * 账号类型展示（Graph `account_type` 经映射的短标签，如 Business / Personal；表格层再转为中文）。
    */
   accountKindLabel?: string;
   /** 账单金额（Graph balance 等，单位：币种最小单位，如美分） */

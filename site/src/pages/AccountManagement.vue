@@ -16,7 +16,7 @@ import {
   unregisterAccountsGraphSync,
 } from '../lib/accountListSyncHub';
 import { fbControlLog } from '../../../utils/fbControlLog';
-import { formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
+import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
 
 const COL_COUNT = 30;
 
@@ -213,7 +213,7 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'hiddenAdminCount':
       return coalesceNum(row.hiddenAdminCount, -1e18);
     case 'accountKindLabel':
-      return coalesceStr(row.accountKindLabel);
+      return coalesceStr(formatAccountKindLabelZh(row.accountKindLabel));
     case 'billingMinor':
       return parseMoneyishForSort(billingAmountCell(row), -1e18);
     case 'threshold':
@@ -398,7 +398,7 @@ function tipHiddenAdminCell(row: FbAdAccountRecord): string {
 }
 
 function tipAccountKindCell(row: FbAdAccountRecord): string {
-  return `账号类型：如企业/个人等业务分类（来自采集字段）。\n当前值：${dash(row.accountKindLabel)}`;
+  return `账号类型：如企业/个人等业务分类（来自采集字段）。\n当前值：${dash(formatAccountKindLabelZh(row.accountKindLabel))}`;
 }
 
 function tipBillingCell(row: FbAdAccountRecord): string {
@@ -942,7 +942,7 @@ function exportAccountsToExcel() {
     推送状态: row.pushStatus ?? '',
     管理员: row.adminCount ?? 0,
     隐藏管理员人数: row.hiddenAdminCount ?? '',
-    账号类型: row.accountKindLabel ?? '',
+    账号类型: formatAccountKindLabelZh(row.accountKindLabel) || row.accountKindLabel || '',
     账单金额: billingAmountCell(row),
     门槛: thresholdCell(row),
     日限额: dailyLimitCell(row),
@@ -1313,7 +1313,7 @@ onUnmounted(() => {
                 {{ row.hiddenAdminCount }} 人
               </span>
             </td>
-            <td :title="tipAccountKindCell(row)">{{ dash(row.accountKindLabel) }}</td>
+            <td :title="tipAccountKindCell(row)">{{ dash(formatAccountKindLabelZh(row.accountKindLabel)) }}</td>
             <td :title="tipBillingCell(row)">{{ billingAmountCell(row) }}</td>
             <td :title="tipThresholdCell(row)">{{ thresholdCell(row) }}</td>
             <td :title="tipDailyLimitCell(row)">{{ dailyLimitCell(row) }}</td>
