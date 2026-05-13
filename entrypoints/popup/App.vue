@@ -1,8 +1,36 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import { browser } from 'wxt/browser';
 
 const adminUrl = import.meta.env.WXT_ADMIN_URL || 'http://192.168.110.77:3000/';
+
+function parseAdminBase(raw: string): URL {
+  const s = (raw || '').trim();
+  try {
+    return new URL(s);
+  } catch {
+    return new URL(s.startsWith('http') ? s : `http://${s}`);
+  }
+}
+
+/** 与控制台地址同一站点（同源）；控制台为根路径时匹配该 origin 下任意路径 */
+function isConsoleTabUrl(tabUrl: string | undefined, base: URL): boolean {
+  if (!tabUrl || !/^https?:\/\//i.test(tabUrl)) return false;
+  try {
+    const t = new URL(tabUrl);
+    if (t.origin !== base.origin) return false;
+    const basePath = base.pathname.replace(/\/+$/, '');
+    if (!basePath) return true;
+    const tabPath = t.pathname.replace(/\/+$/, '') || '';
+    return tabPath === basePath || tabPath.startsWith(`${basePath}/`);
+  } catch {
+    return false;
+  }
+}
+
+async function focusTab(tabId: number, windowId: number) {
+  await browser.windows.update(windowId, { focused: true });
+  await browser.tabs.update(tabId, { active: true });
+}
 
 const switchToNewBM = async () => {
   console.log('切换到BM新界面');
@@ -29,11 +57,39 @@ const switchToOldBM = async () => {
 };
 
 const openAdmin = async () => {
-  console.log('打开管理后台:', adminUrl);
+  const base = parseAdminBase(adminUrl);
+  console.log('[fbControl] 控制台按钮', { adminUrl, origin: base.origin });
+
   try {
-    await browser.tabs.create({ url: adminUrl });
+    const allTabs = await browser.tabs.query({});
+    const matches = allTabs.filter((t) => isConsoleTabUrl(t.url, base));
+
+    if (matches.length === 0) {
+      await browser.tabs.create({ url: adminUrl });
+      return;
+    }
+
+    const [activeTab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+    const activeIsConsole =
+      activeTab?.id != null && matches.some((m) => m.id === activeTab.id);
+
+    if (activeIsConsole && activeTab.id != null) {
+      await browser.tabs.reload(activeTab.id);
+      console.log('[fbControl] 当前激活页已是控制台，已刷新', { tabId: activeTab.id });
+      return;
+    }
+
+    const sameWin =
+      activeTab?.windowId != null
+        ? matches.find((m) => m.windowId === activeTab.windowId)
+        : undefined;
+    const target = sameWin ?? matches[0];
+    if (target?.id != null && target.windowId != null) {
+      await focusTab(target.id, target.windowId);
+      console.log('[fbControl] 已切换到已有控制台标签', { tabId: target.id, windowId: target.windowId });
+    }
   } catch (error) {
-    console.error('打开后台失败:', error);
+    console.error('打开/切换控制台失败:', error);
   }
 };
 </script>
