@@ -1,6 +1,4 @@
 /** 主操作下拉项 id（与扩展对接时可沿用） */
-import type { AdAccountBatchResultRow } from '../../../utils/fb/graphAdAccountBatchOperations';
-
 export type BatchOperationId =
   | 'add_ad_permissions'
   | 'remove_ad_permissions'
@@ -111,10 +109,4 @@ export interface BatchDrawerSubmitPayload {
   spendLimitForm?: SpendLimitFormPayload;
   resetLimitForm?: ResetLimitFormPayload;
   removeAuthForm?: RemoveAuthFormPayload;
-}
-
-/** 抽屉内「检测好友关系」完成后发给父组件，用于结果卡展示 */
-export interface FriendVerifyResultPayload {
-  rows: AdAccountBatchResultRow[];
-  currentUserProfileUrl: string | null;
 }

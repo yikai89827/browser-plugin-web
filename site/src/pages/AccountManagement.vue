@@ -12,6 +12,7 @@ import {
   renameAdAccountFromSite,
   syncAdAccountsFromGraphViaExtension,
   type AdAccountBatchResultRow,
+  type FriendVerifyResultPayload,
 } from '../lib/extensionBridge';
 import {
   markAccountsListFetched,
@@ -22,7 +23,7 @@ import { fbControlLog } from '../../../utils/fbControlLog';
 import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
 import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
 import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
-import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload, FriendVerifyResultPayload } from '../lib/batchOperationTypes';
+import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
 import { showToastError } from '../lib/globalToast';
 
 const COL_COUNT = 30;

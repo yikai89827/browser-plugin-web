@@ -21,6 +21,12 @@ export type {
   VerifyFacebookUserIdsForBatchResult,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
 export { mapUidVerifyRowsToFriendBatchResultRows } from '../../../utils/fb/graphAdAccountBatchOperations';
+
+/** 好友预检完成事件载荷 */
+export interface FriendVerifyResultPayload {
+  rows: AdAccountBatchResultRow[];
+  currentUserProfileUrl: string | null;
+}
 import { registerGraphExternalFetch } from '../../../utils/fb/graphExternalFetch';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import type { BatchDrawerSubmitPayload } from './batchOperationTypes';

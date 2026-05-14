@@ -5,11 +5,14 @@ import type {
   BatchDrawerPreset,
   BatchDrawerSubmitPayload,
   BatchOperationId,
-  FriendVerifyResultPayload,
 } from '../lib/batchOperationTypes';
 import { getBatchOperationUi } from '../lib/batchOperationPresets';
 
-import { mapUidVerifyRowsToFriendBatchResultRows, verifyFacebookUidsForBatchSite } from '../lib/extensionBridge';
+import {
+  mapUidVerifyRowsToFriendBatchResultRows,
+  verifyFacebookUidsForBatchSite,
+  type FriendVerifyResultPayload,
+} from '../lib/extensionBridge';
 
 const props = defineProps<{
   open: boolean;
@@ -256,11 +259,12 @@ watch(selectedOpId, () => {
 });
 
 watch(uidsText, () => {
-  if (friendCheckStatus.value !== 'idle') {
+  const hadProgress = friendCheckStatus.value !== 'idle';
+  if (hadProgress) {
     friendCheckStatus.value = 'idle';
     friendCheckMsg.value = '';
   }
-  if (getBatchOperationUi(selectedOpId.value).confirmGates.includes('friend')) {
+  if (hadProgress && getBatchOperationUi(selectedOpId.value).confirmGates.includes('friend')) {
     emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
   }
 });
