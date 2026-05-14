@@ -416,7 +416,7 @@ function tipPushStatusCell(row: FbAdAccountRecord): string {
 }
 
 function tipAdminCell(row: FbAdAccountRecord): string {
-  return `管理员：账户下可见管理员数量（来自扩展/Graph 汇总，若未拉取则可能为 0）。\n当前值：${adminBadgeText(row)}`;
+  return `管理员：Graph 同步时统计 assigned_users 中含 MANAGE 任务的人数；无权限或未同步时显示 —。\n当前值：${adminBadgeText(row)}`;
 }
 
 function tipHiddenAdminCell(row: FbAdAccountRecord): string {
@@ -761,7 +761,8 @@ function periodSpentCell(row: FbAdAccountRecord) {
 
 function adminBadgeText(row: FbAdAccountRecord) {
   const n = row.adminCount;
-  return n == null || Number.isNaN(Number(n)) ? '0' : String(n);
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  return String(n);
 }
 
 async function syncFromGraph() {
@@ -1293,7 +1294,11 @@ onUnmounted(() => {
               <span class="sort-th-label">余额</span>
               <span class="sort-carets"><span class="caret" :class="{ on: sortMark('balance') === 'asc' }">▲</span><span class="caret" :class="{ on: sortMark('balance') === 'desc' }">▼</span></span>
             </th>
-            <th class="sort-th" :class="{ 'sort-th--on': sortMark('remark') !== 'none' }" @click="sortToggle('remark')">
+            <th
+              class="sort-th remark-col"
+              :class="{ 'sort-th--on': sortMark('remark') !== 'none' }"
+              @click="sortToggle('remark')"
+            >
               <span class="sort-th-label">备注</span>
               <span class="sort-carets"><span class="caret" :class="{ on: sortMark('remark') === 'asc' }">▲</span><span class="caret" :class="{ on: sortMark('remark') === 'desc' }">▼</span></span>
             </th>
@@ -1417,8 +1422,10 @@ onUnmounted(() => {
             <td :title="tipPeriodSpentCell(row)">{{ periodSpentCell(row) }}</td>
             <td :title="tipBalanceCell(row)">{{ balanceCell(row) }}</td>
             <td class="remark-cell" :title="tipRemarkCell(row)">
-              <span class="remark-text">{{ dash(row.remark) }}</span>
-              <button type="button" class="btn-icon-edit" title="编辑备注" @click="openRemarkModal(row)">✎</button>
+              <div class="remark-cell-inner">
+                <span class="remark-text">{{ dash(row.remark) }}</span>
+                <button type="button" class="btn-icon-edit" title="编辑备注" @click="openRemarkModal(row)">✎</button>
+              </div>
             </td>
             <td :title="tipCurrencyCell(row)">{{ dash(row.currency) }}</td>
             <td :title="tipAccountTypeCell(row)">{{ dash(row.accountType) }}</td>
@@ -1817,7 +1824,7 @@ tbody tr:nth-child(odd) td.sticky-col {
 }
 th, td {
   padding: 8px 10px;
-  text-align: left;
+  text-align: center;
   border-bottom: 1px solid var(--fb-cell-border, #1f2937);
   vertical-align: middle;
 }
@@ -1896,7 +1903,7 @@ tbody td.sticky-col {
   font-size: 11px;
 }
 .chk { width: 44px; min-width: 44px; max-width: 44px; text-align: center; box-sizing: border-box; }
-.num { width: 56px; min-width: 56px; text-align: right; color: var(--fb-muted, #9ca3af); }
+.num { width: 56px; min-width: 56px; text-align: center; color: var(--fb-muted, #9ca3af); }
 .ico { width: 52px; min-width: 52px; max-width: 52px; text-align: center; }
 .star {
   background: none;
@@ -1912,6 +1919,7 @@ tbody td.sticky-col {
 .account-name-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   min-width: 0;
 }
@@ -2138,6 +2146,7 @@ tbody td.sticky-col {
   padding: 8px 10px;
   border-bottom: 1px solid var(--fb-cell-border, #1f2937);
   vertical-align: top;
+  text-align: left;
 }
 .pay-table th {
   background: var(--fb-th-bg, #0f172a);
@@ -2304,18 +2313,32 @@ tbody td.sticky-col {
   text-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
 }
 
-.remark-cell {
+/** 备注列：与设计稿相近的固定宽度；勿在 td 上使用 flex，避免与行框底边错位 */
+th.remark-col,
+td.remark-cell {
+  min-width: 230px;
+  max-width: 230px;
+  width: 230px;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+.remark-cell-inner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 240px;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 1.25em;
 }
 .remark-text {
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: calc(100% - 28px);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.35;
+  text-align: center;
 }
 .btn-icon-edit {
   flex-shrink: 0;
@@ -2328,7 +2351,7 @@ tbody td.sticky-col {
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  padding: 4px 6px;
+  padding: 2px 4px;
   border-radius: 4px;
   transform: scaleX(-1);
 }

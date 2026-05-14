@@ -34,6 +34,16 @@ function mergeAdAccount(
   if (incoming.userRoleRaw === undefined && p?.userRoleRaw !== undefined) {
     out.userRoleRaw = p.userRoleRaw;
   }
+  if (
+    (incoming.ownerRole === undefined || String(incoming.ownerRole).trim() === '') &&
+    p?.ownerRole != null &&
+    String(p.ownerRole).trim() !== ''
+  ) {
+    out.ownerRole = p.ownerRole;
+  }
+  if (incoming.adminCount === undefined && p?.adminCount !== undefined) {
+    out.adminCount = p.adminCount;
+  }
   return out;
 }
 

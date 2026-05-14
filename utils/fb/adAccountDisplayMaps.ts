@@ -130,16 +130,26 @@ export function formatDisableReasonZh(raw: unknown): string | undefined {
 /**
  * 将 `user_role` 数值或枚举字符串转为中文角色说明。
  */
+function displayUserRoleNumeric(n: number): string {
+  if (USER_ROLE_NUM_ZH[n]) return USER_ROLE_NUM_ZH[n];
+  if (n >= 1000 && n < 10000) return `角色（${n}）`;
+  if (n > 1_000_000_000) return `管理员`;
+  return `角色码 ${n}`;
+}
+
 export function formatUserRoleZh(raw: unknown): string | undefined {
   if (raw == null || raw === '') return undefined;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return displayUserRoleNumeric(Math.trunc(raw));
+  }
   const s0 = String(raw).trim();
-  const n = typeof raw === 'number' ? raw : Number.parseInt(s0, 10);
-  if (!Number.isNaN(n) && String(n) === s0) {
-    if (USER_ROLE_NUM_ZH[n]) return USER_ROLE_NUM_ZH[n];
-    if (n >= 1000 && n < 10000) return `角色（${n}）`;
-    /** Meta / BM 侧常见大整数角色 ID，无公开枚举名时标注为系统角色 */
-    if (n > 1_000_000_000) return `管理员`;
-    return `角色码 ${n}`;
+  if (/^-?\d+$/.test(s0)) {
+    const n = Number.parseInt(s0, 10);
+    if (!Number.isNaN(n)) return displayUserRoleNumeric(n);
+  }
+  const loose = Number(s0);
+  if (Number.isFinite(loose) && Math.abs(loose - Math.trunc(loose)) < 1e-9) {
+    return displayUserRoleNumeric(Math.trunc(loose));
   }
   const key = s0.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
   if (USER_ROLE_STR_ZH[key]) return USER_ROLE_STR_ZH[key];

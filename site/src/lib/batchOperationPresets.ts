@@ -16,6 +16,15 @@ export const BATCH_OPERATION_CATALOG: BatchOperationOption[] = [
   { id: 'update_business', label: '更新Business信息' },
 ];
 
+/** 「删除授权」入口专用：与增加授权 UID/好友检测流程无关 */
+export const REMOVE_AUTH_OPERATIONS: BatchOperationOption[] = [
+  { id: 'remove_perm_their', label: '删除它们的权限' },
+  { id: 'remove_perm_except_them', label: '除了它们，删除所有' },
+  { id: 'remove_perm_except_self', label: '除了自己，删除所有' },
+  { id: 'remove_perm_self', label: '删除自己' },
+  { id: 'remove_perm_bm', label: '删除BM' },
+];
+
 const STEP_AUTH: Pick<BatchDrawerPreset, 'step1' | 'step2' | 'step3' | 'confirmGates'> = {
   step1: {
     label: '* 输入Facebook社交账号的UID或主页地址(先添加好友)',
@@ -44,6 +53,18 @@ export function getBatchOperationUi(operationId: BatchOperationId): {
       return {
         ...STEP_AUTH,
         showSubDropdown: true,
+      };
+    case 'remove_perm_their':
+    case 'remove_perm_except_them':
+    case 'remove_perm_except_self':
+    case 'remove_perm_self':
+    case 'remove_perm_bm':
+      return {
+        step1: { label: '', placeholder: '', required: false },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: [],
+        showSubDropdown: false,
       };
     case 'account_rename':
     case 'update_business':
@@ -132,7 +153,18 @@ export function getBatchDrawerPreset(entryKey: string): BatchDrawerPreset {
     case 'addAuth':
       return presetAuthLike('addAuth', '增加广告账号权限', 'add_ad_permissions', catalog);
     case 'removeAuth':
-      return presetAuthLike('removeAuth', '删除广告账号权限', 'remove_ad_permissions', catalog);
+      return {
+        entryKey: 'removeAuth',
+        headerTitle: '删除广告账号权限',
+        operations: REMOVE_AUTH_OPERATIONS,
+        defaultOperationId: 'remove_perm_their',
+        subOptions: undefined,
+        defaultSubId: undefined,
+        step1: { label: '', placeholder: '', required: false },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: [],
+      };
     case 'addBm':
       return presetSimple('addBm', '添加到 BM', 'add_to_bm', catalog, false);
     case 'bmPartner':

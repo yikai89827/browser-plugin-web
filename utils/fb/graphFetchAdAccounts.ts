@@ -1,9 +1,35 @@
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
+import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
 import { graphFetch } from './graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
+
+/** Graph 拉取列表后，并发统计各户「带 MANAGE 的 assigned_users」人数，避免「管理员」列恒为 0 */
+const ADMIN_COUNT_ENRICH_CONCURRENCY = 10;
+
+async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRecord[]): Promise<void> {
+  if (!rows.length) return;
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= rows.length) return;
+      const row = rows[i];
+      try {
+        row.adminCount = await fetchAdAccountManageAdminCount(accessToken, row.accountId);
+      } catch (e) {
+        console.info('[fbControl:graph] adminCount 跳过', {
+          accountId: row.accountId,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  }
+  const n = Math.min(ADMIN_COUNT_ENRICH_CONCURRENCY, rows.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+}
 
 /**
  * Graph `me/adaccounts` 请求字段列表（逗号拼接）。含 BM 嵌套、资金源展示、业务国家等。
@@ -92,9 +118,11 @@ export async function fetchAdAccountsFromGraph(accessToken: string): Promise<FbA
     );
   }
 
-  console.info('[fbControl:graph] 映射完成，准备交给 IndexedDB 合并写入', {
+  console.info('[fbControl:graph] 映射完成，准备统计 MANAGE 管理员人数', {
     rawCount: rawRows.length,
     mappedCount: out.length,
   });
+  await enrichManageAdminCounts(accessToken, out);
+  console.info('[fbControl:graph] adminCount enrich 完成', { mappedCount: out.length });
   return out;
 }

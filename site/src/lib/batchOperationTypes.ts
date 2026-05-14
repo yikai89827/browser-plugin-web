@@ -2,6 +2,12 @@
 export type BatchOperationId =
   | 'add_ad_permissions'
   | 'remove_ad_permissions'
+  /** 「删除授权」抽屉专用：与增加授权主目录解耦 */
+  | 'remove_perm_their'
+  | 'remove_perm_except_them'
+  | 'remove_perm_except_self'
+  | 'remove_perm_self'
+  | 'remove_perm_bm'
   | 'bm_partner'
   | 'add_to_bm'
   | 'account_rename'
@@ -80,6 +86,15 @@ export interface ResetLimitFormPayload {
   amountMinor?: number;
 }
 
+/** 「删除广告账号权限」抽屉第 2 步：与「删除它们的权限」组合使用 */
+export interface RemoveAuthFormPayload {
+  /**
+   * 在「删除它们的权限」模式下：为 true 时移除包含当前登录 Facebook 用户在内的全部协作者；
+   * 为 false 时保留当前账号在本广告账户上的权限，仅移除其他人。
+   */
+  deleteCurrentFacebookPerm: boolean;
+}
+
 export interface BatchDrawerSubmitPayload {
   entryKey: string;
   operationId: BatchOperationId;
@@ -90,4 +105,5 @@ export interface BatchDrawerSubmitPayload {
   selectedAccountIds: string[];
   spendLimitForm?: SpendLimitFormPayload;
   resetLimitForm?: ResetLimitFormPayload;
+  removeAuthForm?: RemoveAuthFormPayload;
 }

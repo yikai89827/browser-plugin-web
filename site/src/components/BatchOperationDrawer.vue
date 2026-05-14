@@ -38,6 +38,12 @@ const resetAbsoluteUsd = ref('');
 
 const isLimitSpecial = computed(() => props.preset?.entryKey === 'setLimit');
 const isResetSpecial = computed(() => props.preset?.entryKey === 'resetLimit');
+const isRemoveAuthSpecial = computed(() => props.preset?.entryKey === 'removeAuth');
+
+/** 设计稿：可折叠「删除广告账号权限」条，默认展开 */
+const removeAuthSectionOpen = ref(true);
+/** 步骤 2：删除当前 Facebook 账号的权限？（默认不勾选） */
+const deleteCurrentFbPerm = ref(false);
 
 const primaryPreviewAccount = computed(() => (props.selectedAccountRows && props.selectedAccountRows[0]) || null);
 
@@ -152,13 +158,13 @@ const step2Visible = computed(() => !!ui.value.step2);
 const step3Visible = computed(() => !!ui.value.step3);
 
 const inputGateOk = computed(() => {
-  if (isLimitSpecial.value || isResetSpecial.value) return true;
+  if (isLimitSpecial.value || isResetSpecial.value || isRemoveAuthSpecial.value) return true;
   if (!ui.value.step1.required) return true;
   return uidsText.value.trim().length > 0;
 });
 
 const friendGateOk = computed(() => {
-  if (isLimitSpecial.value || isResetSpecial.value) return true;
+  if (isLimitSpecial.value || isResetSpecial.value || isRemoveAuthSpecial.value) return true;
   if (!ui.value.confirmGates.includes('friend')) return true;
   return friendCheckStatus.value === 'ok';
 });
@@ -189,6 +195,8 @@ function resetForm() {
   decreaseUsdStr.value = '';
   resetMode.value = 'account_zero';
   resetAbsoluteUsd.value = '';
+  removeAuthSectionOpen.value = true;
+  deleteCurrentFbPerm.value = false;
 }
 
 watch(
@@ -263,6 +271,10 @@ function onConfirm() {
       payload.resetLimitForm.amountMinor = cap;
     }
     payload.uidsText = '';
+  } else if (props.preset.entryKey === 'removeAuth') {
+    payload.uidsText = '';
+    payload.friendCheckOk = true;
+    payload.removeAuthForm = { deleteCurrentFacebookPerm: deleteCurrentFbPerm.value };
   }
   emit('confirm', payload);
 }
@@ -448,6 +460,50 @@ function onConfirm() {
                       <input v-model="useDefaultInterval" type="checkbox" />
                       <span>系统默认执行时间间隔</span>
                     </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 删除广告账号权限（设计稿：折叠条 + 步骤 1 主下拉 + 步骤 2/3 勾选） -->
+            <div v-else-if="isRemoveAuthSpecial" class="bod-batch-op-root bod-remove-auth-root">
+              <button
+                type="button"
+                class="bod-remove-collapse-bar"
+                :aria-expanded="removeAuthSectionOpen"
+                @click="removeAuthSectionOpen = !removeAuthSectionOpen"
+              >
+                <span>{{ preset.headerTitle }}</span>
+                <span class="bod-remove-chevron" aria-hidden="true">{{ removeAuthSectionOpen ? '▾' : '▸' }}</span>
+              </button>
+              <div v-show="removeAuthSectionOpen" class="bod-remove-auth-body">
+                <div class="bod-steps bod-steps--centered">
+                  <div class="bod-step-line" aria-hidden="true"></div>
+                  <div class="bod-step">
+                    <span class="bod-step-badge">1</span>
+                    <div class="bod-step-body">
+                      <select v-model="selectedOpId" class="bod-batch-select bod-batch-select--main">
+                        <option v-for="op in preset.operations" :key="op.id" :value="op.id">{{ op.label }}</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="bod-step">
+                    <span class="bod-step-badge">2</span>
+                    <div class="bod-step-body">
+                      <label class="bod-check">
+                        <input v-model="deleteCurrentFbPerm" type="checkbox" />
+                        <span>删除当前Facebook账号的权限？</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="bod-step">
+                    <span class="bod-step-badge">3</span>
+                    <div class="bod-step-body">
+                      <label class="bod-check">
+                        <input v-model="useDefaultInterval" type="checkbox" />
+                        <span>系统默认执行时间间隔</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1041,5 +1097,65 @@ function onConfirm() {
   to {
     transform: rotate(360deg);
   }
+}
+.bod-remove-auth-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.bod-remove-collapse-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  margin: 0 0 2px;
+  border: 1px solid var(--fb-input-border, #4b5563);
+  border-radius: 6px;
+  background: var(--fb-surface-b, #2a2a2a);
+  color: var(--fb-modal-text, #e5e7eb);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.bod-remove-collapse-bar:hover {
+  border-color: #1877f2;
+}
+.bod-remove-chevron {
+  color: var(--fb-muted, #9ca3af);
+  font-size: 12px;
+}
+.bod-remove-auth-body {
+  margin-top: 4px;
+}
+/** 删除授权：步骤序号与竖线在内容区水平居中 */
+.bod-steps.bod-steps--centered {
+  padding-left: 0;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 400px;
+}
+.bod-steps.bod-steps--centered .bod-step-line {
+  left: 50%;
+  transform: translateX(-50%);
+}
+.bod-steps.bod-steps--centered .bod-step {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.bod-steps.bod-steps--centered .bod-step-badge {
+  position: relative;
+  left: auto;
+  top: auto;
+}
+.bod-steps.bod-steps--centered .bod-step-body {
+  padding-left: 0;
+  width: 100%;
+}
+.bod-steps.bod-steps--centered .bod-check {
+  justify-content: center;
 }
 </style>
