@@ -48,17 +48,24 @@ export function parseFacebookUserIdsFromText(text: string): string[] {
   return out;
 }
 
+/** Graph `POST .../assigned_users` 的 `tasks` 仅允许（见 #100）：MANAGE、ADVERTISE、ANALYZE、DRAFT、AA_ANALYZE；不得含 VIEW */
+const ASSIGNED_USER_TASKS_ALLOWED = new Set(['MANAGE', 'ADVERTISE', 'ANALYZE', 'DRAFT', 'AA_ANALYZE']);
+
 /** 与批量抽屉子选项对应：管理员 / 广告管理员 / 分析员 */
 export function adAccountTasksForSubId(subId: string | undefined): string[] {
   switch (subId) {
     case 'ad_admin':
-      return ['ADVERTISE', 'ANALYZE', 'VIEW'];
+      return ['ADVERTISE', 'ANALYZE'];
     case 'analyst':
-      return ['ANALYZE', 'VIEW'];
+      return ['ANALYZE'];
     case 'admin':
     default:
-      return ['MANAGE', 'ADVERTISE', 'ANALYZE', 'VIEW'];
+      return ['MANAGE', 'ADVERTISE', 'ANALYZE'];
   }
+}
+
+function sanitizeAssignedUserTasksForPost(tasks: string[]): string[] {
+  return tasks.map((t) => String(t).toUpperCase()).filter((t) => ASSIGNED_USER_TASKS_ALLOWED.has(t));
 }
 
 /** 把 Graph `error` 拼成可读字符串，便于批量结果里直接看到子码与用户文案。 */
@@ -128,7 +135,11 @@ async function postAssignedUser(
   const body = new URLSearchParams();
   body.set('access_token', accessToken);
   body.set('user', userId);
-  body.set('tasks', JSON.stringify(tasks));
+  const safeTasks = sanitizeAssignedUserTasksForPost(tasks);
+  if (!safeTasks.length) {
+    throw new Error('授权 tasks 为空：请使用 MANAGE / ADVERTISE / ANALYZE / DRAFT / AA_ANALYZE 之一');
+  }
+  body.set('tasks', JSON.stringify(safeTasks));
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users`;
   const res = await graphFetch(url, { method: 'POST', body });
   const json = (await res.json()) as { error?: { message?: string } };
