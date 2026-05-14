@@ -27,7 +27,12 @@ const emit = defineEmits<{
 }>();
 
 const limitOpKind = ref<'increase' | 'decrease'>('increase');
-const limitUsdStr = ref('');
+/** 步骤 1 汇率换算行，独立输入 */
+const fxUsdStr = ref('');
+/** 步骤 2「增加额度」金额，独立输入 */
+const increaseUsdStr = ref('');
+/** 步骤 2「减少额度」金额，独立输入 */
+const decreaseUsdStr = ref('');
 const resetMode = ref<'account_zero' | 'delete_restriction' | 'set_absolute'>('account_zero');
 const resetAbsoluteUsd = ref('');
 
@@ -73,10 +78,15 @@ function parseUsdToMinorAllowZero(s: string): number | null {
 }
 
 const fxComputedLabel = computed(() => {
-  const m = parseUsdInputToMinor(limitUsdStr.value);
+  const m = parseUsdInputToMinor(fxUsdStr.value);
   if (m == null) return '结果会自动计算';
   return `${(m / 100).toFixed(2)} USD（${m} 最小单位）`;
 });
+
+/** 当前选中的「增加/减少」对应的金额文案（与汇率换算无关） */
+function activeLimitAmountStr(): string {
+  return limitOpKind.value === 'increase' ? increaseUsdStr.value : decreaseUsdStr.value;
+}
 
 const limitPreviewText = computed(() => {
   const row = primaryPreviewAccount.value;
@@ -84,7 +94,7 @@ const limitPreviewText = computed(() => {
   const base = row
     ? `账号: ${row.accountId} 当前额度: ${displaySpendingCap(row)} 剩余额度: ${displayBalance(row)}`
     : `已选 ${n} 个账户` + (n ? `（首条 ID: ${props.selectedAccountIds[0]}）` : '');
-  const m = parseUsdInputToMinor(limitUsdStr.value);
+  const m = parseUsdInputToMinor(activeLimitAmountStr());
   if (m == null) {
     return `${base}\n请在「操作类型」中填写金额后查看效果说明。`;
   }
@@ -96,7 +106,7 @@ const limitPreviewText = computed(() => {
 
 const limitConfirmOk = computed(() => {
   if (!isLimitSpecial.value) return true;
-  return parseUsdInputToMinor(limitUsdStr.value) != null;
+  return parseUsdInputToMinor(activeLimitAmountStr()) != null;
 });
 
 const resetConfirmOk = computed(() => {
@@ -174,7 +184,9 @@ function resetForm() {
   friendCheckMsg.value = '';
   drawerTab.value = 'op';
   limitOpKind.value = 'increase';
-  limitUsdStr.value = '';
+  fxUsdStr.value = '';
+  increaseUsdStr.value = '';
+  decreaseUsdStr.value = '';
   resetMode.value = 'account_zero';
   resetAbsoluteUsd.value = '';
 }
@@ -235,7 +247,7 @@ function onConfirm() {
     selectedAccountIds: [...props.selectedAccountIds],
   };
   if (props.preset.entryKey === 'setLimit') {
-    const minor = parseUsdInputToMinor(limitUsdStr.value);
+    const minor = parseUsdInputToMinor(activeLimitAmountStr());
     if (minor == null || minor <= 0) return;
     payload.spendLimitForm = {
       kind: limitOpKind.value,
@@ -320,7 +332,7 @@ function onConfirm() {
                       <span class="bod-fx-label">汇率换算:</span>
                       <span class="bod-fx-part"
                         >USD:
-                        <input v-model="limitUsdStr" type="text" class="bod-limit-input" placeholder="请输入 USD"
+                        <input v-model="fxUsdStr" type="text" class="bod-limit-input" placeholder="请输入 USD"
                       /></span>
                       <span class="bod-fx-eq">= USD:</span>
                       <span class="bod-fx-result muted">{{ fxComputedLabel }}</span>
@@ -337,7 +349,7 @@ function onConfirm() {
                         <input v-model="limitOpKind" type="radio" value="increase" />
                         <span>增加额度</span>
                         <input
-                          v-model="limitUsdStr"
+                          v-model="increaseUsdStr"
                           type="text"
                           class="bod-limit-input bod-limit-input--inline"
                           placeholder="输入增加额度值"
@@ -349,7 +361,7 @@ function onConfirm() {
                         <input v-model="limitOpKind" type="radio" value="decrease" />
                         <span>减少额度</span>
                         <input
-                          v-model="limitUsdStr"
+                          v-model="decreaseUsdStr"
                           type="text"
                           class="bod-limit-input bod-limit-input--inline"
                           placeholder="输入减少额度值"
