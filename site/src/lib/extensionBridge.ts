@@ -14,8 +14,13 @@ import {
   renameAdAccountViaAdsManagerGraph,
   verifyFacebookUserIdsForBatch,
   type AdAccountBatchResultRow,
+  type VerifyFacebookUserIdsForBatchResult,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
-export type { AdAccountBatchResultRow } from '../../../utils/fb/graphAdAccountBatchOperations';
+export type {
+  AdAccountBatchResultRow,
+  VerifyFacebookUserIdsForBatchResult,
+} from '../../../utils/fb/graphAdAccountBatchOperations';
+export { mapUidVerifyRowsToFriendBatchResultRows } from '../../../utils/fb/graphAdAccountBatchOperations';
 import { registerGraphExternalFetch } from '../../../utils/fb/graphExternalFetch';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import type { BatchDrawerSubmitPayload } from './batchOperationTypes';
@@ -225,24 +230,34 @@ export async function fetchAdAccountAssignedUsersFromExtension(
 }
 
 /**
- * 批量抽屉「检测好友」步骤：用 Graph 校验 UID 是否存在且 token 可读（非真实好友关系）。
+ * 批量抽屉「检测好友关系」：Graph 逐 UID 预检，返回结果卡数据（非真实好友关系 API）。
  */
 export async function verifyFacebookUidsForBatchSite(
   uidsText: string
-): Promise<{ ok: boolean; message: string }> {
+): Promise<VerifyFacebookUserIdsForBatchResult> {
   let tokenRes: ExtensionResponse<{ token: string | null }>;
   try {
     tokenRes = await getFbAccessTokenFromExtension();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, message: msg };
+    return { ok: false, message: msg, rows: [], currentUserProfileUrl: null };
   }
   if (!tokenRes.success) {
-    return { ok: false, message: tokenRes.error || '读取 token 失败' };
+    return {
+      ok: false,
+      message: tokenRes.error || '读取 token 失败',
+      rows: [],
+      currentUserProfileUrl: null,
+    };
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    return { ok: false, message: '未保存 access_token，无法校验 UID' };
+    return {
+      ok: false,
+      message: '未保存 access_token，无法校验 UID',
+      rows: [],
+      currentUserProfileUrl: null,
+    };
   }
   return verifyFacebookUserIdsForBatch(token, uidsText);
 }

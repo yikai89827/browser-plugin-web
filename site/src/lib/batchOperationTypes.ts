@@ -1,4 +1,6 @@
 /** 主操作下拉项 id（与扩展对接时可沿用） */
+import type { AdAccountBatchResultRow } from '../../../utils/fb/graphAdAccountBatchOperations';
+
 export type BatchOperationId =
   | 'add_ad_permissions'
   | 'remove_ad_permissions'
@@ -50,7 +52,10 @@ export interface BatchDrawerPreset {
   /** 无则隐藏第 2 步（绿按钮） */
   step2?: {
     label: string;
-    buttonText: string;
+    /** 为空则不显示独立检测按钮（可改为仅底部「检测好友关系」） */
+    buttonText?: string;
+    /** 步骤下灰字说明（例如与 Graph 校验能力、BM 前置条件相关） */
+    hint?: string;
   };
   /** 无则隐藏第 3 步（勾选） */
   step3?: {
@@ -106,4 +111,10 @@ export interface BatchDrawerSubmitPayload {
   spendLimitForm?: SpendLimitFormPayload;
   resetLimitForm?: ResetLimitFormPayload;
   removeAuthForm?: RemoveAuthFormPayload;
+}
+
+/** 抽屉内「检测好友关系」完成后发给父组件，用于结果卡展示 */
+export interface FriendVerifyResultPayload {
+  rows: AdAccountBatchResultRow[];
+  currentUserProfileUrl: string | null;
 }

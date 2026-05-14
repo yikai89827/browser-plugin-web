@@ -5,10 +5,11 @@ import type {
   BatchDrawerPreset,
   BatchDrawerSubmitPayload,
   BatchOperationId,
+  FriendVerifyResultPayload,
 } from '../lib/batchOperationTypes';
 import { getBatchOperationUi } from '../lib/batchOperationPresets';
 
-import { verifyFacebookUidsForBatchSite } from '../lib/extensionBridge';
+import { mapUidVerifyRowsToFriendBatchResultRows, verifyFacebookUidsForBatchSite } from '../lib/extensionBridge';
 
 const props = defineProps<{
   open: boolean;
@@ -17,13 +18,16 @@ const props = defineProps<{
   /** 当前勾选行摘要（设置限额抽屉展示额度等） */
   selectedAccountRows?: BatchAccountPreviewRow[];
   /** 父组件在 Graph 批量执行完成后写入，用于「结果」页 */
-  batchResults?: { accountId: string; status: string; detail: string }[];
+  batchResults?: { accountId: string; status: string; detail: string; resultKind?: string; currentFbProfileUrl?: string | null }[];
   batchRunning?: boolean;
+  /** 最近一次好友预检得到的当前 Facebook 主页（批量结果卡「当前账号」兜底） */
+  currentFbProfileUrl?: string | null;
 }>();
 
 const emit = defineEmits<{
   close: [];
   confirm: [payload: BatchDrawerSubmitPayload];
+  friendVerifyResult: [payload: FriendVerifyResultPayload];
 }>();
 
 const limitOpKind = ref<'increase' | 'decrease'>('increase');
@@ -146,6 +150,7 @@ const uidsText = ref('');
 const useDefaultInterval = ref(true);
 const friendCheckStatus = ref<'idle' | 'running' | 'ok' | 'err'>('idle');
 const friendCheckMsg = ref('');
+const friendVerifyRunning = ref(false);
 
 const resultRows = computed(() => props.batchResults ?? []);
 
@@ -181,21 +186,37 @@ const inputGateOk = computed(() => {
   return uidsText.value.trim().length > 0;
 });
 
-const friendGateOk = computed(() => {
-  if (isLimitSpecial.value || isResetSpecial.value || isAddBmSpecial.value || isRemoveAuthSpecial.value) return true;
-  if (!ui.value.confirmGates.includes('friend')) return true;
-  return friendCheckStatus.value === 'ok';
+const friendPhasePending = computed(() => {
+  if (isLimitSpecial.value || isResetSpecial.value || isAddBmSpecial.value || isRemoveAuthSpecial.value) return false;
+  if (!ui.value.confirmGates.includes('friend')) return false;
+  return friendCheckStatus.value !== 'ok';
 });
 
 const confirmDisabled = computed(() => {
   if (!props.preset || !props.selectedAccountIds.length) return true;
   if (props.batchRunning) return true;
+  if (friendVerifyRunning.value) return true;
   if (!limitConfirmOk.value) return true;
   if (!resetConfirmOk.value) return true;
   if (!inputGateOk.value) return true;
-  if (!friendGateOk.value) return true;
   return false;
 });
+
+const footPrimaryLabel = computed(() => {
+  if (props.batchRunning) return '执行中…';
+  if (friendVerifyRunning.value) return '检测中…';
+  if (friendPhasePending.value) return '检测好友关系';
+  return '确定';
+});
+
+function resultTargetFieldLabel(r: { resultKind?: string }): string {
+  return r.resultKind === 'friend_uid' ? '失败账号' : '广告账户 ID';
+}
+
+function currentFbDisplay(r: { currentFbProfileUrl?: string | null }): string {
+  const u = (r.currentFbProfileUrl ?? props.currentFbProfileUrl ?? '').trim();
+  return u || '—';
+}
 
 function resetForm() {
   const p = props.preset;
@@ -207,6 +228,7 @@ function resetForm() {
     p.step3?.defaultChecked ?? getBatchOperationUi(p.defaultOperationId).step3?.defaultChecked ?? true;
   friendCheckStatus.value = 'idle';
   friendCheckMsg.value = '';
+  friendVerifyRunning.value = false;
   drawerTab.value = 'op';
   limitOpKind.value = 'increase';
   fxUsdStr.value = '';
@@ -224,12 +246,13 @@ watch(
   }
 );
 
-watch(selectedOpId, (id) => {
+watch(selectedOpId, () => {
+  emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
   if (friendCheckStatus.value !== 'idle') {
     friendCheckStatus.value = 'idle';
     friendCheckMsg.value = '';
   }
-  useDefaultInterval.value = getBatchOperationUi(id).step3?.defaultChecked ?? true;
+  useDefaultInterval.value = getBatchOperationUi(selectedOpId.value).step3?.defaultChecked ?? true;
 });
 
 watch(uidsText, () => {
@@ -237,32 +260,39 @@ watch(uidsText, () => {
     friendCheckStatus.value = 'idle';
     friendCheckMsg.value = '';
   }
+  if (getBatchOperationUi(selectedOpId.value).confirmGates.includes('friend')) {
+    emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
+  }
 });
 
 function onBackdropClick() {
   emit('close');
 }
 
-async function onFriendCheck() {
-  if (!ui.value.step2) return;
-  if (!uidsText.value.trim()) {
-    friendCheckMsg.value = '请先填写 UID 或主页地址';
+async function onConfirm() {
+  if (!props.preset || confirmDisabled.value) return;
+
+  if (friendPhasePending.value && ui.value.confirmGates.includes('friend')) {
+    if (!uidsText.value.trim()) return;
+    friendVerifyRunning.value = true;
+    friendCheckMsg.value = '';
+    try {
+      const r = await verifyFacebookUidsForBatchSite(uidsText.value);
+      const rows = mapUidVerifyRowsToFriendBatchResultRows(r.rows, r.currentUserProfileUrl);
+      emit('friendVerifyResult', { rows, currentUserProfileUrl: r.currentUserProfileUrl });
+      friendCheckStatus.value = r.ok ? 'ok' : 'err';
+      friendCheckMsg.value = r.message;
+      drawerTab.value = 'result';
+    } catch (e: unknown) {
+      friendCheckStatus.value = 'err';
+      friendCheckMsg.value = e instanceof Error ? e.message : String(e);
+      emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
+    } finally {
+      friendVerifyRunning.value = false;
+    }
     return;
   }
-  friendCheckMsg.value = '';
-  friendCheckStatus.value = 'running';
-  try {
-    const r = await verifyFacebookUidsForBatchSite(uidsText.value);
-    friendCheckStatus.value = r.ok ? 'ok' : 'err';
-    friendCheckMsg.value = r.message;
-  } catch (e: unknown) {
-    friendCheckStatus.value = 'err';
-    friendCheckMsg.value = e instanceof Error ? e.message : String(e);
-  }
-}
 
-function onConfirm() {
-  if (!props.preset || confirmDisabled.value) return;
   const removeAuthLike = isRemoveAuthSpecial.value;
   const payload: BatchDrawerSubmitPayload = {
     entryKey: removeAuthLike ? 'removeAuth' : props.preset.entryKey,
@@ -273,7 +303,7 @@ function onConfirm() {
         : undefined,
     uidsText: uidsText.value.trim(),
     useDefaultInterval: useDefaultInterval.value,
-    friendCheckOk: friendGateOk.value,
+    friendCheckOk: !ui.value.confirmGates.includes('friend') || friendCheckStatus.value === 'ok',
     selectedAccountIds: [...props.selectedAccountIds],
   };
   if (props.preset.entryKey === 'setLimit') {
@@ -602,14 +632,7 @@ function onConfirm() {
                   <span class="bod-step-badge">2</span>
                   <div class="bod-step-body">
                     <div class="bod-step-label muted">{{ ui.step2.label }}</div>
-                    <button
-                      type="button"
-                      class="bod-btn-detect"
-                      :disabled="friendCheckStatus === 'running'"
-                      @click="onFriendCheck"
-                    >
-                      {{ friendCheckStatus === 'running' ? '检测中…' : ui.step2.buttonText }}
-                    </button>
+                    <p v-if="ui.step2.hint" class="bod-step-hint muted">{{ ui.step2.hint }}</p>
                     <p v-if="friendCheckMsg" class="bod-friend-msg" :class="{ err: friendCheckStatus === 'err' }">
                       {{ friendCheckMsg }}
                     </p>
@@ -630,24 +653,41 @@ function onConfirm() {
           </template>
 
           <template v-else>
-            <p v-if="!resultRows.length && !batchRunning" class="bod-result-empty muted">暂无结果，提交后在此查看每个账户的执行结果。</p>
-            <div v-else class="bod-result-table-wrap">
-              <table class="bod-result-table">
-                <thead>
-                  <tr>
-                    <th>广告账户 ID</th>
-                    <th>状态</th>
-                    <th>说明</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in resultRows" :key="r.accountId">
-                    <td class="mono">{{ r.accountId }}</td>
-                    <td>{{ r.status }}</td>
-                    <td>{{ r.detail }}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <template v-if="batchRunning && !resultRows.length">
+              <p class="bod-result-empty muted">正在执行，请稍候…</p>
+            </template>
+            <template v-else-if="!resultRows.length">
+              <p v-if="friendCheckMsg" class="bod-result-summary muted">{{ friendCheckMsg }}</p>
+              <p v-else class="bod-result-empty muted">暂无结果：检测或批量执行后将在此以卡片展示。</p>
+            </template>
+            <div v-else class="bod-result-cards">
+              <article
+                v-for="(r, idx) in resultRows"
+                :key="`${r.accountId}-${idx}-${r.resultKind || 'ad'}`"
+                class="bod-result-card"
+              >
+                <div class="bod-result-card-row">
+                  <span class="bod-result-card-k">状态</span>
+                  <span
+                    class="bod-result-badge"
+                    :class="r.status === '成功' ? 'bod-result-badge--ok' : 'bod-result-badge--err'"
+                  >
+                    {{ r.status }}
+                  </span>
+                </div>
+                <div class="bod-result-card-row">
+                  <span class="bod-result-card-k">{{ resultTargetFieldLabel(r) }}</span>
+                  <span class="bod-result-card-v mono bod-result-wrap">{{ r.accountId }}</span>
+                </div>
+                <div class="bod-result-card-row">
+                  <span class="bod-result-card-k">当前账号</span>
+                  <span class="bod-result-card-v bod-result-wrap">{{ currentFbDisplay(r) }}</span>
+                </div>
+                <div class="bod-result-card-row bod-result-card-row--detail">
+                  <span class="bod-result-card-k">返回信息</span>
+                  <span class="bod-result-card-v bod-result-wrap">{{ r.detail }}</span>
+                </div>
+              </article>
             </div>
           </template>
         </div>
@@ -656,11 +696,15 @@ function onConfirm() {
           <button
             type="button"
             class="bod-btn-confirm"
-            :class="{ 'bod-btn-confirm--busy': batchRunning }"
-            :disabled="drawerTab !== 'op' || confirmDisabled"
+            :class="{ 'bod-btn-confirm--busy': batchRunning || friendVerifyRunning }"
+            :disabled="confirmDisabled"
             @click="onConfirm"
           >
-            <span v-if="batchRunning" class="bod-btn-foot-spinner" aria-hidden="true" />
+            <span
+              v-if="batchRunning || friendVerifyRunning"
+              class="bod-btn-foot-spinner"
+              aria-hidden="true"
+            />
             <svg class="bod-lock-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v10H6V11z"
@@ -670,7 +714,7 @@ function onConfirm() {
                 stroke-linejoin="round"
               />
             </svg>
-            {{ batchRunning ? '执行中…' : '确定' }}
+            {{ footPrimaryLabel }}
           </button>
         </div>
       </template>
@@ -912,6 +956,11 @@ function onConfirm() {
   color: var(--fb-muted, #9ca3af);
   margin-bottom: 10px;
 }
+.bod-step-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  margin: -4px 0 10px;
+}
 .muted {
   color: var(--fb-muted, #9ca3af);
 }
@@ -977,28 +1026,80 @@ function onConfirm() {
   text-align: center;
   font-size: 13px;
 }
-.bod-result-table-wrap {
-  overflow: auto;
-  max-height: min(60vh, 520px);
-  border: 1px solid var(--fb-border, #374151);
+.bod-result-summary {
+  margin: 16px 0;
+  padding: 12px 14px;
   border-radius: 8px;
+  border: 1px solid var(--fb-border, #374151);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
-.bod-result-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
+.bod-result-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  padding: 4px 0 8px;
 }
-.bod-result-table th,
-.bod-result-table td {
-  padding: 8px 10px;
-  text-align: left;
+.bod-result-card {
+  border: 1px solid var(--fb-border, #4b5563);
+  border-radius: 8px;
+  background: var(--fb-modal-input-bg, #2d2d2d);
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.bod-result-card-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--fb-cell-border, #1f2937);
 }
-.bod-result-table th {
-  background: var(--fb-th-bg, #0f172a);
-  color: var(--fb-th-text, #9ca3af);
-  position: sticky;
-  top: 0;
+.bod-result-card-row:last-child {
+  border-bottom: none;
+}
+.bod-result-card-row--detail {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.bod-result-card-row--detail .bod-result-card-k {
+  flex-shrink: 0;
+}
+.bod-result-card-k {
+  color: var(--fb-muted, #9ca3af);
+  flex-shrink: 0;
+  min-width: 5rem;
+}
+.bod-result-card-v {
+  text-align: right;
+  color: var(--fb-modal-text, #e5e7eb);
+  word-break: break-word;
+}
+.bod-result-card-row--detail .bod-result-card-v {
+  text-align: left;
+}
+.bod-result-wrap {
+  max-width: 100%;
+}
+.bod-result-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.bod-result-badge--ok {
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
+}
+.bod-result-badge--err {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fecaca;
 }
 .mono {
   font-family: ui-monospace, monospace;

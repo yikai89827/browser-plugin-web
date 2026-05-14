@@ -33,12 +33,17 @@ export const REMOVE_AUTH_OPERATIONS: BatchOperationOption[] = [
 
 const STEP_AUTH: Pick<BatchDrawerPreset, 'step1' | 'step2' | 'step3' | 'confirmGates'> = {
   step1: {
-    label: '* 输入Facebook社交账号的UID或主页地址(先添加好友)',
+    label:
+      '* 输入 Facebook 账号 UID 或主页地址（BM 下属广告账户：对方须已是该 BM 内人员/系统用户，见步骤 2 说明）',
     placeholder:
       '100093137591614\nhttps://www.facebook.com/anasansari.gulfambatik\nhttps://www.facebook.com/profile.php?id=61558701983846',
     required: true,
   },
-  step2: { label: '检测好友关系', buttonText: '开始检测' },
+  step2: {
+    label: '检测好友关系',
+    hint:
+      '请先完成步骤 1，再点击底部「检测好友关系」：通过后将自动切换到「结果」查看卡片；再次点击底部「确定」执行批量授权。',
+  },
   step3: { label: '系统默认执行时间间隔', defaultChecked: true },
   confirmGates: ['input', 'friend'],
 };

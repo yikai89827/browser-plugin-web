@@ -7,10 +7,32 @@ import { redactUrlForLog } from './tokenDebugLog';
 
 const GRAPH_VERSION = 'v21.0';
 
+/** 批量结果卡类型：广告账户 Graph 结果 / 检测好友（UID 预检）结果 */
+export type AdAccountBatchResultKind = 'ad_account' | 'friend_uid';
+
 export type AdAccountBatchResultRow = {
   accountId: string;
   status: string;
   detail: string;
+  /** 默认按广告账户展示；friend_uid 时第二行标题为「失败账号」 */
+  resultKind?: AdAccountBatchResultKind;
+  /** 当前登录 Facebook 主页链接（检测好友卡展示） */
+  currentFbProfileUrl?: string | null;
+};
+
+/** Graph 单 UID 预检一行 */
+export type UidGraphVerifyDetailRow = {
+  uid: string;
+  ok: boolean;
+  /** 成功：面向操作的说明；失败：完整 Graph 错误文案 */
+  detail: string;
+};
+
+export type VerifyFacebookUserIdsForBatchResult = {
+  ok: boolean;
+  message: string;
+  rows: UidGraphVerifyDetailRow[];
+  currentUserProfileUrl: string | null;
 };
 
 function actPath(accountId: string): string {
@@ -102,29 +124,70 @@ async function graphJson(
   return { ok: res.ok, json, status: res.status };
 }
 
-/** Graph 校验 UID 是否可被当前 token 读取（近似 fbspider「检测」步骤，非真实好友关系 API）。 */
+/** 将 UID 预检结果转为抽屉结果卡行（检测好友关系） */
+export function mapUidVerifyRowsToFriendBatchResultRows(
+  rows: UidGraphVerifyDetailRow[],
+  currentUserProfileUrl: string | null
+): AdAccountBatchResultRow[] {
+  return rows.map((r) => ({
+    accountId: r.uid,
+    status: r.ok ? '成功' : '失败',
+    detail: r.detail,
+    resultKind: 'friend_uid',
+    currentFbProfileUrl: currentUserProfileUrl,
+  }));
+}
+
+/** Graph 校验 UID 是否可被当前 token 读取；逐行结果用于结果卡「返回信息」等（非真实好友关系 API）。 */
 export async function verifyFacebookUserIdsForBatch(
   accessToken: string,
   uidsText: string
-): Promise<{ ok: boolean; message: string }> {
+): Promise<VerifyFacebookUserIdsForBatchResult> {
   const ids = parseFacebookUserIdsFromText(uidsText);
-  if (!ids.length) {
-    return { ok: false, message: '未能解析出有效的数字 UID（每行一个或主页链接）' };
+  let currentUserProfileUrl: string | null = null;
+  try {
+    const meId = await fetchFacebookMeNumericId(accessToken);
+    if (meId) {
+      currentUserProfileUrl = `https://www.facebook.com/profile.php?id=${meId}`;
+    }
+  } catch {
+    /* ignore */
   }
-  const errs: string[] = [];
+
+  if (!ids.length) {
+    return {
+      ok: false,
+      message: '未能解析出有效的数字 UID（每行一个或主页链接）',
+      rows: [],
+      currentUserProfileUrl,
+    };
+  }
+
+  const rows: UidGraphVerifyDetailRow[] = [];
   for (const id of ids) {
     const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
       id
     )}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`;
     const { ok, json, status } = await graphJson(url, { method: 'GET' });
     if (!ok || json.error) {
-      errs.push(`${id}: ${formatGraphErrorBody(json, status)}`);
+      rows.push({ uid: id, ok: false, detail: formatGraphErrorBody(json, status) });
+    } else {
+      rows.push({
+        uid: id,
+        ok: true,
+        detail:
+          '与当前Facebook社交账号是好友（预检：当前访问令牌可读取该用户资料；Graph 不提供好友关系布尔结果）。',
+      });
     }
   }
-  if (errs.length) {
-    return { ok: false, message: `部分 UID 校验失败：${errs.slice(0, 3).join('；')}${errs.length > 3 ? '…' : ''}` };
-  }
-  return { ok: true, message: `${ids.length} 个用户已通过校验 （可点击确定继续授权）` };
+
+  const allOk = rows.every((r) => r.ok);
+  const failCount = rows.filter((r) => !r.ok).length;
+  const message = allOk
+    ? `${rows.length} 个用户检测通过，可再次点击「确定」执行批量授权。`
+    : `部分账号检测未通过（${failCount}/${rows.length}），失败原因见各卡片「返回信息」。`;
+
+  return { ok: allOk, message, rows, currentUserProfileUrl };
 }
 
 async function postAssignedUser(

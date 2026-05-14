@@ -22,7 +22,7 @@ import { fbControlLog } from '../../../utils/fbControlLog';
 import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
 import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
 import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
-import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
+import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload, FriendVerifyResultPayload } from '../lib/batchOperationTypes';
 import { showToastError } from '../lib/globalToast';
 
 const COL_COUNT = 30;
@@ -72,6 +72,8 @@ const batchDrawerOpen = ref(false);
 const batchDrawerKey = ref('');
 const batchDrawerResults = ref<AdAccountBatchResultRow[]>([]);
 const batchDrawerRunning = ref(false);
+/** 好友预检返回的当前 Facebook 主页，用于结果卡「当前账号」兜底 */
+const batchDrawerCurrentFbUrl = ref<string | null>(null);
 
 const batchDrawerPreset = computed(() =>
   batchDrawerOpen.value && batchDrawerKey.value ? getBatchDrawerPreset(batchDrawerKey.value) : null
@@ -876,6 +878,7 @@ function openBatchDrawer(key: string) {
   if (!selectedCount.value) return;
   moreMenuOpen.value = false;
   batchDrawerResults.value = [];
+  batchDrawerCurrentFbUrl.value = null;
   batchDrawerRunning.value = false;
   batchDrawerKey.value = key;
   batchDrawerOpen.value = true;
@@ -1024,7 +1027,13 @@ function closeBatchDrawer() {
   batchDrawerOpen.value = false;
   batchDrawerKey.value = '';
   batchDrawerResults.value = [];
+  batchDrawerCurrentFbUrl.value = null;
   batchDrawerRunning.value = false;
+}
+
+function onFriendVerifyResult(payload: FriendVerifyResultPayload) {
+  batchDrawerResults.value = payload.rows;
+  batchDrawerCurrentFbUrl.value = payload.currentUserProfileUrl;
 }
 
 async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
@@ -1669,7 +1678,9 @@ onUnmounted(() => {
       :selected-account-rows="batchDrawerAccountRows"
       :batch-results="batchDrawerResults"
       :batch-running="batchDrawerRunning"
+      :current-fb-profile-url="batchDrawerCurrentFbUrl"
       @close="closeBatchDrawer"
+      @friend-verify-result="onFriendVerifyResult"
       @confirm="onBatchDrawerConfirm"
     />
   </div>
