@@ -113,7 +113,7 @@ export async function verifyFacebookUserIdsForBatch(
   if (errs.length) {
     return { ok: false, message: `部分 UID 校验失败：${errs.slice(0, 3).join('；')}${errs.length > 3 ? '…' : ''}` };
   }
-  return { ok: true, message: `已通过 Graph 校验 ${ids.length} 个用户（可继续授权）` };
+  return { ok: true, message: `${ids.length} 个用户已通过校验 （可点击确定继续授权）` };
 }
 
 async function postAssignedUser(

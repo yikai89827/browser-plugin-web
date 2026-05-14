@@ -36,6 +36,28 @@ const DISABLE_REASON_ZH: Record<string, string> = {
 };
 
 /**
+ * Graph `disable_reason` 数值枚举（与 Meta 文档一致；超出文档范围时仍走占位文案）。
+ * @see https://developers.facebook.com/docs/marketing-api/reference/ad-account
+ */
+const DISABLE_REASON_NUM_ZH: Record<number, string> = {
+  1: '广告诚信政策',
+  2: '知识产权审核',
+  3: '支付风险',
+  4: '灰号关停',
+  5: '广告格式合规（AFC）审核',
+  6: '业务诚信限制',
+  7: '永久关闭',
+  8: '未使用经销商账户',
+  9: '未使用账户',
+  10: '伞形广告账户',
+  11: 'BM 诚信政策',
+  12: '不实陈述广告账户',
+  13: 'AOAB 法律实体去关联',
+  14: 'CTX 线程审核',
+  15: '账户疑似被盗',
+};
+
+/**
  * Graph `user_role` 数值枚举（与 Meta 广告账户权限文档常见取值对齐；未收录 ID 仍给可读占位）。
  * @see https://developers.facebook.com/docs/marketing-api/reference/ad-account
  */
@@ -92,9 +114,13 @@ export function formatDisableReasonZh(raw: unknown): string | undefined {
   const upper = s0.toUpperCase();
   if (upper === 'NONE') return undefined;
 
-  const n = Number.parseInt(s0, 10);
-  if (!Number.isNaN(n) && String(n) === s0) {
+  const n =
+    typeof raw === 'number' && Number.isFinite(raw) ? Math.trunc(raw) : Number.parseInt(s0, 10);
+  const isIntFromNumber = typeof raw === 'number' && Number.isFinite(raw) && Number.isInteger(raw);
+  const isNumericString = !Number.isNaN(n) && String(n) === s0;
+  if (isIntFromNumber || isNumericString) {
     if (n === 0) return undefined;
+    if (DISABLE_REASON_NUM_ZH[n]) return DISABLE_REASON_NUM_ZH[n];
     return `锁定原因（代码 ${n}）`;
   }
 

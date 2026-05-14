@@ -196,7 +196,7 @@ export function mapGraphApiAdAccountToRecord(
       (a.timezone_name ?? a.timezone_id ?? a.timezone_offset_hours_utc) != null
         ? String(a.timezone_name ?? a.timezone_id ?? a.timezone_offset_hours_utc)
         : undefined,
-    originalId: oid,
+    originalId: String(oid).replace(/^act_/i, '').trim(),
     createdFromBmName: createdBmName,
     createdFromBmId: createdBmId,
     belongsToBmName: belongsBmName,
