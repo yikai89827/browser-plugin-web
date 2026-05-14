@@ -270,9 +270,10 @@ function onConfirm() {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="bod-batch-tele">
-      <div class="bod-batch-backdrop" @click.self="onBackdropClick"></div>
-      <aside class="bod-batch-panel" :class="{ 'bod-batch-panel--open': open }" aria-modal="true" role="dialog">
+    <Transition name="bod-drawer">
+      <div v-if="open" class="bod-batch-tele">
+        <div class="bod-batch-backdrop" @click.self="onBackdropClick"></div>
+        <aside class="bod-batch-panel" aria-modal="true" role="dialog">
       <template v-if="preset">
         <div class="bod-batch-head">
           <h3 class="bod-batch-title">{{ preset.headerTitle }}</h3>
@@ -558,7 +559,8 @@ function onConfirm() {
         </div>
       </template>
     </aside>
-    </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -590,13 +592,33 @@ function onConfirm() {
   color: var(--fb-modal-text, #e5e7eb);
   border-left: 1px solid var(--fb-modal-border, #3c3c3c);
   box-shadow: -12px 0 36px rgba(0, 0, 0, 0.45);
-  transform: translateX(100%);
-  transition: transform 0.28s ease;
+  transform: translateX(0);
   display: flex;
   flex-direction: column;
 }
-.bod-batch-panel--open {
+.bod-drawer-enter-active .bod-batch-panel,
+.bod-drawer-leave-active .bod-batch-panel {
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bod-drawer-enter-active .bod-batch-backdrop,
+.bod-drawer-leave-active .bod-batch-backdrop {
+  transition: opacity 0.28s ease;
+}
+.bod-drawer-enter-from .bod-batch-panel,
+.bod-drawer-leave-to .bod-batch-panel {
+  transform: translateX(100%);
+}
+.bod-drawer-enter-to .bod-batch-panel,
+.bod-drawer-leave-from .bod-batch-panel {
   transform: translateX(0);
+}
+.bod-drawer-enter-from .bod-batch-backdrop,
+.bod-drawer-leave-to .bod-batch-backdrop {
+  opacity: 0;
+}
+.bod-drawer-enter-to .bod-batch-backdrop,
+.bod-drawer-leave-from .bod-batch-backdrop {
+  opacity: 1;
 }
 .bod-batch-head {
   padding: 14px 18px 12px;
@@ -719,11 +741,11 @@ function onConfirm() {
 .bod-steps {
   position: relative;
   margin-top: 20px;
-  padding-left: 22px;
+  padding-left: 40px;
 }
 .bod-step-line {
   position: absolute;
-  left: 11px;
+  left: 19px;
   top: 14px;
   bottom: 14px;
   width: 1px;
@@ -732,7 +754,7 @@ function onConfirm() {
 .bod-step {
   position: relative;
   display: flex;
-  gap: 12px;
+  gap: 22px;
   margin-bottom: 22px;
 }
 .bod-step:last-child {
@@ -740,7 +762,7 @@ function onConfirm() {
 }
 .bod-step-badge {
   position: absolute;
-  left: -22px;
+  left: -40px;
   top: 2px;
   width: 22px;
   height: 22px;
@@ -758,6 +780,7 @@ function onConfirm() {
 .bod-step-body {
   flex: 1;
   min-width: 0;
+  padding-left: 10px;
 }
 .bod-step-label {
   display: block;

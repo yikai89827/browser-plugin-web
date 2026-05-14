@@ -19,7 +19,8 @@ export const BATCH_OPERATION_CATALOG: BatchOperationOption[] = [
 const STEP_AUTH: Pick<BatchDrawerPreset, 'step1' | 'step2' | 'step3' | 'confirmGates'> = {
   step1: {
     label: '* 输入Facebook社交账号的UID或主页地址(先添加好友)',
-    placeholder: '每行一个 UID 或主页链接…',
+    placeholder:
+      '100093137591614\nhttps://www.facebook.com/anasansari.gulfambatik\nhttps://www.facebook.com/profile.php?id=61558701983846',
     required: true,
   },
   step2: { label: '检测好友关系', buttonText: '开始检测' },
