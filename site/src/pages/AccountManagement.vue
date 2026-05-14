@@ -60,6 +60,8 @@ const remarkDraft = ref('');
 /** 行账号名称编辑 */
 const nameModalRow = ref<FbAdAccountRecord | null>(null);
 const nameDraft = ref('');
+/** 改名弹窗：保存请求进行中（至 Graph + 写缓存结束） */
+const nameModalSavePending = ref(false);
 
 /** 「更多」下拉 */
 const moreMenuOpen = ref(false);
@@ -873,13 +875,19 @@ function onMoreMenuPick(action: string) {
 }
 
 function openRenameModal(row: FbAdAccountRecord) {
+  nameModalSavePending.value = false;
   nameModalRow.value = row;
   nameDraft.value = (row.name && String(row.name)) || '';
 }
 
 function closeRenameModal() {
+  if (nameModalSavePending.value) return;
   nameModalRow.value = null;
   nameDraft.value = '';
+}
+
+function dismissPageAlert() {
+  errorMsg.value = '';
 }
 
 async function saveRenameModal() {
@@ -891,15 +899,19 @@ async function saveRenameModal() {
     return;
   }
   errorMsg.value = '';
+  nameModalSavePending.value = true;
   try {
     await renameAdAccountFromSite(row.accountId, name);
     await mergeAccountInExtension({ accountId: row.accountId, name });
     row.name = name;
-    closeRenameModal();
+    nameModalRow.value = null;
+    nameDraft.value = '';
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     showToastError(`重命名失败：${msg}`);
     errorMsg.value = msg;
+  } finally {
+    nameModalSavePending.value = false;
   }
 }
 
@@ -1064,7 +1076,10 @@ onUnmounted(() => {
 
 <template>
   <div class="fb-page">
-    <p v-if="errorMsg" class="alert">{{ errorMsg }}</p>
+    <div v-if="errorMsg" class="alert alert--bar" role="alert">
+      <span class="alert-text">{{ errorMsg }}</span>
+      <button type="button" class="alert-dismiss" aria-label="关闭提示" @click="dismissPageAlert">×</button>
+    </div>
 
     <div class="search-actions-row">
       <div class="search-cluster search-row search-row--flex">
@@ -1525,14 +1540,36 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="nameModalRow" class="modal-overlay" role="dialog" aria-modal="true" @click.self="closeRenameModal">
+    <div
+      v-if="nameModalRow"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      @click.self="!nameModalSavePending && closeRenameModal()"
+    >
       <div class="modal-box">
         <h3>修改账号名称</h3>
         <p class="muted small">账号 ID：{{ nameModalRow.accountId }}</p>
-        <input v-model="nameDraft" type="text" class="name-input" placeholder="输入名称…" />
+        <input
+          v-model="nameDraft"
+          type="text"
+          class="name-input"
+          placeholder="输入名称…"
+          :readonly="nameModalSavePending"
+        />
         <div class="modal-actions">
-          <button type="button" class="btn ghost" @click="closeRenameModal">取消</button>
-          <button type="button" class="btn primary" :disabled="loading" @click="saveRenameModal">保存</button>
+          <button type="button" class="btn ghost" :disabled="nameModalSavePending" @click="closeRenameModal">
+            取消
+          </button>
+          <button
+            type="button"
+            class="btn primary btn--with-spinner"
+            :disabled="nameModalSavePending"
+            @click="saveRenameModal"
+          >
+            <span v-if="nameModalSavePending" class="btn-inline-spinner" aria-hidden="true" />
+            <span>{{ nameModalSavePending ? '保存中…' : '保存' }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -1626,6 +1663,59 @@ onUnmounted(() => {
   border-radius: 6px;
   font-size: 13px;
   margin-bottom: 10px;
+}
+.alert--bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+}
+.alert-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.alert-dismiss {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: -2px -4px -2px 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #fecaca;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.alert-dismiss:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.btn--with-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 7.5rem;
+}
+.btn-inline-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: fb-btn-spin 0.65s linear infinite;
+}
+@keyframes fb-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .search-actions-row {
   display: flex;
