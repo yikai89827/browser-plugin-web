@@ -68,7 +68,7 @@ function sanitizeAssignedUserTasksForPost(tasks: string[]): string[] {
   return tasks.map((t) => String(t).toUpperCase()).filter((t) => ASSIGNED_USER_TASKS_ALLOWED.has(t));
 }
 
-/** 把 Graph `error` 拼成可读字符串，便于批量结果里直接看到子码与用户文案。 */
+/** 把 Graph `error` 拼成可读字符串（优先 Meta 面向用户的 title/msg，便于批量结果里展示失败原因）。 */
 function formatGraphErrorBody(json: Record<string, unknown>, httpStatus: number): string {
   const err = json.error as {
     message?: string;
@@ -77,13 +77,16 @@ function formatGraphErrorBody(json: Record<string, unknown>, httpStatus: number)
     code?: number;
     error_subcode?: number;
   } | undefined;
-  if (!err?.message && !err?.error_user_msg) {
+  if (!err || (!err.message && !err.error_user_msg && !err.error_user_title)) {
     return `HTTP ${httpStatus}`;
   }
   const parts: string[] = [];
-  if (err.message) parts.push(err.message);
-  if (err.error_user_msg && err.error_user_msg !== err.message) parts.push(err.error_user_msg);
-  if (err.error_user_title) parts.push(`(${err.error_user_title})`);
+  const title = err.error_user_title != null ? String(err.error_user_title).trim() : '';
+  const userMsg = err.error_user_msg != null ? String(err.error_user_msg).trim() : '';
+  const tech = err.message != null ? String(err.message).trim() : '';
+  if (title) parts.push(title);
+  if (userMsg) parts.push(userMsg);
+  if (tech && tech !== userMsg) parts.push(tech);
   if (err.code != null) parts.push(`code=${err.code}`);
   if (err.error_subcode != null) parts.push(`subcode=${err.error_subcode}`);
   return parts.join(' | ');
@@ -113,10 +116,9 @@ export async function verifyFacebookUserIdsForBatch(
     const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
       id
     )}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`;
-    const { ok, json } = await graphJson(url, { method: 'GET' });
-    const err = json.error as { message?: string } | undefined;
-    if (!ok || err?.message) {
-      errs.push(`${id}: ${err?.message || '请求失败'}`);
+    const { ok, json, status } = await graphJson(url, { method: 'GET' });
+    if (!ok || json.error) {
+      errs.push(`${id}: ${formatGraphErrorBody(json, status)}`);
     }
   }
   if (errs.length) {
@@ -142,9 +144,9 @@ async function postAssignedUser(
   body.set('tasks', JSON.stringify(safeTasks));
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users`;
   const res = await graphFetch(url, { method: 'POST', body });
-  const json = (await res.json()) as { error?: { message?: string } };
-  if (!res.ok || json.error?.message) {
-    throw new Error(json.error?.message || `HTTP ${res.status}`);
+  const json = (await res.json()) as Record<string, unknown>;
+  if (!res.ok || json.error) {
+    throw new Error(formatGraphErrorBody(json, res.status));
   }
 }
 
@@ -156,9 +158,9 @@ async function deleteAssignedUser(accessToken: string, accountId: string, userId
   });
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users?${q.toString()}`;
   const res = await graphFetch(url, { method: 'DELETE' });
-  const json = (await res.json()) as { error?: { message?: string }; success?: boolean };
-  if (!res.ok || json.error?.message) {
-    throw new Error(json.error?.message || `HTTP ${res.status}`);
+  const json = (await res.json()) as Record<string, unknown>;
+  if (!res.ok || json.error) {
+    throw new Error(formatGraphErrorBody(json, res.status));
   }
 }
 
