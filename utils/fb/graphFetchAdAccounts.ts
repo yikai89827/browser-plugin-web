@@ -1,3 +1,4 @@
+import { formatUserRoleZh } from './adAccountDisplayMaps';
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
@@ -19,6 +20,9 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
       const row = rows[i];
       try {
         row.adminCount = await fetchAdAccountManageAdminCount(accessToken, row.accountId);
+        if ((row.adminCount ?? 0) === 0 && formatUserRoleZh(row.userRoleRaw) === '管理员') {
+          row.adminCount = 1;
+        }
       } catch (e) {
         console.info('[fbControl:graph] adminCount 跳过', {
           accountId: row.accountId,
@@ -59,6 +63,8 @@ const AD_ACCOUNT_FIELDS = [
   'funding_source_details{display_string}',
   'user_role',
   'account_type',
+  /** 与 account_type 交叉判断：BM 下 PERSONAL 常仍为公司广告户 */
+  'is_personal',
 ].join(',');
 
 /**

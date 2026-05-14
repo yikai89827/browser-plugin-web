@@ -44,6 +44,13 @@ function mergeAdAccount(
   if (incoming.adminCount === undefined && p?.adminCount !== undefined) {
     out.adminCount = p.adminCount;
   }
+  if (
+    (incoming.accountKindLabel === undefined || String(incoming.accountKindLabel).trim() === '') &&
+    p?.accountKindLabel != null &&
+    String(p.accountKindLabel).trim() !== ''
+  ) {
+    out.accountKindLabel = p.accountKindLabel;
+  }
   return out;
 }
 

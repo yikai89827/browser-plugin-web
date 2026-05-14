@@ -49,9 +49,21 @@ export async function fetchAdAccountAssignedUserCount(
   return total;
 }
 
+function normalizeAssignedUserTasks(tasks: unknown): string[] {
+  if (Array.isArray(tasks)) return tasks.map((t) => String(t).toUpperCase());
+  if (typeof tasks === 'string' && tasks.trim().startsWith('[')) {
+    try {
+      const p = JSON.parse(tasks) as unknown;
+      if (Array.isArray(p)) return p.map((t) => String(t).toUpperCase());
+    } catch {
+      /* ignore */
+    }
+  }
+  return [];
+}
+
 function rowHasManageTask(tasks: unknown): boolean {
-  if (!Array.isArray(tasks)) return false;
-  return tasks.some((t) => String(t).toUpperCase() === 'MANAGE');
+  return normalizeAssignedUserTasks(tasks).includes('MANAGE');
 }
 
 /**

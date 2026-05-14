@@ -76,6 +76,26 @@ function formatAccountKindLabel(raw: unknown): string | undefined {
   return map[k] || k.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * 结合 `business` / `owner_business` 与 `is_personal` 解析「账号类型」展示标签。
+ * Meta 对挂在 BM 下的广告户可能仍返回 `account_type=PERSONAL` 或 `is_personal=1`，与三方插件/商务后台的「商业」口径对齐时归为 Business。
+ */
+function resolveAccountKindLabel(
+  a: Record<string, unknown>,
+  biz: { id?: string; name?: string },
+  ownerBiz: { id?: string; name?: string }
+): string | undefined {
+  const hasBmAsset = !!(biz.id || ownerBiz.id);
+  const upper = String(a.account_type ?? '').trim().toUpperCase();
+  const personalType = upper === 'PERSONAL';
+  const personalFlag =
+    a.is_personal === 1 || a.is_personal === true || a.is_personal === '1' || String(a.is_personal ?? '') === '1';
+  if (hasBmAsset && (personalType || personalFlag)) {
+    return 'Business';
+  }
+  return formatAccountKindLabel(a.account_type);
+}
+
 /** 解析 Graph `amount_spent` 等字段为数字型花费（主单位，用于无法按「最小单位」解析时的回退） */
 function parseAmountSpent(v: unknown): number {
   if (v == null) return 0;
@@ -118,7 +138,6 @@ export function mapGraphApiAdAccountToRecord(
   const balanceMinor = parseMinorInt(balanceRaw);
   const spendCapMinor = parseMinorInt(spendCapRaw);
   const minDailyBudgetMinor = parseMinorInt(minDailyRaw);
-  const accountKindLabel = formatAccountKindLabel(a.account_type);
   const prepay = a.is_prepay_account;
   let accountType: string | undefined;
   if (prepay === true || prepay === 1) accountType = '预付';
@@ -126,6 +145,7 @@ export function mapGraphApiAdAccountToRecord(
 
   const biz = readBusinessNode(a.business);
   const ownerBiz = readBusinessNode(a.owner_business);
+  const accountKindLabel = resolveAccountKindLabel(a, biz, ownerBiz);
   const rootBusinessName =
     a.business_name != null && String(a.business_name).trim()
       ? String(a.business_name).trim()
