@@ -1,6 +1,7 @@
 import type { FbPixelShareRecord } from '../../interfaces/fbControl';
 import { fbControlLog, fbControlWarn } from '../fbControlLog';
 import { redactUrlForLog } from './tokenDebugLog';
+import { graphFetch } from './graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 
@@ -44,7 +45,7 @@ async function graphGetPaged(firstPathWithQuery: string): Promise<Record<string,
   while (url) {
     page += 1;
     fbControlLog('fb:graph-pixels', `请求第 ${page} 页`, { url: redactUrlForLog(url) });
-    const res = await fetch(url);
+    const res = await graphFetch(url);
     const json = (await res.json()) as GraphListResponse;
     if (!res.ok || json.error) {
       const msg = json.error?.message || `HTTP ${res.status}`;
@@ -61,7 +62,7 @@ async function graphGetPaged(firstPathWithQuery: string): Promise<Record<string,
 async function fetchBusinessName(accessToken: string, businessId: string): Promise<string | undefined> {
   try {
     const q = `fields=name&access_token=${encodeURIComponent(accessToken)}`;
-    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${businessId}?${q}`);
+    const res = await graphFetch(`https://graph.facebook.com/${GRAPH_VERSION}/${businessId}?${q}`);
     const json = (await res.json()) as { name?: string; error?: { message?: string } };
     if (!res.ok || json.error) return undefined;
     return typeof json.name === 'string' ? json.name : undefined;

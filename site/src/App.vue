@@ -8,6 +8,7 @@ import {
   requestAccountsGraphSync,
 } from './lib/accountListSyncHub';
 import { accountsShellExtensionReady } from './lib/accountsRouteGate';
+import GlobalToastStack from './components/GlobalToastStack.vue';
 import {
   pixelListLastUpdatedDisplay,
   pixelListRefreshRunning,
@@ -48,6 +49,7 @@ function navItemActive(item: { path: string }) {
 
 <template>
   <div class="site-container" :class="theme === 'dark' ? 'theme-dark' : 'theme-light'">
+    <GlobalToastStack />
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="logo">

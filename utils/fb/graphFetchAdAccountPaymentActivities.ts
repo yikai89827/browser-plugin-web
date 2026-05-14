@@ -1,4 +1,5 @@
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
+import { graphFetch } from './graphExternalFetch';
 import type { FbAdAccountPaymentActivity } from '../../interfaces/fbControl';
 
 const GRAPH_VERSION = 'v21.0';
@@ -121,7 +122,7 @@ export async function fetchAdAccountPaymentActivities(
       url: redactUrlForLog(url),
       token: describeToken(accessToken),
     });
-    const res = await fetch(url);
+    const res = await graphFetch(url);
     const json = (await res.json()) as {
       data?: Record<string, unknown>[];
       paging?: { next?: string };

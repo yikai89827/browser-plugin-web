@@ -1,5 +1,6 @@
 import type { BatchDrawerSubmitPayload } from '../../site/src/lib/batchOperationTypes';
 import { fbControlLog } from '../fbControlLog';
+import { graphFetch } from './graphExternalFetch';
 import { redactUrlForLog } from './tokenDebugLog';
 
 const GRAPH_VERSION = 'v21.0';
@@ -84,7 +85,7 @@ async function graphJson(
   init: RequestInit
 ): Promise<{ ok: boolean; json: Record<string, unknown>; status: number }> {
   fbControlLog('fb:graph-batch', 'request', { url: redactUrlForLog(url), method: init.method || 'GET' });
-  const res = await fetch(url, init);
+  const res = await graphFetch(url, init);
   const json = (await res.json()) as Record<string, unknown>;
   return { ok: res.ok, json, status: res.status };
 }
@@ -127,7 +128,7 @@ async function postAssignedUser(
   body.set('user', userId);
   body.set('tasks', JSON.stringify(tasks));
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users`;
-  const res = await fetch(url, { method: 'POST', body });
+  const res = await graphFetch(url, { method: 'POST', body });
   const json = (await res.json()) as { error?: { message?: string } };
   if (!res.ok || json.error?.message) {
     throw new Error(json.error?.message || `HTTP ${res.status}`);
@@ -141,7 +142,7 @@ async function deleteAssignedUser(accessToken: string, accountId: string, userId
     access_token: accessToken,
   });
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users?${q.toString()}`;
-  const res = await fetch(url, { method: 'DELETE' });
+  const res = await graphFetch(url, { method: 'DELETE' });
   const json = (await res.json()) as { error?: { message?: string }; success?: boolean };
   if (!res.ok || json.error?.message) {
     throw new Error(json.error?.message || `HTTP ${res.status}`);
@@ -160,7 +161,7 @@ async function postAdAccountField(
     body.set(k, v);
   }
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}`;
-  const res = await fetch(url, { method: 'POST', body });
+  const res = await graphFetch(url, { method: 'POST', body });
   const json = (await res.json()) as Record<string, unknown>;
   const err = json.error as { message?: string } | undefined;
   if (!res.ok || err?.message) {
@@ -195,7 +196,7 @@ export async function renameAdAccountViaAdsManagerGraph(
 
   const url = `https://adsmanager-graph.facebook.com/${GRAPH_VERSION}/${act}?${query.toString()}`;
   fbControlLog('fb:graph-batch', 'adsmanager rename', { url: redactUrlForLog(url), method: 'POST' });
-  const res = await fetch(url, { method: 'POST', body });
+  const res = await graphFetch(url, { method: 'POST', body });
   const raw = await res.text();
   let json: Record<string, unknown>;
   try {
@@ -345,7 +346,7 @@ export async function executeAdAccountBatchOperation(
       body.set('access_token', accessToken);
       body.set('adaccount_ids', idsJson);
       const url = `https://graph.facebook.com/${GRAPH_VERSION}/${bmId}/adaccounts`;
-      const res = await fetch(url, { method: 'POST', body });
+      const res = await graphFetch(url, { method: 'POST', body });
       const json = (await res.json()) as Record<string, unknown>;
       if (!res.ok || (json.error as { message?: string } | undefined)?.message) {
         const msg = formatGraphErrorBody(json, res.status);

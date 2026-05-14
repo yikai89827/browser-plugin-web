@@ -1,6 +1,7 @@
 import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
 import { fbControlLog } from '../../fbControlLog';
 import { handleFbControlAdAccountMessage } from './adAccountHandlers';
+import { handleFbControlGraphProxyMessage } from './graphProxyHandlers';
 import { handleFbControlPixelMessage } from './pixelHandlers';
 import { handleFbControlTokenMessage } from './tokenHandlers';
 
@@ -16,6 +17,9 @@ export async function handleFbControlMessage(
     fbControlLog('messaging:bus', 'FB_CONTROL_PING');
     return { success: true, payload: { ok: true, version: 1 } };
   }
+
+  const proxyRes = await handleFbControlGraphProxyMessage(message);
+  if (proxyRes !== null) return proxyRes;
 
   const tokenRes = await handleFbControlTokenMessage(message);
   if (tokenRes !== null) return tokenRes;

@@ -16,6 +16,7 @@ import {
   type AdAccountBatchResultRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
 export type { AdAccountBatchResultRow } from '../../../utils/fb/graphAdAccountBatchOperations';
+import { registerGraphExternalFetch } from '../../../utils/fb/graphExternalFetch';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import type { BatchDrawerSubmitPayload } from './batchOperationTypes';
 
@@ -247,9 +248,8 @@ export async function verifyFacebookUidsForBatchSite(
 }
 
 /**
- * 在页面内使用扩展保存的 token 执行批量广告账户 Graph 操作（授权 / 限额 / 加 BM 等）。
+ * 单账户改名：走 Ads Manager Graph，成功后再由页面写扩展缓存。
  */
-/** 单账户改名：走 Ads Manager Graph，成功后再由页面写扩展缓存。 */
 export async function renameAdAccountFromSite(accountId: string, newName: string): Promise<void> {
   let tokenRes: ExtensionResponse<{ token: string | null }>;
   try {
@@ -269,6 +269,9 @@ export async function renameAdAccountFromSite(accountId: string, newName: string
   await renameAdAccountViaAdsManagerGraph(token, accountId, newName);
 }
 
+/**
+ * 在页面内使用扩展保存的 token 执行批量广告账户 Graph 操作（授权 / 限额 / 加 BM 等）。
+ */
 export async function executeAdAccountBatchFromSite(
   payload: BatchDrawerSubmitPayload
 ): Promise<AdAccountBatchResultRow[]> {
@@ -291,6 +294,100 @@ export async function executeAdAccountBatchFromSite(
     accounts: payload.selectedAccountIds.length,
   });
   return executeAdAccountBatchOperation(token, payload);
+}
+
+/**
+ * 站点 Graph 请求经扩展 background 代理，避免 graph.facebook.com / adsmanager-graph 的 CORS。
+ * 在 `main.ts` 应用启动时调用一次即可。
+ */
+export function installGraphFetchViaExtensionProxy(): void {
+  registerGraphExternalFetch(async (url, init = {}) => {
+    const allowed =
+      url.startsWith('https://graph.facebook.com/') ||
+      url.startsWith('https://adsmanager-graph.facebook.com/');
+    if (!allowed) {
+      return fetch(url, init);
+    }
+    const chromeApi = getChrome();
+    if (!extensionConfigured() || !chromeApi?.runtime?.sendMessage) {
+      return fetch(url, init);
+    }
+
+    const method = (init.method || 'GET').toUpperCase();
+    const hdrs: Record<string, string> = {};
+    if (init.headers instanceof Headers) {
+      init.headers.forEach((v, k) => {
+        hdrs[k] = v;
+      });
+    } else if (init.headers && typeof init.headers === 'object') {
+      for (const [k, v] of Object.entries(init.headers as Record<string, string>)) {
+        if (typeof v === 'string') hdrs[k] = v;
+      }
+    }
+
+    let bodyStr: string | undefined;
+    const b = init.body;
+    if (b != null && method !== 'GET' && method !== 'HEAD') {
+      if (typeof b === 'string') {
+        bodyStr = b;
+      } else if (b instanceof URLSearchParams) {
+        bodyStr = b.toString();
+        if (!hdrs['Content-Type'] && !hdrs['content-type']) {
+          hdrs['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+        }
+      } else if (b instanceof Blob) {
+        bodyStr = await b.text();
+      } else {
+        bodyStr = String(b);
+      }
+    }
+
+    const proxyUnknownAction = (msg: string) =>
+      /Unknown action:\s*FB_CONTROL_PROXY_FETCH/i.test(msg) || /\bFB_CONTROL_PROXY_FETCH\b/.test(msg);
+
+    let resWrap: ExtensionResponse<{ status: number; bodyText: string; ok: boolean }>;
+    try {
+      resWrap = await sendToExtension<{ status: number; bodyText: string; ok: boolean }>({
+        action: 'FB_CONTROL_PROXY_FETCH',
+        data: {
+          url,
+          method,
+          ...(Object.keys(hdrs).length ? { headers: hdrs } : {}),
+          ...(bodyStr != null && bodyStr !== '' ? { body: bodyStr } : {}),
+        },
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (proxyUnknownAction(msg)) {
+        fbControlLog(
+          'extension-bridge',
+          '当前扩展未注册 FB_CONTROL_PROXY_FETCH，请重新执行 wxt build 并「重新加载」扩展；暂回退直连 fetch',
+          {}
+        );
+        return fetch(url, init);
+      }
+      throw e instanceof Error ? e : new Error(msg);
+    }
+
+    if (!resWrap.success || resWrap.payload == null) {
+      const err = resWrap.error || '扩展 Graph 代理失败';
+      if (proxyUnknownAction(err)) {
+        fbControlLog(
+          'extension-bridge',
+          '当前扩展未注册 FB_CONTROL_PROXY_FETCH，请重新执行 wxt build 并「重新加载」扩展；暂回退直连 fetch',
+          {}
+        );
+        return fetch(url, init);
+      }
+      throw new Error(err);
+    }
+    const { status, bodyText } = resWrap.payload;
+    return new Response(bodyText, {
+      status,
+      statusText: String(status),
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    });
+  });
 }
 
 export async function clearFbAccessTokenInExtension() {

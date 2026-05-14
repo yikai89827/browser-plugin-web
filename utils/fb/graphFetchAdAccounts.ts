@@ -1,6 +1,7 @@
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
+import { graphFetch } from './graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 
@@ -53,7 +54,7 @@ export async function fetchAdAccountsFromGraph(accessToken: string): Promise<FbA
   while (url) {
     page += 1;
     console.info(`[fbControl:graph] 请求第 ${page} 页`, { url: redactUrlForLog(url) });
-    const res = await fetch(url);
+    const res = await graphFetch(url);
     const json = (await res.json()) as {
       data?: Record<string, unknown>[];
       paging?: { next?: string };

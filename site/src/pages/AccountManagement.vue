@@ -23,6 +23,7 @@ import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../util
 import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
 import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
 import type { BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
+import { showToastError } from '../lib/globalToast';
 
 const COL_COUNT = 30;
 
@@ -897,7 +898,7 @@ async function saveRenameModal() {
     closeRenameModal();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    window.alert(`重命名失败：${msg}`);
+    showToastError(`重命名失败：${msg}`);
     errorMsg.value = msg;
   }
 }
@@ -1014,7 +1015,7 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
       const badRows = rows.filter((r) => r.status !== '成功');
       if (badRows.length) {
         const detail = badRows.map((r) => `${r.accountId}: ${r.detail}`).join('\n');
-        window.alert(
+        showToastError(
           badRows.length === rows.length
             ? `账号重命名全部失败：\n${detail}`
             : `部分账号重命名失败（成功 ${okRows.length} / ${rows.length}）：\n${detail}`
@@ -1028,7 +1029,7 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
         } catch (mergeErr: unknown) {
           const m = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
           fbControlLog('site:account-page', '重命名 Graph 成功但写扩展缓存失败', { accountId: r.accountId, m });
-          window.alert(`接口已成功但写本地缓存失败 ${r.accountId}：${m}`);
+          showToastError(`接口已成功但写本地缓存失败 ${r.accountId}：${m}`);
         }
       }
       if (okRows.length) {

@@ -1,4 +1,5 @@
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
+import { graphFetch } from './graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 const MAX_PAGES = 25;
@@ -28,7 +29,7 @@ export async function fetchAdAccountAssignedUserCount(
   while (url && pages < MAX_PAGES) {
     pages += 1;
     console.info(`[fbControl:graph] assigned_users 第 ${pages} 页`, { url: redactUrlForLog(url) });
-    const res = await fetch(url);
+    const res = await graphFetch(url);
     const json = (await res.json()) as {
       data?: { id?: string }[];
       paging?: { next?: string };
