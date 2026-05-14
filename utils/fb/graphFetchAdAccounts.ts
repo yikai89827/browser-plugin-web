@@ -25,9 +25,15 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
         row.adminCount = n;
       } catch (e) {
         row.adminCount = 0;
+        const message =
+          e instanceof Error
+            ? e.message
+            : typeof e === 'object' && e !== null
+              ? JSON.stringify(e)
+              : String(e);
         console.info('[fbControl:graph] adminCount 跳过', {
           accountId: row.accountId,
-          message: e instanceof Error ? e.message : String(e),
+          message,
         });
       }
     }

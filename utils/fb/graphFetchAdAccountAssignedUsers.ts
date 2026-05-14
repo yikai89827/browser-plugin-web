@@ -9,6 +9,33 @@ function actPath(accountId: string): string {
   return raw ? `act_${raw}` : accountId;
 }
 
+/** 将 Graph JSON 错误体整理为可读字符串（避免 message 为对象时出现 [object Object]） */
+function graphErrorToString(json: unknown, httpStatus: number): string {
+  if (json != null && typeof json === 'object' && 'error' in json) {
+    const err = (json as { error?: unknown }).error;
+    if (typeof err === 'string' && err.trim()) return err.trim();
+    if (err != null && typeof err === 'object') {
+      const o = err as Record<string, unknown>;
+      const parts: string[] = [];
+      const m = o.message;
+      if (typeof m === 'string' && m.trim()) parts.push(m.trim());
+      else if (m != null) {
+        try {
+          parts.push(JSON.stringify(m));
+        } catch {
+          parts.push(String(m));
+        }
+      }
+      const u = o.error_user_msg;
+      if (typeof u === 'string' && u.trim()) parts.push(String(u).trim());
+      if (typeof o.code === 'number') parts.push(`code=${o.code}`);
+      if (typeof o.error_subcode === 'number') parts.push(`subcode=${o.error_subcode}`);
+      if (parts.length) return parts.join(' | ');
+    }
+  }
+  return `HTTP ${httpStatus}`;
+}
+
 /**
  * 分页统计 `act_{id}/assigned_users` 人数（用于「隐藏管理员」列）。
  * 需 token 具备相应广告账户权限。
@@ -33,11 +60,13 @@ export async function fetchAdAccountAssignedUserCount(
     const json = (await res.json()) as {
       data?: { id?: string }[];
       paging?: { next?: string };
-      error?: { message?: string };
+      error?: unknown;
     };
-    if (!res.ok) {
-      const msg = json?.error?.message || `HTTP ${res.status}`;
-      console.error('[fbControl:graph] assigned_users 错误', { httpStatus: res.status, message: msg });
+    if (!res.ok || json.error) {
+      const msg = graphErrorToString(json, res.status);
+      console.error(
+        `[fbControl:graph] assigned_users 错误 http=${res.status} msg=${msg}`
+      );
       throw new Error(msg);
     }
     const batch = Array.isArray(json.data) ? json.data : [];
@@ -51,13 +80,25 @@ export async function fetchAdAccountAssignedUserCount(
 
 function normalizeAssignedUserTasks(tasks: unknown): string[] {
   if (Array.isArray(tasks)) return tasks.map((t) => String(t).toUpperCase());
-  if (typeof tasks === 'string' && tasks.trim().startsWith('[')) {
-    try {
-      const p = JSON.parse(tasks) as unknown;
-      if (Array.isArray(p)) return p.map((t) => String(t).toUpperCase());
-    } catch {
-      /* ignore */
+  if (typeof tasks === 'string') {
+    const t = tasks.trim();
+    if (!t) return [];
+    if (t.startsWith('[')) {
+      try {
+        const p = JSON.parse(t) as unknown;
+        if (Array.isArray(p)) return p.map((x) => String(x).toUpperCase());
+      } catch {
+        /* ignore */
+      }
+      return [];
     }
+    if (t.includes(',')) {
+      return t
+        .split(',')
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+    }
+    return [t.toUpperCase()];
   }
   return [];
 }
@@ -91,11 +132,13 @@ export async function fetchAdAccountManageAdminCount(
     const json = (await res.json()) as {
       data?: { id?: string; tasks?: unknown }[];
       paging?: { next?: string };
-      error?: { message?: string };
+      error?: unknown;
     };
-    if (!res.ok) {
-      const msg = json?.error?.message || `HTTP ${res.status}`;
-      console.error('[fbControl:graph] assigned_users(tasks) 错误', { accountId, httpStatus: res.status, message: msg });
+    if (!res.ok || json.error) {
+      const msg = graphErrorToString(json, res.status);
+      console.error(
+        `[fbControl:graph] assigned_users(tasks) 错误 accountId=${accountId} http=${res.status} msg=${msg}`
+      );
       throw new Error(msg);
     }
     const batch = Array.isArray(json.data) ? json.data : [];
