@@ -143,10 +143,10 @@ export function getBatchDrawerPreset(entryKey: string): BatchDrawerPreset {
     case 'setLimit':
       return presetSimple(
         'setLimit',
-        '设置限额',
+        '设置账号限额',
         'set_limit',
         [{ id: 'set_limit', label: '设置限额' }],
-        true
+        false
       );
     case 'resetLimit':
       return presetSimple(

@@ -55,6 +55,31 @@ export interface BatchDrawerPreset {
   confirmGates: BatchConfirmGate[];
 }
 
+/** 抽屉内「当前账号」摘要（由账户管理页传入） */
+export type BatchAccountPreviewRow = {
+  accountId: string;
+  name?: string;
+  currency?: string;
+  spendCapMinor?: number;
+  balanceMinor?: number;
+  spendingLimit?: string;
+  balance?: string;
+};
+
+/** 设置限额抽屉提交（与 `uidsText` 二选一：有此则走结构化逻辑） */
+export interface SpendLimitFormPayload {
+  kind: 'increase' | 'decrease';
+  /** 增加/减少时的金额（币种最小单位，如 USD 美分） */
+  amountMinor?: number;
+}
+
+/** 重置限额抽屉提交 */
+export interface ResetLimitFormPayload {
+  mode: 'account_zero' | 'delete_restriction' | 'set_absolute';
+  /** `set_absolute` 时的新 spend_cap（最小单位） */
+  amountMinor?: number;
+}
+
 export interface BatchDrawerSubmitPayload {
   entryKey: string;
   operationId: BatchOperationId;
@@ -63,4 +88,6 @@ export interface BatchDrawerSubmitPayload {
   useDefaultInterval: boolean;
   friendCheckOk: boolean;
   selectedAccountIds: string[];
+  spendLimitForm?: SpendLimitFormPayload;
+  resetLimitForm?: ResetLimitFormPayload;
 }

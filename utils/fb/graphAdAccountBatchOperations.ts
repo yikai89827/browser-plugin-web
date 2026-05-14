@@ -210,7 +210,20 @@ export async function renameAdAccountViaAdsManagerGraph(
   }
 }
 
-/** 解析限额：单行数字 → 对所有账户使用同一 spend_cap（最小货币单位）；多行则按与选中账户顺序一一对应。 */
+async function fetchAdAccountSpendCapMinor(accessToken: string, accountId: string): Promise<number | null> {
+  const act = actPath(accountId);
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}?fields=spend_cap&access_token=${encodeURIComponent(accessToken)}`;
+  fbControlLog('fb:graph-batch', 'GET spend_cap', { url: redactUrlForLog(url) });
+  const res = await graphFetch(url);
+  const json = (await res.json()) as { spend_cap?: string | number; error?: { message?: string } };
+  if (!res.ok || json.error?.message) return null;
+  const raw = json.spend_cap;
+  if (raw === undefined || raw === null || raw === '') return 0;
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace(/[^\d-]/g, ''), 10);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
 function parseSpendCapMinors(text: string, accountCount: number): number[] | null {
   const lines = text
     .split(/\r?\n/)
@@ -301,6 +314,40 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'set_limit': {
+      const form = payload.spendLimitForm;
+      if (form) {
+        const delta = form.amountMinor ?? null;
+        if (delta == null || delta <= 0) {
+          throw new Error('请填写有效的额度金额');
+        }
+        for (const accountId of accounts) {
+          try {
+            let targetMinor: number;
+            if (form.kind === 'increase') {
+              const cur = await fetchAdAccountSpendCapMinor(accessToken, accountId);
+              if (cur === null) {
+                throw new Error('无法读取当前 spend_cap');
+              }
+              targetMinor = cur <= 0 ? delta : cur + delta;
+            } else {
+              const cur = await fetchAdAccountSpendCapMinor(accessToken, accountId);
+              if (cur === null) {
+                throw new Error('无法读取当前 spend_cap');
+              }
+              if (cur <= 0) {
+                throw new Error('当前为不限额（spend_cap=0），无法减少额度');
+              }
+              targetMinor = Math.max(0, cur - delta);
+            }
+            await postAdAccountField(accessToken, accountId, { spend_cap: String(targetMinor) });
+            if (delayMs) await sleep(delayMs);
+            pushResult(accountId, '成功', `spend_cap 已设为 ${targetMinor}（最小货币单位）`);
+          } catch (e: unknown) {
+            pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+          }
+        }
+        break;
+      }
       const caps = parseSpendCapMinors(payload.uidsText, accounts.length);
       if (!caps) {
         throw new Error('请填写 spend_cap（最小货币单位整数）：单行表示全部账户同一限额，或与选中行数相同的行数一一对应');
@@ -319,11 +366,32 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'reset_limit': {
+      const rf = payload.resetLimitForm;
+      if (rf?.mode === 'set_absolute') {
+        const cap = rf.amountMinor;
+        if (cap == null || cap < 0) {
+          throw new Error('请填写有效的限额（最小货币单位）');
+        }
+        for (const accountId of accounts) {
+          try {
+            await postAdAccountField(accessToken, accountId, { spend_cap: String(cap) });
+            if (delayMs) await sleep(delayMs);
+            pushResult(accountId, '成功', `spend_cap 已设为 ${cap}`);
+          } catch (e: unknown) {
+            pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+          }
+        }
+        break;
+      }
+      const detailMsg =
+        rf?.mode === 'delete_restriction'
+          ? '已请求解除 spend_cap 限制（spend_cap=0，与账户清零相同接口）'
+          : '已请求将 spend_cap 置为 0（若账户策略不允许可能需在 BM 内核对）';
       for (const accountId of accounts) {
         try {
           await postAdAccountField(accessToken, accountId, { spend_cap: '0' });
           if (delayMs) await sleep(delayMs);
-          pushResult(accountId, '成功', '已请求将 spend_cap 置为 0（若账户策略不允许可能需在 BM 内核对）');
+          pushResult(accountId, '成功', detailMsg);
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
         }

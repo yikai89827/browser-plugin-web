@@ -22,7 +22,7 @@ import { fbControlLog } from '../../../utils/fbControlLog';
 import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
 import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
 import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
-import type { BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
+import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
 import { showToastError } from '../lib/globalToast';
 
 const COL_COUNT = 30;
@@ -343,6 +343,21 @@ const selectedCount = computed(
 const selectedAccountIds = computed(() =>
   sortedFiltered.value.filter((r) => selectedIds.value[r.accountId]).map((r) => r.accountId)
 );
+
+const batchDrawerAccountRows = computed((): BatchAccountPreviewRow[] => {
+  const idSet = new Set(selectedAccountIds.value);
+  return sortedFiltered.value
+    .filter((r) => idSet.has(r.accountId))
+    .map((r) => ({
+      accountId: r.accountId,
+      name: r.name,
+      currency: r.currency,
+      spendCapMinor: r.spendCapMinor,
+      balanceMinor: r.balanceMinor,
+      spendingLimit: r.spendingLimit,
+      balance: r.balance,
+    }));
+});
 
 function toggleRowSelected(accountId: string) {
   selectedIds.value = {
@@ -1626,6 +1641,7 @@ onUnmounted(() => {
       :open="batchDrawerOpen"
       :preset="batchDrawerPreset"
       :selected-account-ids="selectedAccountIds"
+      :selected-account-rows="batchDrawerAccountRows"
       :batch-results="batchDrawerResults"
       :batch-running="batchDrawerRunning"
       @close="closeBatchDrawer"

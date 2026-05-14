@@ -1,6 +1,11 @@
 <script lang="ts" setup>
 import { ref, watch, computed } from 'vue';
-import type { BatchDrawerPreset, BatchDrawerSubmitPayload, BatchOperationId } from '../lib/batchOperationTypes';
+import type {
+  BatchAccountPreviewRow,
+  BatchDrawerPreset,
+  BatchDrawerSubmitPayload,
+  BatchOperationId,
+} from '../lib/batchOperationTypes';
 import { getBatchOperationUi } from '../lib/batchOperationPresets';
 
 import { verifyFacebookUidsForBatchSite } from '../lib/extensionBridge';
@@ -9,6 +14,8 @@ const props = defineProps<{
   open: boolean;
   preset: BatchDrawerPreset | null;
   selectedAccountIds: string[];
+  /** 当前勾选行摘要（设置限额抽屉展示额度等） */
+  selectedAccountRows?: BatchAccountPreviewRow[];
   /** 父组件在 Graph 批量执行完成后写入，用于「结果」页 */
   batchResults?: { accountId: string; status: string; detail: string }[];
   batchRunning?: boolean;
@@ -18,6 +25,93 @@ const emit = defineEmits<{
   close: [];
   confirm: [payload: BatchDrawerSubmitPayload];
 }>();
+
+const limitOpKind = ref<'increase' | 'decrease'>('increase');
+const limitUsdStr = ref('');
+const resetMode = ref<'account_zero' | 'delete_restriction' | 'set_absolute'>('account_zero');
+const resetAbsoluteUsd = ref('');
+
+const isLimitSpecial = computed(() => props.preset?.entryKey === 'setLimit');
+const isResetSpecial = computed(() => props.preset?.entryKey === 'resetLimit');
+
+const primaryPreviewAccount = computed(() => (props.selectedAccountRows && props.selectedAccountRows[0]) || null);
+
+function formatMinorLine(minor: number | undefined, currency: string | undefined): string {
+  if (minor == null || Number.isNaN(minor)) return '—';
+  const c = (currency || 'USD').trim() || 'USD';
+  return `${(minor / 100).toFixed(2)} ${c}`;
+}
+
+function displaySpendingCap(row: BatchAccountPreviewRow | null): string {
+  if (!row) return '—';
+  if (row.spendingLimit && String(row.spendingLimit).trim()) return String(row.spendingLimit);
+  return formatMinorLine(row.spendCapMinor, row.currency);
+}
+
+function displayBalance(row: BatchAccountPreviewRow | null): string {
+  if (!row) return '—';
+  if (row.balance && String(row.balance).trim()) return String(row.balance);
+  return formatMinorLine(row.balanceMinor, row.currency);
+}
+
+/** 正金额：增加/减少额度输入 */
+function parseUsdInputToMinor(s: string): number | null {
+  const t = s.trim().replace(/,/g, '');
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100);
+}
+
+/** 设为限额时允许 0 */
+function parseUsdToMinorAllowZero(s: string): number | null {
+  const t = s.trim().replace(/,/g, '');
+  if (t === '') return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+const fxComputedLabel = computed(() => {
+  const m = parseUsdInputToMinor(limitUsdStr.value);
+  if (m == null) return '结果会自动计算';
+  return `${(m / 100).toFixed(2)} USD（${m} 最小单位）`;
+});
+
+const limitPreviewText = computed(() => {
+  const row = primaryPreviewAccount.value;
+  const n = props.selectedAccountIds.length;
+  const base = row
+    ? `账号: ${row.accountId} 当前额度: ${displaySpendingCap(row)} 剩余额度: ${displayBalance(row)}`
+    : `已选 ${n} 个账户` + (n ? `（首条 ID: ${props.selectedAccountIds[0]}）` : '');
+  const m = parseUsdInputToMinor(limitUsdStr.value);
+  if (m == null) {
+    return `${base}\n请在「操作类型」中填写金额后查看效果说明。`;
+  }
+  if (limitOpKind.value === 'increase') {
+    return `${base}\n将对每个账户在现有 spend_cap 上增加 ${(m / 100).toFixed(2)} USD（不限额时按该金额设为新上限）。`;
+  }
+  return `${base}\n将对每个账户在现有 spend_cap 上减少 ${(m / 100).toFixed(2)} USD（已不限额则无法减少）。`;
+});
+
+const limitConfirmOk = computed(() => {
+  if (!isLimitSpecial.value) return true;
+  return parseUsdInputToMinor(limitUsdStr.value) != null;
+});
+
+const resetConfirmOk = computed(() => {
+  if (!isResetSpecial.value) return true;
+  if (resetMode.value === 'set_absolute') {
+    return parseUsdToMinorAllowZero(resetAbsoluteUsd.value) != null;
+  }
+  return true;
+});
+
+const otherAccountsForTransfer = computed(() => {
+  const rows = props.selectedAccountRows ?? [];
+  const first = rows[0]?.accountId;
+  return rows.filter((r) => r.accountId && r.accountId !== first);
+});
 
 const drawerTab = ref<'op' | 'result'>('op');
 const selectedOpId = ref<BatchOperationId>('add_ad_permissions');
@@ -48,11 +142,13 @@ const step2Visible = computed(() => !!ui.value.step2);
 const step3Visible = computed(() => !!ui.value.step3);
 
 const inputGateOk = computed(() => {
+  if (isLimitSpecial.value || isResetSpecial.value) return true;
   if (!ui.value.step1.required) return true;
   return uidsText.value.trim().length > 0;
 });
 
 const friendGateOk = computed(() => {
+  if (isLimitSpecial.value || isResetSpecial.value) return true;
   if (!ui.value.confirmGates.includes('friend')) return true;
   return friendCheckStatus.value === 'ok';
 });
@@ -60,6 +156,8 @@ const friendGateOk = computed(() => {
 const confirmDisabled = computed(() => {
   if (!props.preset || !props.selectedAccountIds.length) return true;
   if (props.batchRunning) return true;
+  if (!limitConfirmOk.value) return true;
+  if (!resetConfirmOk.value) return true;
   if (!inputGateOk.value) return true;
   if (!friendGateOk.value) return true;
   return false;
@@ -75,6 +173,10 @@ function resetForm() {
   friendCheckStatus.value = 'idle';
   friendCheckMsg.value = '';
   drawerTab.value = 'op';
+  limitOpKind.value = 'increase';
+  limitUsdStr.value = '';
+  resetMode.value = 'account_zero';
+  resetAbsoluteUsd.value = '';
 }
 
 watch(
@@ -132,6 +234,24 @@ function onConfirm() {
     friendCheckOk: friendGateOk.value,
     selectedAccountIds: [...props.selectedAccountIds],
   };
+  if (props.preset.entryKey === 'setLimit') {
+    const minor = parseUsdInputToMinor(limitUsdStr.value);
+    if (minor == null || minor <= 0) return;
+    payload.spendLimitForm = {
+      kind: limitOpKind.value,
+      amountMinor: minor,
+    };
+    payload.uidsText = '';
+  } else if (props.preset.entryKey === 'resetLimit') {
+    const mode = resetMode.value;
+    payload.resetLimitForm = { mode };
+    if (mode === 'set_absolute') {
+      const cap = parseUsdToMinorAllowZero(resetAbsoluteUsd.value);
+      if (cap == null) return;
+      payload.resetLimitForm.amountMinor = cap;
+    }
+    payload.uidsText = '';
+  }
   emit('confirm', payload);
 }
 </script>
@@ -174,7 +294,154 @@ function onConfirm() {
         <div class="bod-batch-body">
           <template v-if="drawerTab === 'op'">
             <p v-if="batchRunning" class="bod-batch-running muted">正在通过 Graph 执行批量操作…</p>
-            <div class="bod-batch-op-root">
+
+            <!-- 设置账号限额（设计稿分步） -->
+            <div v-if="isLimitSpecial" class="bod-batch-op-root bod-limit-root">
+              <select v-model="selectedOpId" class="bod-batch-select bod-batch-select--main">
+                <option v-for="op in preset.operations" :key="op.id" :value="op.id">{{ op.label }}</option>
+              </select>
+              <div class="bod-steps">
+                <div class="bod-step-line" aria-hidden="true"></div>
+
+                <div class="bod-step">
+                  <span class="bod-step-badge">1</span>
+                  <div class="bod-step-body">
+                    <div class="bod-step-label">当前账号</div>
+                    <p class="bod-limit-line">
+                      当前账号:
+                      {{ primaryPreviewAccount?.accountId || selectedAccountIds[0] || '—' }}
+                      <span v-if="selectedAccountIds.length > 1" class="muted small">
+                        （共 {{ selectedAccountIds.length }} 个，将逐户执行相同规则）
+                      </span>
+                    </p>
+                    <p class="bod-limit-line">当前额度: {{ displaySpendingCap(primaryPreviewAccount) }}</p>
+                    <p class="bod-limit-line">剩余额度: {{ displayBalance(primaryPreviewAccount) }}</p>
+                    <div class="bod-fx-row">
+                      <span class="bod-fx-label">汇率换算:</span>
+                      <span class="bod-fx-part"
+                        >USD:
+                        <input v-model="limitUsdStr" type="text" class="bod-limit-input" placeholder="请输入 USD"
+                      /></span>
+                      <span class="bod-fx-eq">= USD:</span>
+                      <span class="bod-fx-result muted">{{ fxComputedLabel }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bod-step">
+                  <span class="bod-step-badge">2</span>
+                  <div class="bod-step-body">
+                    <div class="bod-step-label">操作类型</div>
+                    <div class="bod-radio-stack">
+                      <label class="bod-radio-row">
+                        <input v-model="limitOpKind" type="radio" value="increase" />
+                        <span>增加额度</span>
+                        <input
+                          v-model="limitUsdStr"
+                          type="text"
+                          class="bod-limit-input bod-limit-input--inline"
+                          placeholder="输入增加额度值"
+                          :disabled="limitOpKind !== 'increase'"
+                        />
+                        <span class="bod-currency-suffix">USD</span>
+                      </label>
+                      <label class="bod-radio-row">
+                        <input v-model="limitOpKind" type="radio" value="decrease" />
+                        <span>减少额度</span>
+                        <input
+                          v-model="limitUsdStr"
+                          type="text"
+                          class="bod-limit-input bod-limit-input--inline"
+                          placeholder="输入减少额度值"
+                          :disabled="limitOpKind !== 'decrease'"
+                        />
+                        <span class="bod-currency-suffix">USD</span>
+                      </label>
+                      <div class="bod-radio-row bod-radio-row--disabled">
+                        <span class="bod-radio-fake" aria-hidden="true" />
+                        <span>账户间转移</span>
+                        <select class="bod-batch-select bod-select-inline" disabled>
+                          <option>选择转入账户</option>
+                          <option v-for="r in otherAccountsForTransfer" :key="r.accountId" :value="r.accountId">
+                            {{ r.name || r.accountId }}
+                          </option>
+                        </select>
+                      </div>
+                      <p class="bod-limit-hint muted small">账户间转移需 Meta Business 侧能力，当前版本未开放。</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bod-step">
+                  <span class="bod-step-badge">3</span>
+                  <div class="bod-step-body">
+                    <div class="bod-step-label">操作结果预览</div>
+                    <div class="bod-preview-box">{{ limitPreviewText }}</div>
+                  </div>
+                </div>
+
+                <div class="bod-step">
+                  <span class="bod-step-badge">4</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="useDefaultInterval" type="checkbox" />
+                      <span>系统默认执行时间间隔</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 重置限额 -->
+            <div v-else-if="isResetSpecial" class="bod-batch-op-root bod-limit-root">
+              <select v-model="selectedOpId" class="bod-batch-select bod-batch-select--main">
+                <option v-for="op in preset.operations" :key="op.id" :value="op.id">{{ op.label }}</option>
+              </select>
+              <div class="bod-steps">
+                <div class="bod-step-line" aria-hidden="true"></div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">1</span>
+                  <div class="bod-step-body">
+                    <div class="bod-step-label">操作类型</div>
+                    <div class="bod-radio-stack">
+                      <label class="bod-radio-row">
+                        <input v-model="resetMode" type="radio" value="account_zero" />
+                        <span>账户清零</span>
+                      </label>
+                      <label class="bod-radio-row">
+                        <input v-model="resetMode" type="radio" value="delete_restriction" />
+                        <span>删除限制</span>
+                      </label>
+                      <label class="bod-radio-row">
+                        <input v-model="resetMode" type="radio" value="set_absolute" />
+                        <span>设置限额</span>
+                      </label>
+                      <div v-if="resetMode === 'set_absolute'" class="bod-reset-abs">
+                        <span class="muted small">新限额（USD，将写入 spend_cap 最小单位）</span>
+                        <input
+                          v-model="resetAbsoluteUsd"
+                          type="text"
+                          class="bod-limit-input bod-limit-input--block"
+                          placeholder="例如 100.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">2</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="useDefaultInterval" type="checkbox" />
+                      <span>系统默认执行时间间隔</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 其他批量入口（原样） -->
+            <div v-else class="bod-batch-op-root">
               <select v-model="selectedOpId" class="bod-batch-select bod-batch-select--main">
                 <option v-for="op in preset.operations" :key="op.id" :value="op.id">{{ op.label }}</option>
               </select>
@@ -260,9 +527,11 @@ function onConfirm() {
           <button
             type="button"
             class="bod-btn-confirm"
+            :class="{ 'bod-btn-confirm--busy': batchRunning }"
             :disabled="drawerTab !== 'op' || confirmDisabled"
             @click="onConfirm"
           >
+            <span v-if="batchRunning" class="bod-btn-foot-spinner" aria-hidden="true" />
             <svg class="bod-lock-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v10H6V11z"
@@ -272,7 +541,7 @@ function onConfirm() {
                 stroke-linejoin="round"
               />
             </svg>
-            确定
+            {{ batchRunning ? '执行中…' : '确定' }}
           </button>
         </div>
       </template>
@@ -610,5 +879,132 @@ function onConfirm() {
 .bod-lock-ico {
   flex-shrink: 0;
   opacity: 0.95;
+}
+.small {
+  font-size: 11px;
+}
+.bod-limit-root .bod-limit-line {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.bod-fx-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.bod-fx-label {
+  color: var(--fb-muted, #9ca3af);
+}
+.bod-fx-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bod-fx-eq {
+  color: var(--fb-muted, #9ca3af);
+}
+.bod-fx-result {
+  flex: 1;
+  min-width: 140px;
+  font-size: 12px;
+}
+.bod-limit-input {
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-input-border, #4b5563);
+  background: var(--fb-modal-input-bg, #2d2d2d);
+  color: var(--fb-input-text, #e5e7eb);
+  font-size: 13px;
+  max-width: 160px;
+}
+.bod-limit-input:focus {
+  outline: none;
+  border-color: #1877f2;
+}
+.bod-limit-input--inline {
+  max-width: 140px;
+  margin-left: 4px;
+}
+.bod-limit-input--block {
+  max-width: 100%;
+  width: 100%;
+  margin-top: 8px;
+}
+.bod-radio-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bod-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bod-radio-row--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.bod-radio-fake {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--fb-border, #6b7280);
+  flex-shrink: 0;
+}
+.bod-currency-suffix {
+  color: var(--fb-muted, #9ca3af);
+  font-size: 12px;
+}
+.bod-select-inline {
+  flex: 1;
+  min-width: 120px;
+  max-width: 220px;
+  margin-left: auto;
+}
+.bod-limit-hint {
+  margin: 0;
+}
+.bod-preview-box {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-border, #4b5563);
+  background: var(--fb-surface-a, #1e1e1e);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 72px;
+}
+.bod-reset-abs {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bod-btn-foot-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: bod-foot-spin 0.7s linear infinite;
+}
+.bod-btn-confirm--busy:not(:disabled) {
+  opacity: 0.92;
+}
+@keyframes bod-foot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
