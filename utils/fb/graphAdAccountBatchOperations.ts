@@ -168,6 +168,47 @@ async function postAdAccountField(
   }
 }
 
+/**
+ * 广告账户改名：与 Ads Manager 一致走 `adsmanager-graph`，并带 `suppress_http_code=1`
+ *（HTTP 可能始终为 200，必须以响应 JSON 是否含 `error` 判断成败）。
+ */
+export async function renameAdAccountViaAdsManagerGraph(
+  accessToken: string,
+  accountId: string,
+  newName: string
+): Promise<void> {
+  const act = actPath(accountId);
+  const query = new URLSearchParams({
+    name: newName,
+    access_token: accessToken,
+    suppress_http_code: '1',
+    locale: 'en_US',
+    format: 'json',
+    pretty: '0',
+    transport: 'cors',
+  });
+  const body = new URLSearchParams();
+  body.set('access_token', accessToken);
+  body.set('name', newName);
+  body.set('suppress_http_code', '1');
+  body.set('locale', 'en_US');
+
+  const url = `https://adsmanager-graph.facebook.com/${GRAPH_VERSION}/${act}?${query.toString()}`;
+  fbControlLog('fb:graph-batch', 'adsmanager rename', { url: redactUrlForLog(url), method: 'POST' });
+  const res = await fetch(url, { method: 'POST', body });
+  const raw = await res.text();
+  let json: Record<string, unknown>;
+  try {
+    json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  } catch {
+    throw new Error(`重命名接口返回非 JSON（HTTP ${res.status}）`);
+  }
+  if (json.error !== undefined && json.error !== null) {
+    const msg = formatGraphErrorBody(json, res.status);
+    throw new Error(msg !== `HTTP ${res.status}` ? msg : JSON.stringify(json.error));
+  }
+}
+
 /** 解析限额：单行数字 → 对所有账户使用同一 spend_cap（最小货币单位）；多行则按与选中账户顺序一一对应。 */
 function parseSpendCapMinors(text: string, accountCount: number): number[] | null {
   const lines = text
@@ -326,7 +367,7 @@ export async function executeAdAccountBatchOperation(
       }
       for (const accountId of accounts) {
         try {
-          await postAdAccountField(accessToken, accountId, { name });
+          await renameAdAccountViaAdsManagerGraph(accessToken, accountId, name);
           if (delayMs) await sleep(delayMs);
           pushResult(accountId, '成功', `名称已更新为「${name}」`);
         } catch (e: unknown) {

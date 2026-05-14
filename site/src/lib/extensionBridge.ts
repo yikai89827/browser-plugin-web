@@ -11,6 +11,7 @@ import { fetchAdAccountPaymentActivities } from '../../../utils/fb/graphFetchAdA
 import { fetchAdAccountAssignedUserCount } from '../../../utils/fb/graphFetchAdAccountAssignedUsers';
 import {
   executeAdAccountBatchOperation,
+  renameAdAccountViaAdsManagerGraph,
   verifyFacebookUserIdsForBatch,
   type AdAccountBatchResultRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
@@ -248,6 +249,26 @@ export async function verifyFacebookUidsForBatchSite(
 /**
  * 在页面内使用扩展保存的 token 执行批量广告账户 Graph 操作（授权 / 限额 / 加 BM 等）。
  */
+/** 单账户改名：走 Ads Manager Graph，成功后再由页面写扩展缓存。 */
+export async function renameAdAccountFromSite(accountId: string, newName: string): Promise<void> {
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(msg);
+  }
+  if (!tokenRes.success) {
+    throw new Error(tokenRes.error || '读取 token 失败');
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    throw new Error('未保存 access_token，无法重命名');
+  }
+  fbControlLog('extension-bridge', 'renameAdAccountFromSite', { accountIdPreview: String(accountId).slice(0, 12) });
+  await renameAdAccountViaAdsManagerGraph(token, accountId, newName);
+}
+
 export async function executeAdAccountBatchFromSite(
   payload: BatchDrawerSubmitPayload
 ): Promise<AdAccountBatchResultRow[]> {

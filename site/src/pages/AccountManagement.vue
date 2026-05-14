@@ -9,6 +9,7 @@ import {
   fetchAdAccountPaymentActivitiesFromExtension,
   fetchAdAccountAssignedUsersFromExtension,
   mergeAccountInExtension,
+  renameAdAccountFromSite,
   syncAdAccountsFromGraphViaExtension,
   type AdAccountBatchResultRow,
 } from '../lib/extensionBridge';
@@ -890,11 +891,14 @@ async function saveRenameModal() {
   }
   errorMsg.value = '';
   try {
+    await renameAdAccountFromSite(row.accountId, name);
     await mergeAccountInExtension({ accountId: row.accountId, name });
     row.name = name;
     closeRenameModal();
   } catch (e: unknown) {
-    errorMsg.value = e instanceof Error ? e.message : String(e);
+    const msg = e instanceof Error ? e.message : String(e);
+    window.alert(`重命名失败：${msg}`);
+    errorMsg.value = msg;
   }
 }
 
@@ -1000,7 +1004,36 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
     batchDrawerResults.value = rows;
     fbControlLog('site:account-page', '批量操作 Graph 执行完成', { rows: rows.length });
     if (payload.operationId === 'account_rename') {
-      await refreshFromExtension();
+      const newName =
+        payload.uidsText
+          .trim()
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean)[0] || '';
+      const okRows = rows.filter((r) => r.status === '成功');
+      const badRows = rows.filter((r) => r.status !== '成功');
+      if (badRows.length) {
+        const detail = badRows.map((r) => `${r.accountId}: ${r.detail}`).join('\n');
+        window.alert(
+          badRows.length === rows.length
+            ? `账号重命名全部失败：\n${detail}`
+            : `部分账号重命名失败（成功 ${okRows.length} / ${rows.length}）：\n${detail}`
+        );
+        errorMsg.value =
+          badRows.length === rows.length ? '账号重命名全部失败' : `重命名：${badRows.length} 条失败`;
+      }
+      for (const r of okRows) {
+        try {
+          await mergeAccountInExtension({ accountId: r.accountId, name: newName });
+        } catch (mergeErr: unknown) {
+          const m = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
+          fbControlLog('site:account-page', '重命名 Graph 成功但写扩展缓存失败', { accountId: r.accountId, m });
+          window.alert(`接口已成功但写本地缓存失败 ${r.accountId}：${m}`);
+        }
+      }
+      if (okRows.length) {
+        await refreshFromExtension();
+      }
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
