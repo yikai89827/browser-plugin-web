@@ -38,6 +38,7 @@ export async function requestAccountsGraphSync() {
   accountsGraphSyncRunning.value = true;
   try {
     await graphSyncFn();
+    /** graphSyncFn（账户页注册的 syncFromGraph）内部已在成功后 await refreshFromExtension；此处保留钩子便于以后做二次刷新或全局提示 */
   } finally {
     accountsGraphSyncRunning.value = false;
   }

@@ -19,11 +19,15 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
       if (i >= rows.length) return;
       const row = rows[i];
       try {
-        row.adminCount = await fetchAdAccountManageAdminCount(accessToken, row.accountId);
-        if ((row.adminCount ?? 0) === 0 && formatUserRoleZh(row.userRoleRaw) === '管理员') {
+        const n = await fetchAdAccountManageAdminCount(accessToken, row.accountId);
+        row.adminCount = n;
+        if (n === 0 && formatUserRoleZh(row.userRoleRaw) === '管理员') {
           row.adminCount = 1;
         }
       } catch (e) {
+        if (formatUserRoleZh(row.userRoleRaw) === '管理员') {
+          row.adminCount = 1;
+        }
         console.info('[fbControl:graph] adminCount 跳过', {
           accountId: row.accountId,
           message: e instanceof Error ? e.message : String(e),

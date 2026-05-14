@@ -776,6 +776,7 @@ async function syncFromGraph() {
     const res = await syncAdAccountsFromGraphViaExtension();
     if (!res.success) throw new Error(res.error || 'Graph 同步失败');
     fbControlLog('site:account-page', 'Graph 同步成功，刷新列表');
+    /** 扩展侧 IndexedDB 写入完成后，再拉全量列表，避免表格仍显示同步前缓存 */
     await refreshFromExtension();
   } catch (e: any) {
     errorMsg.value = e?.message || String(e);

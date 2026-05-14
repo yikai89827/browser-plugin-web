@@ -85,15 +85,21 @@ function resolveAccountKindLabel(
   biz: { id?: string; name?: string },
   ownerBiz: { id?: string; name?: string }
 ): string | undefined {
-  const hasBmAsset = !!(biz.id || ownerBiz.id);
+  const hasBmFromNodes = !!(biz.id || ownerBiz.id);
+  const bizNameHint = a.business_name != null && String(a.business_name).trim().length > 0;
+  const bmLinked = hasBmFromNodes || bizNameHint;
   const upper = String(a.account_type ?? '').trim().toUpperCase();
   const personalType = upper === 'PERSONAL';
   const personalFlag =
     a.is_personal === 1 || a.is_personal === true || a.is_personal === '1' || String(a.is_personal ?? '') === '1';
-  if (hasBmAsset && (personalType || personalFlag)) {
+  if (bmLinked && (personalType || personalFlag)) {
     return 'Business';
   }
-  return formatAccountKindLabel(a.account_type);
+  const fromType = formatAccountKindLabel(a.account_type);
+  if (fromType) return fromType;
+  /** 仅有 BM 名称/节点、无 account_type 时，与常见「商业广告户」展示一致 */
+  if (bmLinked) return 'Business';
+  return undefined;
 }
 
 /** 解析 Graph `amount_spent` 等字段为数字型花费（主单位，用于无法按「最小单位」解析时的回退） */
