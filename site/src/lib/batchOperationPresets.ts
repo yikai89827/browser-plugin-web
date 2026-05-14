@@ -33,8 +33,7 @@ export const REMOVE_AUTH_OPERATIONS: BatchOperationOption[] = [
 
 const STEP_AUTH: Pick<BatchDrawerPreset, 'step1' | 'step2' | 'step3' | 'confirmGates'> = {
   step1: {
-    label:
-      '* 输入 Facebook 账号 UID 或主页地址（BM 下属广告账户：对方须已是该 BM 内人员/系统用户，见步骤 2 说明）',
+    label: '* 输入 Facebook 账号 UID 或主页地址',
     placeholder:
       '100093137591614\nhttps://www.facebook.com/anasansari.gulfambatik\nhttps://www.facebook.com/profile.php?id=61558701983846',
     required: true,

@@ -212,8 +212,23 @@ const footPrimaryLabel = computed(() => {
   return '确定';
 });
 
+/** 说明文案中不展示中括号及其中的内容（【】、半角 []、全角［］） */
+function stripSquareBracketAnnotations(raw: string): string {
+  return raw
+    .replace(/【[^】]*】/g, '')
+    .replace(/［[^］]*］/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function displayStepLabel(raw: string | undefined): string {
+  if (!raw) return '';
+  return stripSquareBracketAnnotations(raw);
+}
+
 function resultTargetFieldLabel(r: { resultKind?: string }): string {
-  return r.resultKind === 'friend_uid' ? '失败账号' : '广告账户 ID';
+  return r.resultKind === 'friend_uid' ? '检测账号' : '广告账户 ID';
 }
 
 function currentFbDisplay(r: { currentFbProfileUrl?: string | null }): string {
@@ -536,7 +551,7 @@ async function onConfirm() {
                 <div class="bod-step">
                   <span class="bod-step-badge">1</span>
                   <div class="bod-step-body">
-                    <label class="bod-step-label">{{ preset.step1.label }}</label>
+                    <label class="bod-step-label">{{ displayStepLabel(preset.step1.label) }}</label>
                     <textarea
                       v-model="uidsText"
                       class="bod-batch-textarea"
@@ -573,7 +588,7 @@ async function onConfirm() {
                 <div class="bod-step">
                   <span class="bod-step-badge">1</span>
                   <div class="bod-step-body">
-                    <label class="bod-step-label">{{ ui.step1.label }}</label>
+                    <label class="bod-step-label">{{ displayStepLabel(ui.step1.label) }}</label>
                     <textarea
                       v-model="uidsText"
                       class="bod-batch-textarea"
@@ -622,7 +637,7 @@ async function onConfirm() {
                 <div class="bod-step bod-step--1">
                   <span class="bod-step-badge">1</span>
                   <div class="bod-step-body">
-                    <label class="bod-step-label">{{ ui.step1.label }}</label>
+                    <label class="bod-step-label">{{ displayStepLabel(ui.step1.label) }}</label>
                     <textarea
                       v-model="uidsText"
                       class="bod-batch-textarea"
@@ -635,10 +650,10 @@ async function onConfirm() {
                 <div v-if="step2Visible && ui.step2" class="bod-step bod-step--2">
                   <span class="bod-step-badge">2</span>
                   <div class="bod-step-body">
-                    <div class="bod-step-label muted">{{ ui.step2.label }}</div>
-                    <p v-if="ui.step2.hint" class="bod-step-hint muted">{{ ui.step2.hint }}</p>
+                    <div class="bod-step-label muted">{{ displayStepLabel(ui.step2.label) }}</div>
+                    <p v-if="ui.step2.hint" class="bod-step-hint muted">{{ displayStepLabel(ui.step2.hint) }}</p>
                     <p v-if="friendCheckMsg" class="bod-friend-msg" :class="{ err: friendCheckStatus === 'err' }">
-                      {{ friendCheckMsg }}
+                      {{ stripSquareBracketAnnotations(friendCheckMsg) }}
                     </p>
                   </div>
                 </div>
@@ -661,7 +676,9 @@ async function onConfirm() {
               <p class="bod-result-empty muted">正在执行，请稍候…</p>
             </template>
             <template v-else-if="!resultRows.length">
-              <p v-if="friendCheckMsg" class="bod-result-summary muted">{{ friendCheckMsg }}</p>
+              <p v-if="friendCheckMsg" class="bod-result-summary muted">{{
+                stripSquareBracketAnnotations(friendCheckMsg)
+              }}</p>
               <p v-else class="bod-result-empty muted">暂无结果：检测或批量执行后将在此以卡片展示。</p>
             </template>
             <div v-else class="bod-result-cards">
