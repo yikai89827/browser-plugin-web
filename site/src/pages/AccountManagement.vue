@@ -599,6 +599,18 @@ async function onLoadHiddenAdmins(row: FbAdAccountRecord) {
   }
 }
 
+/** 工具栏「隐藏管理员」：对勾选账户直接拉取隐藏管理员人数，不打开批量抽屉 */
+async function batchLoadHiddenAdminsForSelection() {
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    return;
+  }
+  const rows = sortedFiltered.value.filter((r) => selectedIds.value[r.accountId]);
+  if (!rows.length) return;
+  errorMsg.value = '';
+  await Promise.all(rows.map((row) => onLoadHiddenAdmins(row)));
+}
+
 function onHiddenAdminClick(row: FbAdAccountRecord) {
   if (hiddenAdminState(row.accountId) === 'loading') return;
   if (hiddenAdminState(row.accountId) === 'error') {
@@ -1130,8 +1142,13 @@ onUnmounted(() => {
           <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="openBatchDrawer('resetLimit')">
             重置限额
           </button>
-          <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="openBatchDrawer('removeAdmin')">
-            移除管理员
+          <button
+            type="button"
+            class="btn batch-btn"
+            :disabled="!selectedCount"
+            @click="batchLoadHiddenAdminsForSelection"
+          >
+            隐藏管理员
           </button>
           <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="openBatchDrawer('accountPush')">
             账号推送

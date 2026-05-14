@@ -108,8 +108,10 @@ function rowHasManageTask(tasks: unknown): boolean {
 }
 
 export type ManageAdminCountOptions = {
-  /** 排除当前登录用户，避免「自己在每个户上都是 MANAGE」导致户户显示 1 */
+  /** 排除当前登录用户（单 id，兼容旧调用） */
   excludeFacebookUserId?: string | null;
+  /** 排除多个候选 id（与 excludeFacebookUserId 合并），应对 /me 与 assigned_users id 形态不一致 */
+  excludeFacebookUserIds?: readonly string[] | null;
 };
 
 /**
@@ -125,7 +127,16 @@ export async function fetchAdAccountManageAdminCount(
   let url = `https://graph.facebook.com/${GRAPH_VERSION}/${path}/assigned_users?fields=id,tasks&limit=500&access_token=${encodeURIComponent(accessToken)}`;
   let total = 0;
   let pages = 0;
-  const ex = options?.excludeFacebookUserId?.trim() || null;
+  const excludeSet = new Set<string>();
+  if (options?.excludeFacebookUserIds?.length) {
+    for (const x of options.excludeFacebookUserIds) {
+      const t = String(x).trim();
+      if (t) excludeSet.add(t);
+    }
+  }
+  if (options?.excludeFacebookUserId?.trim()) {
+    excludeSet.add(options.excludeFacebookUserId.trim());
+  }
   while (url && pages < MAX_PAGES) {
     pages += 1;
     const res = await graphFetch(url);
@@ -143,8 +154,8 @@ export async function fetchAdAccountManageAdminCount(
     }
     const batch = Array.isArray(json.data) ? json.data : [];
     for (const row of batch) {
-      const uid = row.id != null ? String(row.id) : '';
-      if (ex && uid === ex) continue;
+      const uid = row.id != null ? String(row.id).trim() : '';
+      if (uid && excludeSet.has(uid)) continue;
       if (rowHasManageTask(row.tasks)) total += 1;
     }
     const next = json.paging?.next;

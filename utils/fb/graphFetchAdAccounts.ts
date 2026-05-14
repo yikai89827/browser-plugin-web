@@ -1,7 +1,7 @@
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
-import { fetchFacebookMeNumericId } from './graphFetchMe';
+import { fetchFacebookSelfUserIdsForExclude } from './graphFetchMe';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
 import { graphFetch } from './graphExternalFetch';
 
@@ -12,8 +12,13 @@ const ADMIN_COUNT_ENRICH_CONCURRENCY = 10;
 
 async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRecord[]): Promise<void> {
   if (!rows.length) return;
-  const meId = await fetchFacebookMeNumericId(accessToken);
-  const countOpts = { excludeFacebookUserId: meId };
+  const selfIds = await fetchFacebookSelfUserIdsForExclude(accessToken);
+  if (!selfIds.length) {
+    console.warn(
+      '[fbControl:graph] 无法解析当前用户 id（/me 与 debug_token 均未拿到），管理员列可能仍包含本人 MANAGE'
+    );
+  }
+  const countOpts = { excludeFacebookUserIds: selfIds };
   let next = 0;
   async function worker(): Promise<void> {
     for (;;) {
