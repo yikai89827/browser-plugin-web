@@ -1,4 +1,3 @@
-import { formatUserRoleZh } from './adAccountDisplayMaps';
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
@@ -21,13 +20,7 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
       try {
         const n = await fetchAdAccountManageAdminCount(accessToken, row.accountId);
         row.adminCount = n;
-        if (n === 0 && formatUserRoleZh(row.userRoleRaw) === '管理员') {
-          row.adminCount = 1;
-        }
       } catch (e) {
-        if (formatUserRoleZh(row.userRoleRaw) === '管理员') {
-          row.adminCount = 1;
-        }
         console.info('[fbControl:graph] adminCount 跳过', {
           accountId: row.accountId,
           message: e instanceof Error ? e.message : String(e),

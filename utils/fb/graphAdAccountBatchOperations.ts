@@ -1,4 +1,5 @@
 import type { BatchDrawerSubmitPayload } from '../../site/src/lib/batchOperationTypes';
+import { getConfiguredGraphBatchStepDelayMs } from './batchStepDelayMs';
 import { fbControlLog } from '../fbControlLog';
 import { graphFetch } from './graphExternalFetch';
 import { redactUrlForLog } from './tokenDebugLog';
@@ -287,7 +288,8 @@ export async function executeAdAccountBatchOperation(
   accessToken: string,
   payload: BatchDrawerSubmitPayload
 ): Promise<AdAccountBatchResultRow[]> {
-  const delayMs = payload.useDefaultInterval ? 200 : 0;
+  /** `useDefaultInterval` 为 true 时用 `config/fbControlBatch.json` / `VITE_FB_BATCH_STEP_DELAY_MS`；为 false 则立即（0） */
+  const delayMs = payload.useDefaultInterval ? getConfiguredGraphBatchStepDelayMs() : 0;
   const accounts = [...payload.selectedAccountIds];
   const results: AdAccountBatchResultRow[] = [];
 
@@ -355,34 +357,35 @@ export async function executeAdAccountBatchOperation(
     case 'remove_perm_their': {
       const me = await fetchMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
+      let targetUids = parseFacebookUserIdsFromText(payload.uidsText);
+      if (!targetUids.length) {
+        throw new Error('请填写至少一个要移除权限的 Facebook 用户 UID 或主页链接');
+      }
+      if (!removeCurrent && me) {
+        targetUids = targetUids.filter((u) => u !== me);
+      }
+      if (!targetUids.length) {
+        throw new Error('未勾选「删除当前 Facebook 账号的权限」时，请至少填写一条他人 UID');
+      }
       for (const accountId of accounts) {
-        try {
-          let uids = await fetchAssignedUserIds(accessToken, accountId);
-          if (!removeCurrent && me) uids = uids.filter((u) => u !== me);
-          if (!uids.length) {
-            pushResult(accountId, '成功', removeCurrent || !me ? '无协作者可移除' : '无其他协作者可移除（已保留当前账号）');
-            continue;
+        const errs: string[] = [];
+        let ok = 0;
+        for (const uid of targetUids) {
+          try {
+            await deleteAssignedUser(accessToken, accountId, uid);
+            ok++;
+            if (delayMs) await sleep(delayMs);
+          } catch (e: unknown) {
+            errs.push(`${uid}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          const errs: string[] = [];
-          let ok = 0;
-          for (const uid of uids) {
-            try {
-              await deleteAssignedUser(accessToken, accountId, uid);
-              ok++;
-              if (delayMs) await sleep(delayMs);
-            } catch (e: unknown) {
-              errs.push(`${uid}: ${e instanceof Error ? e.message : String(e)}`);
-            }
-          }
-          const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
-          const detail =
-            errs.length === 0
-              ? `已移除 ${uids.length} 个协作者`
-              : `${ok}/${uids.length} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
-          pushResult(accountId, status, detail);
-        } catch (e: unknown) {
-          pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
         }
+        const n = targetUids.length;
+        const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
+        const detail =
+          errs.length === 0
+            ? `已按列表尝试移除 ${n} 个用户的权限`
+            : `${ok}/${n} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
+        pushResult(accountId, status, detail);
       }
       break;
     }
@@ -440,12 +443,51 @@ export async function executeAdAccountBatchOperation(
       break;
     }
 
-    case 'remove_perm_except_them':
+    case 'remove_perm_except_them': {
+      const me = await fetchMeNumericId(accessToken);
+      const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
+      const keep = new Set(parseFacebookUserIdsFromText(payload.uidsText));
+      if (!keep.size) {
+        throw new Error('请填写至少一个要保留的 Facebook 用户 UID 或主页链接');
+      }
+      for (const accountId of accounts) {
+        try {
+          const assigned = await fetchAssignedUserIds(accessToken, accountId);
+          let toRemove = assigned.filter((u) => !keep.has(u));
+          if (!removeCurrent && me) {
+            toRemove = toRemove.filter((u) => u !== me);
+          }
+          if (!toRemove.length) {
+            pushResult(accountId, '成功', '无其余协作者需移除（或均在保留列表中）');
+            continue;
+          }
+          const errs: string[] = [];
+          let ok = 0;
+          for (const uid of toRemove) {
+            try {
+              await deleteAssignedUser(accessToken, accountId, uid);
+              ok++;
+              if (delayMs) await sleep(delayMs);
+            } catch (e: unknown) {
+              errs.push(`${uid}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }
+          const n = toRemove.length;
+          const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
+          const detail =
+            errs.length === 0
+              ? `已移除 ${n} 个协作者（已保留列表中的账号）`
+              : `${ok}/${n} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
+          pushResult(accountId, status, detail);
+        } catch (e: unknown) {
+          pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+        }
+      }
+      break;
+    }
+
     case 'remove_perm_bm': {
-      const hint =
-        payload.operationId === 'remove_perm_bm'
-          ? '「删除BM」需 Business Manager Graph，当前版本未接入'
-          : '「除了它们，删除所有」依赖 BM 侧资产范围，当前版本未实现，请在 Meta Business 后台操作';
+      const hint = '「删除BM」需 Business Manager Graph，当前版本未接入';
       for (const accountId of accounts) {
         pushResult(accountId, '跳过', hint);
       }

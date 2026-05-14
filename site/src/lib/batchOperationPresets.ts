@@ -16,7 +16,7 @@ export const BATCH_OPERATION_CATALOG: BatchOperationOption[] = [
   { id: 'update_business', label: '更新Business信息' },
 ];
 
-/** 「删除授权」入口专用：与增加授权 UID/好友检测流程无关 */
+/** 「删除授权」入口专用：子下拉为具体删除策略；UID 在抽屉内单独步骤填写（无好友检测） */
 export const REMOVE_AUTH_OPERATIONS: BatchOperationOption[] = [
   { id: 'remove_perm_their', label: '删除它们的权限' },
   { id: 'remove_perm_except_them', label: '除了它们，删除所有' },
@@ -55,12 +55,61 @@ export function getBatchOperationUi(operationId: BatchOperationId): {
         showSubDropdown: true,
       };
     case 'remove_perm_their':
+      return {
+        step1: {
+          label: '* 输入Facebook社交账号的UID或主页地址',
+          placeholder:
+            '100093137591614\nhttps://www.facebook.com/anasansari.gulfambatik\nhttps://www.facebook.com/profile.php?id=61558701983846',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+        showSubDropdown: false,
+      };
     case 'remove_perm_except_them':
+      return {
+        step1: {
+          label: '* 输入要保留的 Facebook 账号 UID 或主页地址（将删除列表以外的协作者）',
+          placeholder: '每行一条…',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+        showSubDropdown: false,
+      };
     case 'remove_perm_except_self':
+      return {
+        step1: {
+          label: '此模式可不填 UID；将删除除当前登录 Facebook 用户外的所有协作者',
+          placeholder: '可留空',
+          required: false,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: [],
+        showSubDropdown: false,
+      };
     case 'remove_perm_self':
+      return {
+        step1: {
+          label: '「删除自己」无需填写 UID',
+          placeholder: '',
+          required: false,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: [],
+        showSubDropdown: false,
+      };
     case 'remove_perm_bm':
       return {
-        step1: { label: '', placeholder: '', required: false },
+        step1: {
+          label: '「删除 BM」当前版本未开放，无需填写',
+          placeholder: '',
+          required: false,
+        },
         step2: undefined,
         step3: { label: '系统默认执行时间间隔', defaultChecked: true },
         confirmGates: [],
@@ -160,10 +209,15 @@ export function getBatchDrawerPreset(entryKey: string): BatchDrawerPreset {
         defaultOperationId: 'remove_perm_their',
         subOptions: undefined,
         defaultSubId: undefined,
-        step1: { label: '', placeholder: '', required: false },
+        step1: {
+          label: '* 输入Facebook社交账号的UID或主页地址',
+          placeholder:
+            '100093137591614\nhttps://www.facebook.com/...\nhttps://www.facebook.com/profile.php?id=...',
+          required: true,
+        },
         step2: undefined,
         step3: { label: '系统默认执行时间间隔', defaultChecked: true },
-        confirmGates: [],
+        confirmGates: ['input'],
       };
     case 'addBm':
       return presetSimple('addBm', '添加到 BM', 'add_to_bm', catalog, false);
