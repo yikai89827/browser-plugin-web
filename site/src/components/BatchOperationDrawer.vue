@@ -38,6 +38,7 @@ const resetAbsoluteUsd = ref('');
 
 const isLimitSpecial = computed(() => props.preset?.entryKey === 'setLimit');
 const isResetSpecial = computed(() => props.preset?.entryKey === 'resetLimit');
+const isAddBmSpecial = computed(() => props.preset?.entryKey === 'addBm');
 /** 删除授权专用布局：顶栏双下拉 + UID 步骤（无子权限/好友检测） */
 const isRemoveAuthSpecial = computed(() => {
   const p = props.preset;
@@ -168,6 +169,10 @@ const step3Visible = computed(() => !!ui.value.step3);
 
 const inputGateOk = computed(() => {
   if (isLimitSpecial.value || isResetSpecial.value) return true;
+  if (isAddBmSpecial.value) {
+    if (!props.preset?.step1.required) return true;
+    return uidsText.value.trim().length > 0;
+  }
   if (isRemoveAuthSpecial.value) {
     if (!ui.value.step1.required) return true;
     return uidsText.value.trim().length > 0;
@@ -177,7 +182,7 @@ const inputGateOk = computed(() => {
 });
 
 const friendGateOk = computed(() => {
-  if (isLimitSpecial.value || isResetSpecial.value || isRemoveAuthSpecial.value) return true;
+  if (isLimitSpecial.value || isResetSpecial.value || isAddBmSpecial.value || isRemoveAuthSpecial.value) return true;
   if (!ui.value.confirmGates.includes('friend')) return true;
   return friendCheckStatus.value === 'ok';
 });
@@ -198,7 +203,8 @@ function resetForm() {
   selectedOpId.value = p.defaultOperationId;
   selectedSubId.value = p.defaultSubId ?? (p.subOptions?.[0]?.id ?? '');
   uidsText.value = '';
-  useDefaultInterval.value = getBatchOperationUi(p.defaultOperationId).step3?.defaultChecked ?? true;
+  useDefaultInterval.value =
+    p.step3?.defaultChecked ?? getBatchOperationUi(p.defaultOperationId).step3?.defaultChecked ?? true;
   friendCheckStatus.value = 'idle';
   friendCheckMsg.value = '';
   drawerTab.value = 'op';
@@ -261,7 +267,10 @@ function onConfirm() {
   const payload: BatchDrawerSubmitPayload = {
     entryKey: removeAuthLike ? 'removeAuth' : props.preset.entryKey,
     operationId: selectedOpId.value,
-    subId: showSubDropdown.value ? selectedSubId.value : undefined,
+    subId:
+      (isAddBmSpecial.value && (props.preset.subOptions?.length ?? 0) > 0) || showSubDropdown.value
+        ? selectedSubId.value
+        : undefined,
     uidsText: uidsText.value.trim(),
     useDefaultInterval: useDefaultInterval.value,
     friendCheckOk: friendGateOk.value,
@@ -463,6 +472,43 @@ function onConfirm() {
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">2</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="useDefaultInterval" type="checkbox" />
+                      <span>系统默认执行时间间隔</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 添加到 BM：顶栏双下拉 + 填写 BM ID + 执行间隔 -->
+            <div v-else-if="isAddBmSpecial" class="bod-batch-op-root bod-remove-auth-root">
+              <select class="bod-batch-select bod-batch-select--main bod-remove-auth-header-select" disabled>
+                <option>{{ preset.headerTitle }}</option>
+              </select>
+              <div class="bod-batch-branch">
+                <span class="bod-branch-icon" aria-hidden="true"></span>
+                <select v-model="selectedSubId" class="bod-batch-select bod-batch-select--sub">
+                  <option v-for="s in preset.subOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
+                </select>
+              </div>
+              <div class="bod-steps bod-remove-auth-steps">
+                <div class="bod-step-line" aria-hidden="true"></div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">1</span>
+                  <div class="bod-step-body">
+                    <label class="bod-step-label">{{ preset.step1.label }}</label>
+                    <textarea
+                      v-model="uidsText"
+                      class="bod-batch-textarea"
+                      rows="6"
+                      :placeholder="preset.step1.placeholder"
+                    ></textarea>
                   </div>
                 </div>
                 <div class="bod-step">

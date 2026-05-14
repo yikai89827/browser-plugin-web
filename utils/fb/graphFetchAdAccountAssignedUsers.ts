@@ -66,17 +66,25 @@ function rowHasManageTask(tasks: unknown): boolean {
   return normalizeAssignedUserTasks(tasks).includes('MANAGE');
 }
 
+export type ManageAdminCountOptions = {
+  /** 排除当前登录用户，避免「自己在每个户上都是 MANAGE」导致户户显示 1 */
+  excludeFacebookUserId?: string | null;
+};
+
 /**
  * 统计 `assigned_users` 中带 `MANAGE` 任务的人数（与表格「管理员」列一致，非全部协作者数）。
+ * 默认排除当前 token 对应用户，只统计**其他**具备 MANAGE 的人数。
  */
 export async function fetchAdAccountManageAdminCount(
   accessToken: string,
-  accountId: string
+  accountId: string,
+  options?: ManageAdminCountOptions
 ): Promise<number> {
   const path = actPath(accountId);
   let url = `https://graph.facebook.com/${GRAPH_VERSION}/${path}/assigned_users?fields=id,tasks&limit=500&access_token=${encodeURIComponent(accessToken)}`;
   let total = 0;
   let pages = 0;
+  const ex = options?.excludeFacebookUserId?.trim() || null;
   while (url && pages < MAX_PAGES) {
     pages += 1;
     const res = await graphFetch(url);
@@ -92,6 +100,8 @@ export async function fetchAdAccountManageAdminCount(
     }
     const batch = Array.isArray(json.data) ? json.data : [];
     for (const row of batch) {
+      const uid = row.id != null ? String(row.id) : '';
+      if (ex && uid === ex) continue;
       if (rowHasManageTask(row.tasks)) total += 1;
     }
     const next = json.paging?.next;

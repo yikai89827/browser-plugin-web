@@ -761,8 +761,8 @@ function periodSpentCell(row: FbAdAccountRecord) {
 
 function adminBadgeText(row: FbAdAccountRecord) {
   const n = row.adminCount;
-  if (n == null || Number.isNaN(Number(n))) return '—';
-  return String(n);
+  if (n == null || Number.isNaN(Number(n))) return '0';
+  return String(Math.max(0, Math.floor(Number(n))));
 }
 
 async function syncFromGraph() {

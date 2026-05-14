@@ -1,6 +1,7 @@
 import type { BatchDrawerSubmitPayload } from '../../site/src/lib/batchOperationTypes';
 import { getConfiguredGraphBatchStepDelayMs } from './batchStepDelayMs';
 import { fbControlLog } from '../fbControlLog';
+import { fetchFacebookMeNumericId } from './graphFetchMe';
 import { graphFetch } from './graphExternalFetch';
 import { redactUrlForLog } from './tokenDebugLog';
 
@@ -148,18 +149,6 @@ async function deleteAssignedUser(accessToken: string, accountId: string, userId
   if (!res.ok || json.error?.message) {
     throw new Error(json.error?.message || `HTTP ${res.status}`);
   }
-}
-
-async function fetchMeNumericId(accessToken: string): Promise<string | null> {
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/me?fields=id&access_token=${encodeURIComponent(accessToken)}`;
-  const { ok, json, status } = await graphJson(url, { method: 'GET' });
-  if (!ok) {
-    const err = (json as { error?: { message?: string } }).error?.message;
-    fbControlLog('fb:graph-batch', 'me id failed', { status, err });
-    return null;
-  }
-  const id = (json as { id?: string }).id;
-  return id != null ? String(id) : null;
 }
 
 /** 分页拉取广告账户已分配用户 id（用于批量删权限） */
@@ -355,7 +344,7 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'remove_perm_their': {
-      const me = await fetchMeNumericId(accessToken);
+      const me = await fetchFacebookMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
       let targetUids = parseFacebookUserIdsFromText(payload.uidsText);
       if (!targetUids.length) {
@@ -391,7 +380,7 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'remove_perm_except_self': {
-      const me = await fetchMeNumericId(accessToken);
+      const me = await fetchFacebookMeNumericId(accessToken);
       if (!me) {
         throw new Error('无法获取当前用户 id，无法执行「除了自己，删除所有」');
       }
@@ -427,7 +416,7 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'remove_perm_self': {
-      const me = await fetchMeNumericId(accessToken);
+      const me = await fetchFacebookMeNumericId(accessToken);
       if (!me) {
         throw new Error('无法获取当前用户 id，无法执行「删除自己」');
       }
@@ -444,7 +433,7 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'remove_perm_except_them': {
-      const me = await fetchMeNumericId(accessToken);
+      const me = await fetchFacebookMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
       const keep = new Set(parseFacebookUserIdsFromText(payload.uidsText));
       if (!keep.size) {
@@ -585,11 +574,45 @@ export async function executeAdAccountBatchOperation(
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter(Boolean);
-      const bmLine = lines[0];
-      const bmId = bmLine && /^\d{5,}$/.test(bmLine) ? bmLine : parseFacebookUserIdsFromText(bmLine)[0];
-      if (!bmId) {
-        throw new Error('请在说明框第一行填写要加入的 Business ID（纯数字 BM ID）');
+      let bmId: string | undefined;
+      for (const line of lines) {
+        if (/^\d{5,}$/.test(line)) {
+          bmId = line;
+          break;
+        }
+        const parsed = parseFacebookUserIdsFromText(line)[0];
+        if (parsed) {
+          bmId = parsed;
+          break;
+        }
       }
+      if (!bmId) {
+        throw new Error('请填写有效的 Business Manager ID（纯数字 BM ID，至少一行）');
+      }
+      const mode = payload.subId === 'bm_claim' ? 'claim' : 'share';
+
+      if (mode === 'claim') {
+        for (const accountId of accounts) {
+          try {
+            const body = new URLSearchParams();
+            body.set('access_token', accessToken);
+            body.set('adaccount_id', actPath(accountId));
+            const url = `https://graph.facebook.com/${GRAPH_VERSION}/${bmId}/owned_ad_accounts`;
+            const res = await graphFetch(url, { method: 'POST', body });
+            const json = (await res.json()) as Record<string, unknown>;
+            if (!res.ok || (json.error as { message?: string } | undefined)?.message) {
+              pushResult(accountId, '失败', formatGraphErrorBody(json, res.status));
+            } else {
+              pushResult(accountId, '成功', `BM 认领已请求（${bmId}，不可移除类）`);
+            }
+            if (delayMs) await sleep(delayMs);
+          } catch (e: unknown) {
+            pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+          }
+        }
+        break;
+      }
+
       const idsJson = JSON.stringify(accounts.map((id) => actPath(id)));
       const body = new URLSearchParams();
       body.set('access_token', accessToken);
@@ -604,7 +627,7 @@ export async function executeAdAccountBatchOperation(
         }
       } else {
         for (const accountId of accounts) {
-          pushResult(accountId, '成功', `已请求加入 BM ${bmId}`);
+          pushResult(accountId, '成功', `已请求加入 BM ${bmId}（分享给 BM，可移除类）`);
         }
       }
       break;

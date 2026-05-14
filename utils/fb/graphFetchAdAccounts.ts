@@ -1,6 +1,7 @@
 import type { FbAdAccountRecord } from '../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
+import { fetchFacebookMeNumericId } from './graphFetchMe';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
 import { graphFetch } from './graphExternalFetch';
 
@@ -11,6 +12,8 @@ const ADMIN_COUNT_ENRICH_CONCURRENCY = 10;
 
 async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRecord[]): Promise<void> {
   if (!rows.length) return;
+  const meId = await fetchFacebookMeNumericId(accessToken);
+  const countOpts = { excludeFacebookUserId: meId };
   let next = 0;
   async function worker(): Promise<void> {
     for (;;) {
@@ -18,9 +21,10 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
       if (i >= rows.length) return;
       const row = rows[i];
       try {
-        const n = await fetchAdAccountManageAdminCount(accessToken, row.accountId);
+        const n = await fetchAdAccountManageAdminCount(accessToken, row.accountId, countOpts);
         row.adminCount = n;
       } catch (e) {
+        row.adminCount = 0;
         console.info('[fbControl:graph] adminCount 跳过', {
           accountId: row.accountId,
           message: e instanceof Error ? e.message : String(e),

@@ -16,6 +16,12 @@ export const BATCH_OPERATION_CATALOG: BatchOperationOption[] = [
   { id: 'update_business', label: '更新Business信息' },
 ];
 
+/** 「添加到 BM」子下拉：认领（不可移除）/ 分享（可移除） */
+export const ADD_BM_SUB_OPTIONS: NonNullable<BatchDrawerPreset['subOptions']> = [
+  { id: 'bm_claim', label: 'BM认领它们(不可移除)' },
+  { id: 'bm_share', label: '分享给BM(可移除)' },
+];
+
 /** 「删除授权」入口专用：子下拉为具体删除策略；UID 在抽屉内单独步骤填写（无好友检测） */
 export const REMOVE_AUTH_OPERATIONS: BatchOperationOption[] = [
   { id: 'remove_perm_their', label: '删除它们的权限' },
@@ -115,6 +121,18 @@ export function getBatchOperationUi(operationId: BatchOperationId): {
         confirmGates: [],
         showSubDropdown: false,
       };
+    case 'add_to_bm':
+      return {
+        step1: {
+          label: '* 填写BM ID',
+          placeholder: '100093137591614\n615587019838468',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+        showSubDropdown: false,
+      };
     case 'account_rename':
     case 'update_business':
     case 'set_limit':
@@ -132,7 +150,6 @@ export function getBatchOperationUi(operationId: BatchOperationId): {
       };
     case 'reset_limit':
     case 'bm_partner':
-    case 'add_to_bm':
     case 'account_push':
     case 'batch_payment_records':
     default:
@@ -220,7 +237,22 @@ export function getBatchDrawerPreset(entryKey: string): BatchDrawerPreset {
         confirmGates: ['input'],
       };
     case 'addBm':
-      return presetSimple('addBm', '添加到 BM', 'add_to_bm', catalog, false);
+      return {
+        entryKey: 'addBm',
+        headerTitle: '添加到BM',
+        operations: [{ id: 'add_to_bm', label: '添加到BM' }],
+        defaultOperationId: 'add_to_bm',
+        subOptions: ADD_BM_SUB_OPTIONS,
+        defaultSubId: 'bm_share',
+        step1: {
+          label: '* 填写BM ID',
+          placeholder: '100093137591614\n615587019838468',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+      };
     case 'bmPartner':
       return presetSimple('bmPartner', 'BM 合作伙伴', 'bm_partner', catalog, false);
     case 'accountRename':
