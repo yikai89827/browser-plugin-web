@@ -488,7 +488,7 @@ function onConfirm() {
                   <option v-for="op in preset.operations" :key="op.id" :value="op.id">{{ op.label }}</option>
                 </select>
               </div>
-              <div class="bod-steps bod-steps--centered bod-remove-auth-steps">
+              <div class="bod-steps bod-remove-auth-steps">
                 <div class="bod-step-line" aria-hidden="true"></div>
                 <div class="bod-step">
                   <span class="bod-step-badge">1</span>
@@ -812,13 +812,16 @@ function onConfirm() {
   position: relative;
   margin-top: 20px;
   padding-left: 40px;
+  /* 竖线穿过圆点水平中心：徽章 22px、left -40px → 圆心在距容器左内边 11px */
+  --bod-step-rail-x: 11px;
 }
 .bod-step-line {
   position: absolute;
-  left: 19px;
+  left: var(--bod-step-rail-x);
   top: 14px;
   bottom: 14px;
   width: 1px;
+  transform: translateX(-50%);
   background: var(--fb-border, #4b5563);
 }
 .bod-step {
@@ -1124,33 +1127,5 @@ function onConfirm() {
 }
 .bod-remove-auth-steps {
   margin-top: 10px;
-}
-/** 删除授权：步骤序号与竖线在内容区水平居中 */
-.bod-steps.bod-steps--centered {
-  padding-left: 0;
-  margin-left: auto;
-  margin-right: auto;
-  max-width: 400px;
-}
-.bod-steps.bod-steps--centered .bod-step-line {
-  left: 50%;
-  transform: translateX(-50%);
-}
-.bod-steps.bod-steps--centered .bod-step {
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-.bod-steps.bod-steps--centered .bod-step-badge {
-  position: relative;
-  left: auto;
-  top: auto;
-}
-.bod-steps.bod-steps--centered .bod-step-body {
-  padding-left: 0;
-  width: 100%;
-}
-.bod-steps.bod-steps--centered .bod-check {
-  justify-content: center;
 }
 </style>
