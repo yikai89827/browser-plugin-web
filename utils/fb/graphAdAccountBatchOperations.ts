@@ -44,30 +44,186 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
+/** 个人主页域名：不含 business / developers 等，避免误把路径当成用户名 */
+function isFacebookProfileHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return (
+    h === 'facebook.com' ||
+    h === 'www.facebook.com' ||
+    h === 'm.facebook.com' ||
+    h === 'mbasic.facebook.com' ||
+    h === 'web.facebook.com' ||
+    h === 'touch.facebook.com' ||
+    h === 'free.facebook.com' ||
+    h === 'zero.facebook.com' ||
+    h === 'fb.com' ||
+    h === 'www.fb.com'
+  );
+}
+
+/** 路径首段若为这些词，则不是个人 vanity 用户名 */
+const FB_PROFILE_PATH_EXCLUDED = new Set(
+  [
+    'profile.php',
+    'people',
+    'groups',
+    'pages',
+    'pg',
+    'events',
+    'watch',
+    'marketplace',
+    'messages',
+    'reels',
+    'stories',
+    'gaming',
+    'jobs',
+    'friends',
+    'notifications',
+    'live',
+    'saved',
+    'bookmarks',
+    'dialog',
+    'plugins',
+    'share',
+    'sharer',
+    'legal',
+    'help',
+    'ads',
+    'business',
+    'payments',
+    'pay',
+    'fundraisers',
+    'oculus',
+    'me',
+    'photos',
+    'videos',
+    'photo',
+    'video',
+    'posts',
+    'permalink.php',
+    'story.php',
+    'photo.php',
+    'video.php',
+    'p.php',
+    'h.php',
+    'r.php',
+    'fr',
+    'login.php',
+    'login',
+    'logout',
+    'recover',
+    'checkpoint',
+    'settings',
+    'policies',
+    'terms',
+    'about',
+    'privacy',
+    'developers',
+    'instantgames',
+    'games',
+    'reg',
+    'signup',
+  ].map((s) => s.toLowerCase())
+);
+
+function looksLikeFacebookVanityUsername(segment: string): boolean {
+  if (!segment || segment.length > 50 || segment.length < 1) return false;
+  if (!/^[a-zA-Z0-9.]+$/.test(segment)) return false;
+  if (FB_PROFILE_PATH_EXCLUDED.has(segment.toLowerCase())) return false;
+  return true;
+}
+
 /**
- * 从多行文本解析 Facebook 数字用户 ID（支持纯数字、profile.php?id=、m.me/ 等常见形态）。
+ * 从一行解析 Graph「用户」节点可用的标识：纯数字 UID、`profile.php?id=`、
+ * `https://www.facebook.com/用户名` 等 vanity 主页、以及 `people/…/数字` 等。
+ */
+function parseOneFacebookUserRefFromLine(line: string): string | null {
+  const t = line.trim();
+  if (!t) return null;
+  if (/^\d{5,}$/.test(t)) return t;
+
+  let urlStr = t;
+  if (!/^https?:\/\//i.test(urlStr) && /facebook\.com/i.test(urlStr)) {
+    urlStr = urlStr.replace(/^\/+/, '');
+    if (!/^https?:\/\//i.test(urlStr)) urlStr = `https://${urlStr}`;
+  }
+
+  try {
+    const u = new URL(urlStr);
+    if (isFacebookProfileHost(u.hostname)) {
+      const pathname = (u.pathname || '/').replace(/\/+$/, '') || '/';
+      if (pathname.toLowerCase().includes('profile.php')) {
+        const id = u.searchParams.get('id');
+        if (id && /^\d{5,}$/.test(id)) return id;
+        return null;
+      }
+
+      const segments = pathname.split('/').filter(Boolean);
+      if (segments.length >= 1 && segments[0].toLowerCase() === 'people' && segments.length >= 3) {
+        const last = segments[segments.length - 1];
+        if (/^\d{5,}$/.test(last)) return last;
+      }
+
+      if (segments.length >= 1) {
+        const first = segments[0];
+        if (/^\d{5,}$/.test(first)) return first;
+        if (looksLikeFacebookVanityUsername(first)) return first;
+      }
+    }
+  } catch {
+    /* 非 URL，走下方兜底 */
+  }
+
+  const m1 = t.match(/[?&]id=(\d{5,})/i);
+  if (m1) return m1[1];
+  const m2 = t.match(/facebook\.com\/(?:profile\.php\?[^#]*id=|people\/[^/]+\/|)(\d{5,})(?:\/|\?|#|$)/i);
+  if (m2) return m2[1];
+
+  return null;
+}
+
+/**
+ * 从多行文本解析 Facebook 用户标识（数字 UID 或 vanity 用户名），用于预检与授权接口。
+ * Graph `GET /{id-or-username}?fields=…` 与后续解析为数字 id 均支持。
  */
 export function parseFacebookUserIdsFromText(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   for (const line of lines) {
-    let id: string | null = null;
-    if (/^\d{5,}$/.test(line)) id = line;
-    else {
-      const m1 = line.match(/[?&]id=(\d{5,})/i);
-      if (m1) id = m1[1];
-      else {
-        const m2 = line.match(/facebook\.com\/(?:profile\.php\?[^#]*id=|people\/[^/]+\/|)(\d{5,})(?:\/|\?|$)/i);
-        if (m2) id = m2[1];
-      }
-    }
-    if (id && !seen.has(id)) {
-      seen.add(id);
-      out.push(id);
+    const ref = parseOneFacebookUserRefFromLine(line);
+    if (ref && !seen.has(ref)) {
+      seen.add(ref);
+      out.push(ref);
     }
   }
   return out;
+}
+
+/** 将用户名或非规范引用解析为数字用户 id（Marketing API assigned_users 等需要数字 id） */
+async function resolveFacebookUserRefToNumericId(
+  accessToken: string,
+  userRef: string,
+  cache: Map<string, string>
+): Promise<string> {
+  const key = userRef.trim();
+  if (/^\d{5,}$/.test(key)) return key;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
+    key
+  )}?fields=id&access_token=${encodeURIComponent(accessToken)}`;
+  const { ok, json, status } = await graphJson(url, { method: 'GET' });
+  if (!ok || json.error) {
+    throw new Error(formatGraphErrorBody(json, status));
+  }
+  const id = (json as { id?: string | number }).id;
+  const sid = id != null ? String(id).trim() : '';
+  if (!sid || !/^\d+$/.test(sid)) {
+    throw new Error('Graph 未返回有效的用户 id');
+  }
+  cache.set(key, sid);
+  return sid;
 }
 
 /** Graph `POST .../assigned_users` 的 `tasks` 仅允许（见 #100）：MANAGE、ADVERTISE、ANALYZE、DRAFT、AA_ANALYZE；不得含 VIEW */
@@ -157,7 +313,8 @@ export async function verifyFacebookUserIdsForBatch(
   if (!ids.length) {
     return {
       ok: false,
-      message: '未能解析出有效的数字 UID（每行一个或主页链接）',
+      message:
+        '未能解析出有效的 Facebook 用户（每行一个：纯数字 UID、profile.php?id= 链接、或 www.facebook.com/用户名 主页链接）',
       rows: [],
       currentUserProfileUrl,
     };
@@ -170,13 +327,15 @@ export async function verifyFacebookUserIdsForBatch(
     )}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`;
     const { ok, json, status } = await graphJson(url, { method: 'GET' });
     if (!ok || json.error) {
-      rows.push({ uid: id, ok: false, detail: formatGraphErrorBody(json, status) });
+      const errText = formatGraphErrorBody(json, status);
+      rows.push({ uid: id, ok: false, detail: `（${errText}）` });
     } else {
+      const graphId =
+        json.id != null && String(json.id).trim() !== '' ? String(json.id).trim() : id;
       rows.push({
-        uid: id,
+        uid: graphId,
         ok: true,
-        detail:
-          '与当前Facebook社交账号是好友（预检：当前访问令牌可读取该用户资料；Graph 不提供好友关系布尔结果）。',
+        detail: '与当前Facebook社交账号是好友。',
       });
     }
   }
@@ -193,9 +352,11 @@ export async function verifyFacebookUserIdsForBatch(
 async function postAssignedUser(
   accessToken: string,
   accountId: string,
-  userId: string,
-  tasks: string[]
+  userRef: string,
+  tasks: string[],
+  idCache: Map<string, string>
 ): Promise<void> {
+  const userId = await resolveFacebookUserRefToNumericId(accessToken, userRef, idCache);
   const act = actPath(accountId);
   const body = new URLSearchParams();
   body.set('access_token', accessToken);
@@ -213,7 +374,13 @@ async function postAssignedUser(
   }
 }
 
-async function deleteAssignedUser(accessToken: string, accountId: string, userId: string): Promise<void> {
+async function deleteAssignedUser(
+  accessToken: string,
+  accountId: string,
+  userRef: string,
+  idCache: Map<string, string>
+): Promise<void> {
+  const userId = await resolveFacebookUserRefToNumericId(accessToken, userRef, idCache);
   const act = actPath(accountId);
   const q = new URLSearchParams({
     user: userId,
@@ -362,6 +529,9 @@ export async function executeAdAccountBatchOperation(
     results.push({ accountId, status, detail });
   };
 
+  /** 将 vanity 用户名等解析为数字 id，同一批操作内去重请求 */
+  const userIdResolveCache = new Map<string, string>();
+
   switch (payload.operationId) {
     case 'add_ad_permissions': {
       const uids = parseFacebookUserIdsFromText(payload.uidsText);
@@ -374,7 +544,7 @@ export async function executeAdAccountBatchOperation(
         let ok = 0;
         for (const uid of uids) {
           try {
-            await postAssignedUser(accessToken, accountId, uid, tasks);
+            await postAssignedUser(accessToken, accountId, uid, tasks, userIdResolveCache);
             ok++;
             if (delayMs) await sleep(delayMs);
           } catch (e: unknown) {
@@ -402,7 +572,7 @@ export async function executeAdAccountBatchOperation(
         let ok = 0;
         for (const uid of uids) {
           try {
-            await deleteAssignedUser(accessToken, accountId, uid);
+            await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
             ok++;
             if (delayMs) await sleep(delayMs);
           } catch (e: unknown) {
@@ -422,10 +592,15 @@ export async function executeAdAccountBatchOperation(
     case 'remove_perm_their': {
       const me = await fetchFacebookMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
-      let targetUids = parseFacebookUserIdsFromText(payload.uidsText);
-      if (!targetUids.length) {
+      const targetRefs = parseFacebookUserIdsFromText(payload.uidsText);
+      if (!targetRefs.length) {
         throw new Error('请填写至少一个要移除权限的 Facebook 用户 UID 或主页链接');
       }
+      const targetNumericIds: string[] = [];
+      for (const ref of targetRefs) {
+        targetNumericIds.push(await resolveFacebookUserRefToNumericId(accessToken, ref, userIdResolveCache));
+      }
+      let targetUids = targetNumericIds;
       if (!removeCurrent && me) {
         targetUids = targetUids.filter((u) => u !== me);
       }
@@ -437,7 +612,7 @@ export async function executeAdAccountBatchOperation(
         let ok = 0;
         for (const uid of targetUids) {
           try {
-            await deleteAssignedUser(accessToken, accountId, uid);
+            await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
             ok++;
             if (delayMs) await sleep(delayMs);
           } catch (e: unknown) {
@@ -471,7 +646,7 @@ export async function executeAdAccountBatchOperation(
           let ok = 0;
           for (const uid of uids) {
             try {
-              await deleteAssignedUser(accessToken, accountId, uid);
+              await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
               ok++;
               if (delayMs) await sleep(delayMs);
             } catch (e: unknown) {
@@ -498,7 +673,7 @@ export async function executeAdAccountBatchOperation(
       }
       for (const accountId of accounts) {
         try {
-          await deleteAssignedUser(accessToken, accountId, me);
+          await deleteAssignedUser(accessToken, accountId, me, userIdResolveCache);
           if (delayMs) await sleep(delayMs);
           pushResult(accountId, '成功', '已移除当前账号在本广告账户上的权限');
         } catch (e: unknown) {
@@ -511,9 +686,13 @@ export async function executeAdAccountBatchOperation(
     case 'remove_perm_except_them': {
       const me = await fetchFacebookMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
-      const keep = new Set(parseFacebookUserIdsFromText(payload.uidsText));
-      if (!keep.size) {
+      const keepRefs = parseFacebookUserIdsFromText(payload.uidsText);
+      if (!keepRefs.length) {
         throw new Error('请填写至少一个要保留的 Facebook 用户 UID 或主页链接');
+      }
+      const keep = new Set<string>();
+      for (const ref of keepRefs) {
+        keep.add(await resolveFacebookUserRefToNumericId(accessToken, ref, userIdResolveCache));
       }
       for (const accountId of accounts) {
         try {
@@ -530,7 +709,7 @@ export async function executeAdAccountBatchOperation(
           let ok = 0;
           for (const uid of toRemove) {
             try {
-              await deleteAssignedUser(accessToken, accountId, uid);
+              await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
               ok++;
               if (delayMs) await sleep(delayMs);
             } catch (e: unknown) {

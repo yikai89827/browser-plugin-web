@@ -388,6 +388,7 @@ async function onConfirm() {
 
         <div class="bod-batch-body">
           <template v-if="drawerTab === 'op'">
+            <div class="bod-batch-body-scroll bod-drawer-scroll">
             <p v-if="batchRunning" class="bod-batch-running muted">正在通过 Graph 执行批量操作…</p>
 
             <!-- 设置账号限额（设计稿分步） -->
@@ -669,9 +670,11 @@ async function onConfirm() {
                 </div>
               </div>
             </div>
+            </div>
           </template>
 
           <template v-else>
+            <div class="bod-batch-result-pane">
             <template v-if="batchRunning && !resultRows.length">
               <p class="bod-result-empty muted">正在执行，请稍候…</p>
             </template>
@@ -681,7 +684,7 @@ async function onConfirm() {
               }}</p>
               <p v-else class="bod-result-empty muted">暂无结果：检测或批量执行后将在此以卡片展示。</p>
             </template>
-            <div v-else class="bod-result-cards">
+            <div v-else class="bod-result-cards bod-drawer-scroll">
               <article
                 v-for="(r, idx) in resultRows"
                 :key="`${r.accountId}-${idx}-${r.resultKind || 'ad'}`"
@@ -709,6 +712,7 @@ async function onConfirm() {
                   <span class="bod-result-card-v bod-result-wrap">{{ r.detail }}</span>
                 </div>
               </article>
+            </div>
             </div>
           </template>
         </div>
@@ -855,9 +859,42 @@ async function onConfirm() {
 }
 .bod-batch-body {
   flex: 1;
-  overflow: auto;
-  padding: 16px 18px;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.bod-batch-body-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+.bod-batch-result-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px 18px;
+}
+.bod-drawer-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.bod-drawer-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.bod-drawer-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.bod-drawer-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+.bod-drawer-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
 }
 .bod-batch-running {
   margin: 0 0 12px;
@@ -1058,11 +1095,12 @@ async function onConfirm() {
   word-break: break-word;
 }
 .bod-result-cards {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: min(60vh, 520px);
-  overflow: auto;
+  overflow-y: auto;
   padding: 4px 0 8px;
 }
 .bod-result-card {
