@@ -8,11 +8,7 @@ import type {
 } from '../lib/batchOperationTypes';
 import { getBatchOperationUi } from '../lib/batchOperationPresets';
 
-import {
-  mapUidVerifyRowsToFriendBatchResultRows,
-  verifyFacebookUidsForBatchSite,
-  type FriendVerifyResultPayload,
-} from '../lib/extensionBridge';
+import { runFacebookFriendCheckSequentialFromSite, type FriendVerifyResultPayload } from '../lib/extensionBridge';
 
 const props = defineProps<{
   open: boolean;
@@ -296,12 +292,20 @@ async function onConfirm() {
     friendVerifyRunning.value = true;
     friendCheckMsg.value = '';
     try {
-      const r = await verifyFacebookUidsForBatchSite(uidsText.value);
-      const rows = mapUidVerifyRowsToFriendBatchResultRows(r.rows, r.currentUserProfileUrl);
-      emit('friendVerifyResult', { rows, currentUserProfileUrl: r.currentUserProfileUrl });
-      friendCheckStatus.value = r.ok ? 'ok' : 'err';
-      friendCheckMsg.value = r.message;
-      drawerTab.value = 'result';
+      emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
+      let firstEmitted = false;
+      const summary = await runFacebookFriendCheckSequentialFromSite(uidsText.value, (payload) => {
+        emit('friendVerifyResult', payload);
+        if (!firstEmitted && payload.rows.length > 0) {
+          firstEmitted = true;
+          drawerTab.value = 'result';
+        }
+      });
+      friendCheckStatus.value = summary.ok ? 'ok' : 'err';
+      friendCheckMsg.value = summary.message;
+      if (!firstEmitted) {
+        drawerTab.value = 'result';
+      }
     } catch (e: unknown) {
       friendCheckStatus.value = 'err';
       friendCheckMsg.value = e instanceof Error ? e.message : String(e);
@@ -709,7 +713,15 @@ async function onConfirm() {
                 </div>
                 <div class="bod-result-card-row bod-result-card-row--detail">
                   <span class="bod-result-card-k">返回信息</span>
-                  <span class="bod-result-card-v bod-result-wrap">{{ r.detail }}</span>
+                  <span class="bod-result-card-v bod-result-wrap">
+                    <template v-if="r.resultKind === 'friend_uid'">
+                      <span class="bod-friend-return-base">与当前Facebook社交账号</span>
+                      <span v-if="r.status === '成功'" class="bod-friend-return-ok">是好友</span>
+                      <span v-else class="bod-friend-return-err">不是好友</span>
+                      <span v-if="r.status === '成功'">。</span>
+                    </template>
+                    <template v-else>{{ r.detail }}</template>
+                  </span>
                 </div>
               </article>
             </div>
@@ -1144,6 +1156,17 @@ async function onConfirm() {
 }
 .bod-result-wrap {
   max-width: 100%;
+}
+.bod-friend-return-base {
+  color: var(--fb-modal-text, #e5e7eb);
+}
+.bod-friend-return-ok {
+  color: #4ade80;
+  font-weight: 600;
+}
+.bod-friend-return-err {
+  color: #f87171;
+  font-weight: 600;
 }
 .bod-result-badge {
   display: inline-block;

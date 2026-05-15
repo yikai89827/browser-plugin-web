@@ -14,7 +14,7 @@ export type AdAccountBatchResultRow = {
   accountId: string;
   status: string;
   detail: string;
-  /** 默认按广告账户展示；friend_uid 时第二行标题为「失败账号」 */
+  /** 默认按广告账户展示；friend_uid 时第二行标题为「检测账号」 */
   resultKind?: AdAccountBatchResultKind;
   /** 当前登录 Facebook 主页链接（检测好友卡展示） */
   currentFbProfileUrl?: string | null;
@@ -24,7 +24,7 @@ export type AdAccountBatchResultRow = {
 export type UidGraphVerifyDetailRow = {
   uid: string;
   ok: boolean;
-  /** 成功：面向操作的说明；失败：完整 Graph 错误文案 */
+  /** 成功：面向操作的说明；失败：面向用户的固定说明（不暴露 Graph 原文） */
   detail: string;
 };
 
@@ -295,20 +295,43 @@ export function mapUidVerifyRowsToFriendBatchResultRows(
 }
 
 /** Graph 校验 UID 是否可被当前 token 读取；逐行结果用于结果卡「返回信息」等（非真实好友关系 API）。 */
+/** 好友预检成功/失败面向用户的固定文案（不向用户展示 Graph 技术错误） */
+const FRIEND_CHECK_OK_DETAIL = '与当前Facebook社交账号是好友。';
+const FRIEND_CHECK_FAIL_DETAIL = '与当前Facebook社交账号不是好友';
+
+/** 当前登录用户主页链接（结果卡「当前账号」） */
+export async function fetchFriendCheckCurrentUserProfileUrl(accessToken: string): Promise<string | null> {
+  try {
+    const meId = await fetchFacebookMeNumericId(accessToken);
+    return meId ? `https://www.facebook.com/profile.php?id=${meId}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 单条好友预检：Graph 可读则视为「是好友」；否则统一为「不是好友」文案。 */
+export async function verifyFacebookUserIdForFriendCheck(
+  accessToken: string,
+  ref: string
+): Promise<UidGraphVerifyDetailRow> {
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
+    ref
+  )}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`;
+  const { ok, json } = await graphJson(url, { method: 'GET' });
+  if (!ok || json.error) {
+    return { uid: ref, ok: false, detail: FRIEND_CHECK_FAIL_DETAIL };
+  }
+  const graphId =
+    json.id != null && String(json.id).trim() !== '' ? String(json.id).trim() : ref;
+  return { uid: graphId, ok: true, detail: FRIEND_CHECK_OK_DETAIL };
+}
+
 export async function verifyFacebookUserIdsForBatch(
   accessToken: string,
   uidsText: string
 ): Promise<VerifyFacebookUserIdsForBatchResult> {
   const ids = parseFacebookUserIdsFromText(uidsText);
-  let currentUserProfileUrl: string | null = null;
-  try {
-    const meId = await fetchFacebookMeNumericId(accessToken);
-    if (meId) {
-      currentUserProfileUrl = `https://www.facebook.com/profile.php?id=${meId}`;
-    }
-  } catch {
-    /* ignore */
-  }
+  const currentUserProfileUrl = await fetchFriendCheckCurrentUserProfileUrl(accessToken);
 
   if (!ids.length) {
     return {
@@ -322,29 +345,14 @@ export async function verifyFacebookUserIdsForBatch(
 
   const rows: UidGraphVerifyDetailRow[] = [];
   for (const id of ids) {
-    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
-      id
-    )}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`;
-    const { ok, json, status } = await graphJson(url, { method: 'GET' });
-    if (!ok || json.error) {
-      const errText = formatGraphErrorBody(json, status);
-      rows.push({ uid: id, ok: false, detail: `（${errText}）` });
-    } else {
-      const graphId =
-        json.id != null && String(json.id).trim() !== '' ? String(json.id).trim() : id;
-      rows.push({
-        uid: graphId,
-        ok: true,
-        detail: '与当前Facebook社交账号是好友。',
-      });
-    }
+    rows.push(await verifyFacebookUserIdForFriendCheck(accessToken, id));
   }
 
   const allOk = rows.every((r) => r.ok);
   const failCount = rows.filter((r) => !r.ok).length;
   const message = allOk
     ? `${rows.length} 个用户检测通过，可再次点击「确定」执行批量授权。`
-    : `部分账号检测未通过（${failCount}/${rows.length}），失败原因见各卡片「返回信息」。`;
+    : `部分账号未通过好友预检（${failCount}/${rows.length}）。`;
 
   return { ok: allOk, message, rows, currentUserProfileUrl };
 }

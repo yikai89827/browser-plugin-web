@@ -13,14 +13,22 @@ import {
   executeAdAccountBatchOperation,
   renameAdAccountViaAdsManagerGraph,
   verifyFacebookUserIdsForBatch,
+  verifyFacebookUserIdForFriendCheck,
+  fetchFriendCheckCurrentUserProfileUrl,
+  parseFacebookUserIdsFromText,
   type AdAccountBatchResultRow,
   type VerifyFacebookUserIdsForBatchResult,
+  type UidGraphVerifyDetailRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
 export type {
   AdAccountBatchResultRow,
   VerifyFacebookUserIdsForBatchResult,
+  UidGraphVerifyDetailRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
-export { mapUidVerifyRowsToFriendBatchResultRows } from '../../../utils/fb/graphAdAccountBatchOperations';
+export {
+  mapUidVerifyRowsToFriendBatchResultRows,
+  parseFacebookUserIdsFromText,
+} from '../../../utils/fb/graphAdAccountBatchOperations';
 
 /** 好友预检完成事件载荷 */
 export interface FriendVerifyResultPayload {
@@ -266,6 +274,65 @@ export async function verifyFacebookUidsForBatchSite(
     };
   }
   return verifyFacebookUserIdsForBatch(token, uidsText);
+}
+
+/**
+ * 顺序执行好友预检：每完成一条即回调 `onProgress`（用于首条完成后切到结果页并逐条追加卡片）。
+ */
+export async function runFacebookFriendCheckSequentialFromSite(
+  uidsText: string,
+  onProgress: (payload: FriendVerifyResultPayload) => void
+): Promise<{ ok: boolean; message: string; currentUserProfileUrl: string | null }> {
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: msg, currentUserProfileUrl: null };
+  }
+  if (!tokenRes.success) {
+    return {
+      ok: false,
+      message: tokenRes.error || '读取 token 失败',
+      currentUserProfileUrl: null,
+    };
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    return {
+      ok: false,
+      message: '未保存 access_token，无法校验 UID',
+      currentUserProfileUrl: null,
+    };
+  }
+
+  const refs = parseFacebookUserIdsFromText(uidsText);
+  const currentUserProfileUrl = await fetchFriendCheckCurrentUserProfileUrl(token);
+
+  if (!refs.length) {
+    return {
+      ok: false,
+      message:
+        '未能解析出有效的 Facebook 用户（每行一个：纯数字 UID、profile.php?id= 链接、或 www.facebook.com/用户名 主页链接）',
+      currentUserProfileUrl,
+    };
+  }
+
+  const accumulated: UidGraphVerifyDetailRow[] = [];
+  for (const ref of refs) {
+    const row = await verifyFacebookUserIdForFriendCheck(token, ref);
+    accumulated.push(row);
+    const rows = mapUidVerifyRowsToFriendBatchResultRows(accumulated, currentUserProfileUrl);
+    onProgress({ rows, currentUserProfileUrl });
+  }
+
+  const allOk = accumulated.every((r) => r.ok);
+  const failCount = accumulated.filter((r) => !r.ok).length;
+  const message = allOk
+    ? `${accumulated.length} 个用户检测通过，可再次点击「确定」执行批量授权。`
+    : `部分账号未通过好友预检（${failCount}/${accumulated.length}）。`;
+
+  return { ok: allOk, message, currentUserProfileUrl };
 }
 
 /**
