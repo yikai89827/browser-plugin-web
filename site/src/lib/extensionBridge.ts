@@ -5,21 +5,32 @@
  * 本地「加载已解压」时 ID 一般随扩展目录路径稳定，换目录或换机后请更新 .env 并重新构建站点。
  */
 
-import type { FbAdAccountRecord, FbAdAccountPaymentActivity, FbPixelShareRecord } from '../../../interfaces/fbControl';
+import type {
+  FbAdAccountRecord,
+  FbAdAccountPaymentActivity,
+  FbPixelCollectPayload,
+  FbPixelShareRecord,
+} from '../../../interfaces/fbControl';
 import type { FbTokenMeta } from '../../../utils/fb/accessTokenStore';
 import { fetchAdAccountPaymentActivities } from '../../../utils/fb/graphFetchAdAccountPaymentActivities';
 import { fetchAdAccountAssignedUserCount } from '../../../utils/fb/graphFetchAdAccountAssignedUsers';
 import {
+  adAccountTasksForSubId,
   executeAdAccountBatchOperation,
-  renameAdAccountViaAdsManagerGraph,
+  renameAdAccountOnFacebook,
   verifyFacebookUserIdsForBatch,
   verifyFacebookUserIdForFriendCheck,
   fetchFriendCheckCurrentUserProfileUrl,
   parseFacebookUserIdsFromText,
+  parseFacebookUserRefsWithLinesFromText,
+  mapUidVerifyRowsToFriendBatchResultRows,
+  mapFriendCheckRowsWithPending,
   type AdAccountBatchResultRow,
   type VerifyFacebookUserIdsForBatchResult,
   type UidGraphVerifyDetailRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
+import { inviteToBusinessAndPollMembership } from '../../../utils/fb/graphBmInvitePoll';
+import { assignBusinessUserToAdAccount } from '../../../utils/fb/graphBusinessManagement';
 export type {
   AdAccountBatchResultRow,
   VerifyFacebookUserIdsForBatchResult,
@@ -27,7 +38,9 @@ export type {
 } from '../../../utils/fb/graphAdAccountBatchOperations';
 export {
   mapUidVerifyRowsToFriendBatchResultRows,
+  mapFriendCheckRowsWithPending,
   parseFacebookUserIdsFromText,
+  parseFacebookUserRefsWithLinesFromText,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
 
 /** 好友预检完成事件载荷 */
@@ -37,6 +50,10 @@ export interface FriendVerifyResultPayload {
 }
 import { registerGraphExternalFetch } from '../../../utils/fb/graphExternalFetch';
 import { fbControlLog } from '../../../utils/fbControlLog';
+import {
+  resolveBusinessIdsForAccounts,
+  searchBusinessUserByEmailInBusinesses,
+} from '../../../utils/fb/graphBusinessManagement';
 import type { BatchDrawerSubmitPayload } from './batchOperationTypes';
 
 export type { FbTokenMeta };
@@ -94,6 +111,52 @@ export function extensionConfigured(id?: string): boolean {
   return v.length >= 8;
 }
 
+/** 供扩展侧 Comet 解析使用：优先使用用户粘贴的完整 https 链接 */
+function buildHttpsFacebookProfileTabUrl(ref: string, sourceLine?: string): string {
+  const line = sourceLine?.trim();
+  if (line && /^https:\/\//i.test(line) && /facebook\.com|fb\.com/i.test(line)) {
+    return line.split('#')[0];
+  }
+  if (line && /^http:\/\//i.test(line) && /facebook\.com|fb\.com/i.test(line)) {
+    return `https://${line.slice('http://'.length).split('#')[0]}`;
+  }
+  return `https://www.facebook.com/${ref.trim().replace(/^\/+/, '')}`;
+}
+
+/**
+ * Graph 无法解析 vanity 时：由扩展在后台用 Comet format=json + /api/graphql 解析数字 uid（携带 Cookie，不打开新标签）。
+ */
+export async function resolveFacebookProfileNumericIdFromExtension(profileUrl: string): Promise<string | null> {
+  if (!extensionConfigured()) return null;
+  try {
+    const res = await sendToExtension<{ numericId?: string }>({
+      action: 'FB_CONTROL_RESOLVE_PROFILE_NUMERIC_ID',
+      data: { profileUrl },
+    });
+    if (!res.success) return null;
+    const id = res.payload?.numericId;
+    return typeof id === 'string' && /^\d{10,}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyFriendCheckWithExtensionVanityFallback(
+  token: string,
+  ref: string,
+  sourceLine: string | undefined
+): Promise<UidGraphVerifyDetailRow> {
+  const row = await verifyFacebookUserIdForFriendCheck(token, ref, sourceLine);
+  if (row.ok) return row;
+  if (/^\d{5,}$/.test(ref.trim())) return row;
+  const tabUrl = buildHttpsFacebookProfileTabUrl(ref, sourceLine);
+  const numeric = await resolveFacebookProfileNumericIdFromExtension(tabUrl);
+  if (!numeric) return row;
+  fbControlLog('site:bridge', 'friend-check extension profile resolve', { ref, numeric });
+  const retried = await verifyFacebookUserIdForFriendCheck(token, numeric);
+  return { ...retried, displayInput: row.displayInput ?? retried.displayInput };
+}
+
 export function sendToExtension<T = unknown>(message: {
   action: string;
   data?: unknown;
@@ -147,15 +210,32 @@ export async function mergeAccountInExtension(patch: Partial<FbAdAccountRecord> 
   });
 }
 
-export async function collectPixelSharesFromActiveFacebookTab() {
+/** 在扩展后台用已保存 token 调 Graph 同步像素（不依赖 Facebook 活动标签页类型） */
+export async function syncPixelSharesFromGraphViaExtension(opts?: FbPixelCollectPayload & { sourceUrl?: string }) {
+  return sendToExtension<{ upserted: number; total: number }>({
+    action: 'FB_CONTROL_SYNC_PIXEL_SHARES_FROM_GRAPH',
+    data: opts ?? {},
+  });
+}
+
+export async function collectPixelSharesFromActiveFacebookTab(opts?: FbPixelCollectPayload) {
   return sendToExtension<unknown>({
     action: 'FB_CONTROL_COLLECT_PIXEL_SHARES_FROM_ACTIVE_TAB',
+    data: opts ?? {},
   });
 }
 
 export async function fetchPixelSharesFromExtension() {
   return sendToExtension<{ list: FbPixelShareRecord[] }>({
     action: 'FB_CONTROL_GET_PIXEL_SHARES',
+  });
+}
+
+/** 合并更新单条像素（收藏、备注等，写入扩展 IndexedDB） */
+export async function mergePixelShareInExtension(patch: Partial<FbPixelShareRecord> & { id: string }) {
+  return sendToExtension({
+    action: 'FB_CONTROL_MERGE_PIXEL_SHARE',
+    data: patch,
   });
 }
 
@@ -273,7 +353,32 @@ export async function verifyFacebookUidsForBatchSite(
       currentUserProfileUrl: null,
     };
   }
-  return verifyFacebookUserIdsForBatch(token, uidsText);
+  const base = await verifyFacebookUserIdsForBatch(token, uidsText);
+  const pairs = parseFacebookUserRefsWithLinesFromText(uidsText);
+  if (!base.rows.length || pairs.length !== base.rows.length) {
+    return base;
+  }
+  const rows: UidGraphVerifyDetailRow[] = [];
+  for (let i = 0; i < base.rows.length; i++) {
+    const pair = pairs[i];
+    const r = base.rows[i];
+    if (r.ok || /^\d{5,}$/.test(pair.ref.trim())) {
+      rows.push(r);
+      continue;
+    }
+    rows.push(await verifyFriendCheckWithExtensionVanityFallback(token, pair.ref, pair.sourceLine));
+  }
+  const allOk = rows.every((r) => r.ok);
+  const failCount = rows.filter((r) => !r.ok).length;
+  const message = allOk
+    ? `${rows.length} 个用户检测通过，可再次点击「确定」执行批量授权。`
+    : `部分账号未通过好友预检（${failCount}/${rows.length}）。`;
+  return {
+    ok: allOk,
+    message,
+    rows,
+    currentUserProfileUrl: base.currentUserProfileUrl,
+  };
 }
 
 /**
@@ -306,10 +411,10 @@ export async function runFacebookFriendCheckSequentialFromSite(
     };
   }
 
-  const refs = parseFacebookUserIdsFromText(uidsText);
+  const refPairs = parseFacebookUserRefsWithLinesFromText(uidsText);
   const currentUserProfileUrl = await fetchFriendCheckCurrentUserProfileUrl(token);
 
-  if (!refs.length) {
+  if (!refPairs.length) {
     return {
       ok: false,
       message:
@@ -319,18 +424,20 @@ export async function runFacebookFriendCheckSequentialFromSite(
   }
 
   const accumulated: UidGraphVerifyDetailRow[] = [];
-  for (const ref of refs) {
-    const row = await verifyFacebookUserIdForFriendCheck(token, ref);
+  for (let i = 0; i < refPairs.length; i++) {
+    const { ref, sourceLine } = refPairs[i];
+    const row = await verifyFriendCheckWithExtensionVanityFallback(token, ref, sourceLine);
     accumulated.push(row);
-    const rows = mapUidVerifyRowsToFriendBatchResultRows(accumulated, currentUserProfileUrl);
+    const pendingPairs = refPairs.slice(i + 1);
+    const rows = mapFriendCheckRowsWithPending(accumulated, pendingPairs, currentUserProfileUrl);
     onProgress({ rows, currentUserProfileUrl });
   }
 
   const allOk = accumulated.every((r) => r.ok);
   const failCount = accumulated.filter((r) => !r.ok).length;
   const message = allOk
-    ? `${accumulated.length} 个用户检测通过，可再次点击「确定」执行批量授权。`
-    : `部分账号未通过好友预检（${failCount}/${accumulated.length}）。`;
+    ? `${refPairs.length} 个用户检测通过，可再次点击「确定」执行批量授权。`
+    : `部分账号未通过好友预检（${failCount}/${refPairs.length}）。`;
 
   return { ok: allOk, message, currentUserProfileUrl };
 }
@@ -354,12 +461,67 @@ export async function renameAdAccountFromSite(accountId: string, newName: string
     throw new Error('未保存 access_token，无法重命名');
   }
   fbControlLog('extension-bridge', 'renameAdAccountFromSite', { accountIdPreview: String(accountId).slice(0, 12) });
-  await renameAdAccountViaAdsManagerGraph(token, accountId, newName);
+  await renameAdAccountOnFacebook(token, accountId, newName);
 }
 
 /**
  * 在页面内使用扩展保存的 token 执行批量广告账户 Graph 操作（授权 / 限额 / 加 BM 等）。
  */
+export type PushRecipientSearchResult = {
+  found: boolean;
+  email: string;
+  recipientUserId?: string;
+  displayName?: string;
+  businessId?: string;
+  message?: string;
+};
+
+/** 推送抽屉：在 BM business_users 中按邮箱搜索接收者 */
+export async function searchPushRecipientByEmailFromSite(
+  email: string,
+  accountIds: string[],
+  hintBmIds: string[] = []
+): Promise<PushRecipientSearchResult> {
+  const normalized = email.trim();
+  if (!normalized) {
+    return { found: false, email: normalized, message: '请输入接收者邮箱' };
+  }
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(msg);
+  }
+  if (!tokenRes.success || !tokenRes.payload?.token) {
+    throw new Error(tokenRes.error || '未保存 access_token');
+  }
+  const token = tokenRes.payload.token;
+  const businessIds = await resolveBusinessIdsForAccounts(token, accountIds, hintBmIds);
+  if (!businessIds.length) {
+    return {
+      found: false,
+      email: normalized,
+      message: '无法确定 Business Manager，请先在商务管理平台打开对应广告账户',
+    };
+  }
+  const hit = await searchBusinessUserByEmailInBusinesses(token, businessIds, normalized);
+  if (hit) {
+    return {
+      found: true,
+      email: hit.email,
+      recipientUserId: hit.businessUserId,
+      displayName: hit.name ?? hit.email,
+      businessId: hit.businessId,
+    };
+  }
+  return {
+    found: false,
+    email: normalized,
+    message: '未找到该邮箱对应的 BM 用户；确认推送时将尝试发送 BM 邀请',
+  };
+}
+
 export async function executeAdAccountBatchFromSite(
   payload: BatchDrawerSubmitPayload
 ): Promise<AdAccountBatchResultRow[]> {
@@ -381,13 +543,95 @@ export async function executeAdAccountBatchFromSite(
     operationId: payload.operationId,
     accounts: payload.selectedAccountIds.length,
   });
-  return executeAdAccountBatchOperation(token, payload);
+  return executeAdAccountBatchOperation(token, payload, {
+    resolveProfileNumericId: resolveFacebookProfileNumericIdFromExtension,
+  });
 }
 
 /**
  * 站点 Graph 请求经扩展 background 代理，避免 graph.facebook.com / adsmanager-graph 的 CORS。
  * 在 `main.ts` 应用启动时调用一次即可。
  */
+/**
+ * 目标用户未加入 BM（subcode 1752100）时：发 BM 邀请 → 每分钟确认最多 5 次 → 加入后按 BM 用户重新授权。
+ */
+export async function runBmInvitePollAndGrantFromSite(params: {
+  accountId: string;
+  email: string;
+  bmHintIds?: string[];
+  subId?: string;
+  onProgress?: (message: string) => void;
+  shouldAbort?: () => boolean;
+}): Promise<{ ok: boolean; status: string; detail: string }> {
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, status: '失败', detail: msg };
+  }
+  if (!tokenRes.success) {
+    return { ok: false, status: '失败', detail: tokenRes.error || '读取 token 失败' };
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    return { ok: false, status: '失败', detail: '未保存 access_token' };
+  }
+
+  const businessIds = await resolveBusinessIdsForAccounts(
+    token,
+    [params.accountId],
+    params.bmHintIds ?? []
+  );
+  if (!businessIds.length) {
+    return {
+      ok: false,
+      status: '失败',
+      detail: '无法确定广告账户所属 Business Manager，请先在商务管理平台打开对应 BM',
+    };
+  }
+  const businessId = businessIds[0];
+  const tasks = adAccountTasksForSubId(params.subId);
+
+  const poll = await inviteToBusinessAndPollMembership(token, businessId, params.email, {
+    maxAttempts: 5,
+    intervalMs: 60_000,
+    shouldAbort: params.shouldAbort,
+    onProgress: (p) => {
+      params.onProgress?.(p.message);
+    },
+  });
+
+  if (!poll.joined || !poll.businessUser) {
+    return { ok: false, status: '失败', detail: poll.message };
+  }
+
+  params.onProgress?.('对方已加入 BM，正在重新分配广告账户权限…');
+  try {
+    await assignBusinessUserToAdAccount(
+      token,
+      params.accountId,
+      poll.businessUser.businessUserId,
+      tasks
+    );
+    const label = poll.businessUser.name
+      ? `${poll.businessUser.name} (${poll.businessUser.email})`
+      : poll.businessUser.email;
+    return {
+      ok: true,
+      status: '成功',
+      detail: `${poll.message}；已授权：${label}（${tasks.join(', ')}）`,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      status: '失败',
+      detail: `${poll.message}；加入 BM 后授权仍失败：${msg}`,
+    };
+  }
+}
+
 export function installGraphFetchViaExtensionProxy(): void {
   registerGraphExternalFetch(async (url, init = {}) => {
     const allowed =

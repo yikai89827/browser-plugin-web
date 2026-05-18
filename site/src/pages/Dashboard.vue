@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue';
+import DashboardAccountCard from '../components/DashboardAccountCard.vue';
 
 interface Account {
   id: string;
@@ -78,6 +79,8 @@ onMounted(() => {
 
 <template>
   <div class="dashboard">
+    <DashboardAccountCard />
+
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon accounts">👤</div>

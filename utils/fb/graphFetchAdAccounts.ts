@@ -26,7 +26,13 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
       if (i >= rows.length) return;
       const row = rows[i];
       try {
-        const n = await fetchAdAccountManageAdminCount(accessToken, row.accountId, countOpts);
+        const hintBmIds = [row.belongsToBmId, row.createdFromBmId].filter(
+          (id): id is string => typeof id === 'string' && /^\d{5,}$/.test(id.trim())
+        );
+        const n = await fetchAdAccountManageAdminCount(accessToken, row.accountId, {
+          ...countOpts,
+          hintBmIds,
+        });
         row.adminCount = n;
       } catch (e) {
         row.adminCount = 0;

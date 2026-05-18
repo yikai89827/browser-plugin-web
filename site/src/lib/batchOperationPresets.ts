@@ -22,6 +22,11 @@ export const ADD_BM_SUB_OPTIONS: NonNullable<BatchDrawerPreset['subOptions']> = 
   { id: 'bm_share', label: '分享给BM(可移除)' },
 ];
 
+/** 「BM 合作伙伴」子下拉 */
+export const BM_PARTNER_SUB_OPTIONS: NonNullable<BatchDrawerPreset['subOptions']> = [
+  { id: 'assign_partner_ads', label: '分配合作伙伴(广告权限)' },
+];
+
 /** 「删除授权」入口专用：子下拉为具体删除策略；UID 在抽屉内单独步骤填写（无好友检测） */
 export const REMOVE_AUTH_OPERATIONS: BatchOperationOption[] = [
   { id: 'remove_perm_their', label: '删除它们的权限' },
@@ -41,7 +46,7 @@ const STEP_AUTH: Pick<BatchDrawerPreset, 'step1' | 'step2' | 'step3' | 'confirmG
   step2: {
     label: '检测好友关系',
     hint:
-      '请先完成步骤 1，再点击底部「检测好友关系」：通过后将自动切换到「结果」查看卡片；再次点击底部「确定」执行批量授权。',
+      '请先完成步骤 1，再点击底部「检测好友关系」：通过后将自动切换到「结果」查看卡片；在结果页点击「确定」仅对已判定为好友的账号执行授权。若有未通过项，在「操作」页底部为「重新检测好友关系」。',
   },
   step3: { label: '系统默认执行时间间隔', defaultChecked: true },
   confirmGates: ['input', 'friend'],
@@ -67,7 +72,8 @@ export function getBatchOperationUi(operationId: BatchOperationId): {
     case 'remove_perm_their':
       return {
         step1: {
-          label: '* 输入Facebook社交账号的UID或主页地址',
+          label:
+            '* 输入 Facebook 社交账号 UID 或主页地址',
           placeholder:
             '100093137591614\nhttps://www.facebook.com/anasansari.gulfambatik\nhttps://www.facebook.com/profile.php?id=61558701983846',
           required: true,
@@ -138,7 +144,52 @@ export function getBatchOperationUi(operationId: BatchOperationId): {
         showSubDropdown: false,
       };
     case 'account_rename':
+      return {
+        step1: {
+          label: '* 自动重命名账号',
+          placeholder: 'new account name1\nnew account name2\nnew account name3',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+        showSubDropdown: false,
+      };
+    case 'bm_partner':
+      return {
+        step1: {
+          label: '* 填写BM ID',
+          placeholder: '100093137591614\n615587019838468',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+        showSubDropdown: false,
+      };
+    case 'account_push':
+      return {
+        step1: {
+          label: '输入接收者邮箱',
+          placeholder: 'xxx@xxx.com',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+        showSubDropdown: false,
+      };
     case 'update_business':
+      return {
+        step1: {
+          label: '请选择要修改的信息',
+          required: false,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: [],
+        showSubDropdown: false,
+      };
     case 'set_limit':
     case 'remove_admin':
       return {
@@ -258,11 +309,55 @@ export function getBatchDrawerPreset(entryKey: string): BatchDrawerPreset {
         confirmGates: ['input'],
       };
     case 'bmPartner':
-      return presetSimple('bmPartner', 'BM 合作伙伴', 'bm_partner', catalog, false);
+      return {
+        entryKey: 'bmPartner',
+        headerTitle: 'BM合作伙伴',
+        operations: [{ id: 'bm_partner', label: 'BM合作伙伴' }],
+        defaultOperationId: 'bm_partner',
+        subOptions: BM_PARTNER_SUB_OPTIONS,
+        defaultSubId: 'assign_partner_ads',
+        step1: {
+          label: '* 填写BM ID',
+          placeholder: '100093137591614\n615587019838468',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+      };
     case 'accountRename':
-      return presetSimple('accountRename', '账号重命名', 'account_rename', catalog, true);
+      return {
+        entryKey: 'accountRename',
+        headerTitle: '账号重命名',
+        operations: [{ id: 'account_rename', label: '账号重命名' }],
+        defaultOperationId: 'account_rename',
+        subOptions: undefined,
+        defaultSubId: undefined,
+        step1: {
+          label: '* 自动重命名账号',
+          placeholder: 'new account name1\nnew account name2\nnew account name3',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+      };
     case 'updateCompany':
-      return presetSimple('updateCompany', '更新公司信息', 'update_business', catalog, true);
+      return {
+        entryKey: 'updateCompany',
+        headerTitle: '更新Business信息',
+        operations: [{ id: 'update_business', label: '更新Business信息' }],
+        defaultOperationId: 'update_business',
+        subOptions: undefined,
+        defaultSubId: undefined,
+        step1: {
+          label: '请选择要修改的信息',
+          required: false,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: [],
+      };
     case 'setLimit':
       return presetSimple(
         'setLimit',
@@ -288,13 +383,22 @@ export function getBatchDrawerPreset(entryKey: string): BatchDrawerPreset {
         true
       );
     case 'accountPush':
-      return presetSimple(
-        'accountPush',
-        '账号推送',
-        'account_push',
-        [{ id: 'account_push', label: '账号推送' }],
-        false
-      );
+      return {
+        entryKey: 'accountPush',
+        headerTitle: '推送数据',
+        operations: [{ id: 'account_push', label: '推送数据' }],
+        defaultOperationId: 'account_push',
+        subOptions: undefined,
+        defaultSubId: undefined,
+        step1: {
+          label: '输入接收者邮箱',
+          placeholder: 'xxx@xxx.com',
+          required: true,
+        },
+        step2: undefined,
+        step3: { label: '系统默认执行时间间隔', defaultChecked: true },
+        confirmGates: ['input'],
+      };
     case 'batchPaymentRecords':
       return presetSimple(
         'batchPaymentRecords',

@@ -355,6 +355,8 @@ const batchDrawerAccountRows = computed((): BatchAccountPreviewRow[] => {
       accountId: r.accountId,
       name: r.name,
       currency: r.currency,
+      timezone: r.timezone,
+      belongsToBmId: r.belongsToBmId,
       spendCapMinor: r.spendCapMinor,
       balanceMinor: r.balanceMinor,
       spendingLimit: r.spendingLimit,
@@ -1056,12 +1058,6 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
     batchDrawerResults.value = rows;
     fbControlLog('site:account-page', '批量操作 Graph 执行完成', { rows: rows.length });
     if (payload.operationId === 'account_rename') {
-      const newName =
-        payload.uidsText
-          .trim()
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean)[0] || '';
       const okRows = rows.filter((r) => r.status === '成功');
       const badRows = rows.filter((r) => r.status !== '成功');
       if (badRows.length) {
@@ -1074,9 +1070,14 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
         errorMsg.value =
           badRows.length === rows.length ? '账号重命名全部失败' : `重命名：${badRows.length} 条失败`;
       }
+      const renamedFromDetail = (detail: string): string => {
+        const m = detail.match(/名称已更新为「([^」]*)」/);
+        return (m?.[1] ?? '').trim();
+      };
       for (const r of okRows) {
+        const newName = renamedFromDetail(r.detail);
         try {
-          await mergeAccountInExtension({ accountId: r.accountId, name: newName });
+          await mergeAccountInExtension({ accountId: r.accountId, name: newName || undefined });
         } catch (mergeErr: unknown) {
           const m = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
           fbControlLog('site:account-page', '重命名 Graph 成功但写扩展缓存失败', { accountId: r.accountId, m });
@@ -1084,6 +1085,34 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
         }
       }
       if (okRows.length) {
+        await refreshFromExtension();
+      }
+    }
+    if (payload.operationId === 'account_push') {
+      const email = payload.accountPushForm?.recipientEmail?.trim() || '';
+      const okRows = rows.filter((r) => r.status === '成功');
+      const partialRows = rows.filter((r) => r.status === '部分成功');
+      for (const r of okRows) {
+        try {
+          await mergeAccountInExtension({
+            accountId: r.accountId,
+            pushStatus: email ? `已推送至 ${email}` : '已推送',
+          });
+        } catch {
+          /* ignore cache write errors */
+        }
+      }
+      for (const r of partialRows) {
+        try {
+          await mergeAccountInExtension({
+            accountId: r.accountId,
+            pushStatus: '已发送 BM 邀请',
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      if (okRows.length || partialRows.length) {
         await refreshFromExtension();
       }
     }
@@ -1682,6 +1711,7 @@ onUnmounted(() => {
       :current-fb-profile-url="batchDrawerCurrentFbUrl"
       @close="closeBatchDrawer"
       @friend-verify-result="onFriendVerifyResult"
+      @batch-results-update="batchDrawerResults = $event"
       @confirm="onBatchDrawerConfirm"
     />
   </div>

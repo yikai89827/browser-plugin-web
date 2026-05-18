@@ -2,13 +2,31 @@
 import { ref, watch, computed } from 'vue';
 import type {
   BatchAccountPreviewRow,
+  BatchAuthorizedUser,
   BatchDrawerPreset,
   BatchDrawerSubmitPayload,
   BatchOperationId,
+  UpdateBusinessFormPayload,
 } from '../lib/batchOperationTypes';
 import { getBatchOperationUi } from '../lib/batchOperationPresets';
+import {
+  isNotBusinessScopedUserError,
+  parseBatchResultDetail,
+  type BatchResultDetailSegment,
+} from '../lib/batchResultDetailView';
+import { runBmInvitePollAndGrantFromSite } from '../lib/extensionBridge';
+import {
+  DEFAULT_UPDATE_BUSINESS_BM,
+  UPDATE_BUSINESS_COUNTRIES,
+  UPDATE_BUSINESS_CURRENCIES,
+  UPDATE_BUSINESS_TIMEZONES,
+} from '../lib/updateBusinessOptions';
 
-import { runFacebookFriendCheckSequentialFromSite, type FriendVerifyResultPayload } from '../lib/extensionBridge';
+import {
+  runFacebookFriendCheckSequentialFromSite,
+  searchPushRecipientByEmailFromSite,
+  type FriendVerifyResultPayload,
+} from '../lib/extensionBridge';
 
 const props = defineProps<{
   open: boolean;
@@ -17,7 +35,15 @@ const props = defineProps<{
   /** 当前勾选行摘要（设置限额抽屉展示额度等） */
   selectedAccountRows?: BatchAccountPreviewRow[];
   /** 父组件在 Graph 批量执行完成后写入，用于「结果」页 */
-  batchResults?: { accountId: string; status: string; detail: string; resultKind?: string; currentFbProfileUrl?: string | null }[];
+  batchResults?: {
+    accountId: string;
+    status: string;
+    detail: string;
+    resultKind?: string;
+    displayInput?: string;
+    currentFbProfileUrl?: string | null;
+    friendCheckPending?: boolean;
+  }[];
   batchRunning?: boolean;
   /** 最近一次好友预检得到的当前 Facebook 主页（批量结果卡「当前账号」兜底） */
   currentFbProfileUrl?: string | null;
@@ -27,6 +53,17 @@ const emit = defineEmits<{
   close: [];
   confirm: [payload: BatchDrawerSubmitPayload];
   friendVerifyResult: [payload: FriendVerifyResultPayload];
+  batchResultsUpdate: [
+    rows: {
+      accountId: string;
+      status: string;
+      detail: string;
+      resultKind?: string;
+      displayInput?: string;
+      currentFbProfileUrl?: string | null;
+      friendCheckPending?: boolean;
+    }[],
+  ];
 }>();
 
 const limitOpKind = ref<'increase' | 'decrease'>('increase');
@@ -41,7 +78,14 @@ const resetAbsoluteUsd = ref('');
 
 const isLimitSpecial = computed(() => props.preset?.entryKey === 'setLimit');
 const isResetSpecial = computed(() => props.preset?.entryKey === 'resetLimit');
-const isAddBmSpecial = computed(() => props.preset?.entryKey === 'addBm');
+/** 填写 BM ID + 子下拉（添加到 BM / BM 合作伙伴） */
+const isBmIdDrawerSpecial = computed(() => {
+  const k = props.preset?.entryKey;
+  return k === 'addBm' || k === 'bmPartner';
+});
+const isAccountRenameSpecial = computed(() => props.preset?.entryKey === 'accountRename');
+const isAccountPushSpecial = computed(() => props.preset?.entryKey === 'accountPush');
+const isUpdateBusinessSpecial = computed(() => props.preset?.entryKey === 'updateCompany');
 /** 删除授权专用布局：顶栏双下拉 + UID 步骤（无子权限/好友检测） */
 const isRemoveAuthSpecial = computed(() => {
   const p = props.preset;
@@ -57,6 +101,28 @@ const isRemoveAuthSpecial = computed(() => {
 
 /** 步骤 2：删除当前 Facebook 账号的权限？（默认不勾选） */
 const deleteCurrentFbPerm = ref(false);
+
+const modifyCurrency = ref(false);
+const modifyBmInfo = ref(false);
+const modifyTimezone = ref(false);
+const updateCurrency = ref('USD');
+const updateCountry = ref(DEFAULT_UPDATE_BUSINESS_BM.countryCode);
+const updateCompanyName = ref(DEFAULT_UPDATE_BUSINESS_BM.companyName);
+const updateCity = ref(DEFAULT_UPDATE_BUSINESS_BM.city);
+const updateStreet1 = ref(DEFAULT_UPDATE_BUSINESS_BM.street1);
+const updateStreet2 = ref(DEFAULT_UPDATE_BUSINESS_BM.street2);
+const updateState = ref(DEFAULT_UPDATE_BUSINESS_BM.state);
+const updateZip = ref(DEFAULT_UPDATE_BUSINESS_BM.zip);
+const updateTaxId = ref(DEFAULT_UPDATE_BUSINESS_BM.taxId);
+const updateAdsForBusiness = ref(DEFAULT_UPDATE_BUSINESS_BM.adsForBusinessPurpose);
+const updateTimezone = ref('America/Phoenix');
+
+const pushRecipientEmail = ref('');
+const pushRecipient = ref<{ email: string; displayName: string; userId?: string } | null>(null);
+const pushSearchRunning = ref(false);
+const pushSearchMsg = ref('');
+
+const selectedAccountCount = computed(() => props.selectedAccountIds.length);
 
 const primaryPreviewAccount = computed(() => (props.selectedAccountRows && props.selectedAccountRows[0]) || null);
 
@@ -150,6 +216,8 @@ const useDefaultInterval = ref(true);
 const friendCheckStatus = ref<'idle' | 'running' | 'ok' | 'err'>('idle');
 const friendCheckMsg = ref('');
 const friendVerifyRunning = ref(false);
+/** 好友预检通过的用户快照（授权用，不随 Graph 结果覆盖而丢失） */
+const friendAuthorizeSnapshot = ref<BatchAuthorizedUser[]>([]);
 
 const resultRows = computed(() => props.batchResults ?? []);
 
@@ -171,11 +239,29 @@ const showSubDropdown = computed(
 const step2Visible = computed(() => !!ui.value.step2);
 const step3Visible = computed(() => !!ui.value.step3);
 
+const updateBusinessConfirmOk = computed(() => {
+  if (!isUpdateBusinessSpecial.value) return true;
+  if (!modifyCurrency.value && !modifyBmInfo.value && !modifyTimezone.value) return false;
+  if (modifyBmInfo.value) {
+    if (!updateCompanyName.value.trim() || !updateCity.value.trim() || !updateStreet1.value.trim()) {
+      return false;
+    }
+  }
+  return true;
+});
+
 const inputGateOk = computed(() => {
   if (isLimitSpecial.value || isResetSpecial.value) return true;
-  if (isAddBmSpecial.value) {
+  if (isUpdateBusinessSpecial.value) return updateBusinessConfirmOk.value;
+  if (isBmIdDrawerSpecial.value) {
     if (!props.preset?.step1.required) return true;
     return uidsText.value.trim().length > 0;
+  }
+  if (isAccountRenameSpecial.value) {
+    return uidsText.value.trim().length > 0;
+  }
+  if (isAccountPushSpecial.value) {
+    return isValidEmail(pushRecipientEmail.value);
   }
   if (isRemoveAuthSpecial.value) {
     if (!ui.value.step1.required) return true;
@@ -185,18 +271,101 @@ const inputGateOk = computed(() => {
   return uidsText.value.trim().length > 0;
 });
 
-const friendPhasePending = computed(() => {
-  if (isLimitSpecial.value || isResetSpecial.value || isAddBmSpecial.value || isRemoveAuthSpecial.value) return false;
-  if (!ui.value.confirmGates.includes('friend')) return false;
-  return friendCheckStatus.value !== 'ok';
+const isFriendGate = computed(() => ui.value.confirmGates.includes('friend'));
+
+/** 当前结果列表中的好友预检卡片（不含 Graph 批量执行后的广告账户结果） */
+const friendRows = computed(() =>
+  (props.batchResults ?? []).filter((r) => r.resultKind === 'friend_uid')
+);
+
+const friendFinishedRows = computed(() => friendRows.value.filter((r) => !r.friendCheckPending));
+
+const friendCheckCompleted = computed(
+  () =>
+    isFriendGate.value &&
+    friendFinishedRows.value.length > 0 &&
+    friendFinishedRows.value.length === friendRows.value.length
+);
+
+const friendHasSuccess = computed(() => friendFinishedRows.value.some((r) => r.status === '成功'));
+
+const friendHasFailure = computed(() => friendFinishedRows.value.some((r) => r.status !== '成功'));
+
+const friendAllFailed = computed(
+  () =>
+    friendCheckCompleted.value &&
+    friendFinishedRows.value.length > 0 &&
+    !friendHasSuccess.value
+);
+
+/** 检测未完成即失败（如 Failed to fetch、未产出结果卡） */
+const friendCheckIncompleteError = computed(
+  () =>
+    isFriendGate.value &&
+    friendCheckStatus.value === 'err' &&
+    !friendVerifyRunning.value &&
+    !friendCheckCompleted.value
+);
+
+/** 底部主按钮：执行 / 重新执行好友检测 */
+const friendRunAction = computed(() => {
+  if (!isFriendGate.value || friendVerifyRunning.value) return false;
+  if (friendCheckIncompleteError.value) return true;
+  if (friendCheckStatus.value === 'idle') return true;
+  if (drawerTab.value === 'result' && friendAllFailed.value) return true;
+  if (drawerTab.value === 'op' && friendHasFailure.value && friendCheckCompleted.value) return true;
+  return false;
 });
+
+/** 底部主按钮：提交 Graph（仅对已通过好友检测的 UID 授权） */
+const friendAuthorizeAction = computed(() => {
+  if (!isFriendGate.value || friendRunAction.value || friendVerifyRunning.value) return false;
+  if (friendCheckStatus.value === 'idle') return false;
+  return friendAuthorizeSnapshot.value.length > 0;
+});
+
+function syncFriendAuthorizeSnapshotFromResults() {
+  const rows = (props.batchResults ?? []).filter(
+    (r) => r.resultKind === 'friend_uid' && !r.friendCheckPending && r.status === '成功'
+  );
+  if (!rows.length) return;
+  friendAuthorizeSnapshot.value = rows.map((r) => ({
+    uid: String(r.accountId ?? '').trim(),
+    displayInput: (r.displayInput ?? r.accountId ?? '').trim(),
+    sourceLine: (r.displayInput ?? r.accountId ?? '').trim(),
+  }));
+}
+
+watch(
+  () => props.batchResults,
+  () => syncFriendAuthorizeSnapshotFromResults(),
+  { deep: true }
+);
+
+/** 「重新检测好友关系」时使用红色主按钮（首次「检测好友关系」仍为蓝色） */
+const footPrimaryDanger = computed(
+  () => isFriendGate.value && friendRunAction.value && friendCheckStatus.value !== 'idle'
+);
 
 const confirmDisabled = computed(() => {
   if (!props.preset || !props.selectedAccountIds.length) return true;
   if (props.batchRunning) return true;
   if (friendVerifyRunning.value) return true;
+  if (pushSearchRunning.value) return true;
   if (!limitConfirmOk.value) return true;
   if (!resetConfirmOk.value) return true;
+  if (!updateBusinessConfirmOk.value) return true;
+
+  if (isFriendGate.value) {
+    if (friendRunAction.value) {
+      return !uidsText.value.trim();
+    }
+    if (friendCheckStatus.value !== 'idle') {
+      return friendAuthorizeSnapshot.value.length === 0;
+    }
+    return !uidsText.value.trim();
+  }
+
   if (!inputGateOk.value) return true;
   return false;
 });
@@ -204,7 +373,12 @@ const confirmDisabled = computed(() => {
 const footPrimaryLabel = computed(() => {
   if (props.batchRunning) return '执行中…';
   if (friendVerifyRunning.value) return '检测中…';
-  if (friendPhasePending.value) return '检测好友关系';
+  if (isAccountPushSpecial.value) return '确认推送';
+  if (!isFriendGate.value) return '确定';
+  if (friendRunAction.value) {
+    return friendCheckStatus.value === 'idle' ? '检测好友关系' : '重新检测好友关系';
+  }
+  if (friendAuthorizeAction.value) return '确定';
   return '确定';
 });
 
@@ -223,13 +397,129 @@ function displayStepLabel(raw: string | undefined): string {
   return stripSquareBracketAnnotations(raw);
 }
 
-function resultTargetFieldLabel(r: { resultKind?: string }): string {
-  return r.resultKind === 'friend_uid' ? '检测账号' : '广告账户 ID';
+function resultTargetFieldLabel(r: { resultKind?: string; displayInput?: string }): string {
+  if (r.resultKind === 'friend_uid') return '检测账号';
+  if (r.displayInput) return '授权账号';
+  return '广告账户 ID';
+}
+
+function resultTargetDisplay(r: {
+  resultKind?: string;
+  accountId: string;
+  displayInput?: string;
+}): string {
+  if (r.resultKind === 'friend_uid' || r.displayInput) {
+    return (r.displayInput ?? r.accountId).trim() || '—';
+  }
+  return r.accountId;
+}
+
+function showAdAccountIdRow(r: { resultKind?: string; displayInput?: string }): boolean {
+  return !!r.displayInput && r.resultKind !== 'friend_uid';
 }
 
 function currentFbDisplay(r: { currentFbProfileUrl?: string | null }): string {
   const u = (r.currentFbProfileUrl ?? props.currentFbProfileUrl ?? '').trim();
   return u || '—';
+}
+
+function resultDetailView(detail: string) {
+  return parseBatchResultDetail(detail);
+}
+
+type BmInviteSlot = {
+  email: string;
+  statusText: string;
+  running: boolean;
+};
+
+const bmInviteSlots = ref<Record<string, BmInviteSlot>>({});
+const bmInviteAbortFlags = ref<Record<string, boolean>>({});
+
+function bmInviteKey(accountId: string, segmentLabel: string) {
+  return `${accountId}::${segmentLabel || '_'}`;
+}
+
+function getBmInviteSlot(key: string): BmInviteSlot {
+  if (!bmInviteSlots.value[key]) {
+    bmInviteSlots.value[key] = { email: '', statusText: '', running: false };
+  }
+  return bmInviteSlots.value[key];
+}
+
+function showBmInviteForSegment(seg: BatchResultDetailSegment): boolean {
+  return selectedOpId.value === 'add_ad_permissions' && isNotBusinessScopedUserError(seg.message);
+}
+
+function applyBmInviteResultToRow(
+  row: { accountId: string; status: string; detail: string; displayInput?: string },
+  segmentLabel: string,
+  res: { ok: boolean; status: string; detail: string }
+) {
+  const rows = [...(props.batchResults ?? [])];
+  const idx = rows.findIndex((x) => x.accountId === row.accountId);
+  if (idx < 0) return;
+
+  const view = parseBatchResultDetail(rows[idx].detail);
+  if (res.ok) {
+    const remaining = view.segments.filter((s) => s.label !== segmentLabel);
+    if (!remaining.length) {
+      rows[idx] = { ...rows[idx], status: res.status, detail: res.detail };
+    } else {
+      const parts = [
+        `${segmentLabel}: ${res.detail}`,
+        ...remaining.map((s) => `${s.label}: ${s.message}`),
+      ];
+      rows[idx] = {
+        ...rows[idx],
+        status: '部分成功',
+        detail: view.summary ? `${view.summary}。${parts.join('；')}` : parts.join('；'),
+      };
+    }
+  } else {
+    const parts = view.segments.map((s) =>
+      s.label === segmentLabel ? `${s.label}: ${res.detail}` : `${s.label}: ${s.message}`
+    );
+    rows[idx] = {
+      ...rows[idx],
+      detail: view.summary ? `${view.summary}。${parts.join('；')}` : parts.join('；'),
+    };
+  }
+  emit('batchResultsUpdate', rows);
+}
+
+async function startBmInvite(
+  row: { accountId: string; status: string; detail: string; displayInput?: string },
+  seg: BatchResultDetailSegment
+) {
+  const key = bmInviteKey(row.accountId, seg.label);
+  const slot = getBmInviteSlot(key);
+  const email = slot.email.trim();
+  if (!email) {
+    slot.statusText = '请先填写对方 Facebook 账号绑定的邮箱';
+    return;
+  }
+  bmInviteAbortFlags.value[key] = false;
+  slot.running = true;
+  slot.statusText = '正在发送 BM 邀请…';
+  try {
+    const res = await runBmInvitePollAndGrantFromSite({
+      accountId: row.accountId,
+      email,
+      bmHintIds: accountBmHintIds(),
+      subId: selectedSubId.value,
+      onProgress: (message) => {
+        slot.statusText = message;
+      },
+      shouldAbort: () => bmInviteAbortFlags.value[key] === true,
+    });
+    applyBmInviteResultToRow(row, seg.label, res);
+    slot.statusText = res.detail;
+  } catch (e: unknown) {
+    slot.statusText = e instanceof Error ? e.message : String(e);
+  } finally {
+    slot.running = false;
+  }
 }
 
 function resetForm() {
@@ -243,6 +533,7 @@ function resetForm() {
   friendCheckStatus.value = 'idle';
   friendCheckMsg.value = '';
   friendVerifyRunning.value = false;
+  friendAuthorizeSnapshot.value = [];
   drawerTab.value = 'op';
   limitOpKind.value = 'increase';
   fxUsdStr.value = '';
@@ -251,17 +542,115 @@ function resetForm() {
   resetMode.value = 'account_zero';
   resetAbsoluteUsd.value = '';
   deleteCurrentFbPerm.value = false;
+  modifyCurrency.value = false;
+  modifyBmInfo.value = false;
+  modifyTimezone.value = false;
+  const rowCur = (props.selectedAccountRows?.[0]?.currency || 'USD').trim().toUpperCase();
+  updateCurrency.value =
+    UPDATE_BUSINESS_CURRENCIES.some((c) => c.code === rowCur) ? rowCur : 'USD';
+  updateCountry.value = DEFAULT_UPDATE_BUSINESS_BM.countryCode;
+  updateCompanyName.value = DEFAULT_UPDATE_BUSINESS_BM.companyName;
+  updateCity.value = DEFAULT_UPDATE_BUSINESS_BM.city;
+  updateStreet1.value = DEFAULT_UPDATE_BUSINESS_BM.street1;
+  updateStreet2.value = DEFAULT_UPDATE_BUSINESS_BM.street2;
+  updateState.value = DEFAULT_UPDATE_BUSINESS_BM.state;
+  updateZip.value = DEFAULT_UPDATE_BUSINESS_BM.zip;
+  updateTaxId.value = DEFAULT_UPDATE_BUSINESS_BM.taxId;
+  updateAdsForBusiness.value = DEFAULT_UPDATE_BUSINESS_BM.adsForBusinessPurpose;
+  const rowTz = (props.selectedAccountRows?.[0]?.timezone || '').trim();
+  updateTimezone.value =
+    UPDATE_BUSINESS_TIMEZONES.some((t) => t.id === rowTz) ? rowTz : 'America/Phoenix';
+  pushRecipientEmail.value = '';
+  pushRecipient.value = null;
+  pushSearchRunning.value = false;
+  pushSearchMsg.value = '';
+}
+
+function isValidEmail(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
+function accountBmHintIds(): string[] {
+  const rows = props.selectedAccountRows ?? [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const id = (r.belongsToBmId ?? '').trim();
+    if (id && /^\d{5,}$/.test(id)) seen.add(id);
+  }
+  return [...seen];
+}
+
+async function onPushSearchUser() {
+  const email = pushRecipientEmail.value.trim();
+  pushSearchMsg.value = '';
+  pushRecipient.value = null;
+  if (!email) {
+    pushSearchMsg.value = '请输入接收者邮箱';
+    return;
+  }
+  if (!isValidEmail(email)) {
+    pushSearchMsg.value = '邮箱格式不正确';
+    return;
+  }
+  pushSearchRunning.value = true;
+  try {
+    const res = await searchPushRecipientByEmailFromSite(
+      email,
+      [...props.selectedAccountIds],
+      accountBmHintIds()
+    );
+    if (res.found && res.recipientUserId) {
+      pushRecipient.value = {
+        email: res.email,
+        displayName: res.displayName ?? res.email,
+        userId: res.recipientUserId,
+      };
+      pushSearchMsg.value = res.businessId ? `已在 BM ${res.businessId} 中找到该用户` : '';
+    } else {
+      pushSearchMsg.value = res.message ?? '未找到该邮箱对应的 BM 用户';
+    }
+  } catch (e: unknown) {
+    pushSearchMsg.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    pushSearchRunning.value = false;
+  }
+}
+
+function buildUpdateBusinessFormPayload(): UpdateBusinessFormPayload {
+  return {
+    modifyCurrency: modifyCurrency.value,
+    currency: updateCurrency.value,
+    modifyBmInfo: modifyBmInfo.value,
+    bmInfo: {
+      countryCode: updateCountry.value,
+      companyName: updateCompanyName.value.trim(),
+      city: updateCity.value.trim(),
+      street1: updateStreet1.value.trim(),
+      street2: updateStreet2.value.trim() || undefined,
+      state: updateState.value.trim(),
+      zip: updateZip.value.trim(),
+      taxId: updateTaxId.value.trim() || undefined,
+      adsForBusinessPurpose: updateAdsForBusiness.value,
+    },
+    modifyTimezone: modifyTimezone.value,
+    timezone: updateTimezone.value,
+  };
 }
 
 watch(
   () => [props.open, props.preset?.entryKey] as const,
   ([isOpen]) => {
     if (isOpen && props.preset) resetForm();
+    if (!isOpen) {
+      bmInviteSlots.value = {};
+      bmInviteAbortFlags.value = {};
+    }
   }
 );
 
 watch(selectedOpId, () => {
   emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
+  friendAuthorizeSnapshot.value = [];
   if (friendCheckStatus.value !== 'idle') {
     friendCheckStatus.value = 'idle';
     friendCheckMsg.value = '';
@@ -269,11 +658,17 @@ watch(selectedOpId, () => {
   useDefaultInterval.value = getBatchOperationUi(selectedOpId.value).step3?.defaultChecked ?? true;
 });
 
+watch(pushRecipientEmail, () => {
+  pushRecipient.value = null;
+  pushSearchMsg.value = '';
+});
+
 watch(uidsText, () => {
   const hadProgress = friendCheckStatus.value !== 'idle';
   if (hadProgress) {
     friendCheckStatus.value = 'idle';
     friendCheckMsg.value = '';
+    friendAuthorizeSnapshot.value = [];
   }
   if (hadProgress && getBatchOperationUi(selectedOpId.value).confirmGates.includes('friend')) {
     emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
@@ -287,7 +682,7 @@ function onBackdropClick() {
 async function onConfirm() {
   if (!props.preset || confirmDisabled.value) return;
 
-  if (friendPhasePending.value && ui.value.confirmGates.includes('friend')) {
+  if (isFriendGate.value && friendRunAction.value) {
     if (!uidsText.value.trim()) return;
     friendVerifyRunning.value = true;
     friendCheckMsg.value = '';
@@ -296,6 +691,16 @@ async function onConfirm() {
       let firstEmitted = false;
       const summary = await runFacebookFriendCheckSequentialFromSite(uidsText.value, (payload) => {
         emit('friendVerifyResult', payload);
+        const okRows = payload.rows.filter(
+          (r) => r.resultKind === 'friend_uid' && !r.friendCheckPending && r.status === '成功'
+        );
+        if (okRows.length) {
+          friendAuthorizeSnapshot.value = okRows.map((r) => ({
+            uid: String(r.accountId ?? '').trim(),
+            displayInput: (r.displayInput ?? r.accountId ?? '').trim(),
+            sourceLine: (r.displayInput ?? r.accountId ?? '').trim(),
+          }));
+        }
         if (!firstEmitted && payload.rows.length > 0) {
           firstEmitted = true;
           drawerTab.value = 'result';
@@ -303,6 +708,7 @@ async function onConfirm() {
       });
       friendCheckStatus.value = summary.ok ? 'ok' : 'err';
       friendCheckMsg.value = summary.message;
+      syncFriendAuthorizeSnapshotFromResults();
       if (!firstEmitted) {
         drawerTab.value = 'result';
       }
@@ -310,24 +716,43 @@ async function onConfirm() {
       friendCheckStatus.value = 'err';
       friendCheckMsg.value = e instanceof Error ? e.message : String(e);
       emit('friendVerifyResult', { rows: [], currentUserProfileUrl: null });
+      drawerTab.value = 'result';
     } finally {
       friendVerifyRunning.value = false;
     }
     return;
   }
 
+  if (isFriendGate.value && !friendAuthorizeSnapshot.value.length) {
+    return;
+  }
+
   const removeAuthLike = isRemoveAuthSpecial.value;
+  const authSnapshot = friendAuthorizeSnapshot.value;
+
+  const bmHints = accountBmHintIds();
+
   const payload: BatchDrawerSubmitPayload = {
     entryKey: removeAuthLike ? 'removeAuth' : props.preset.entryKey,
     operationId: selectedOpId.value,
+    accountBmHintIds: bmHints.length ? bmHints : undefined,
     subId:
-      (isAddBmSpecial.value && (props.preset.subOptions?.length ?? 0) > 0) || showSubDropdown.value
+      (isBmIdDrawerSpecial.value && (props.preset.subOptions?.length ?? 0) > 0) || showSubDropdown.value
         ? selectedSubId.value
         : undefined,
-    uidsText: uidsText.value.trim(),
+    uidsText:
+      isFriendGate.value && authSnapshot.length
+        ? authSnapshot.map((u) => u.uid).join('\n')
+        : uidsText.value.trim(),
     useDefaultInterval: useDefaultInterval.value,
-    friendCheckOk: !ui.value.confirmGates.includes('friend') || friendCheckStatus.value === 'ok',
+    friendCheckOk:
+      removeAuthLike ||
+      !ui.value.confirmGates.includes('friend') ||
+      authSnapshot.length > 0 ||
+      friendCheckStatus.value === 'ok',
     selectedAccountIds: [...props.selectedAccountIds],
+    authorizedUsers:
+      isFriendGate.value && authSnapshot.length ? [...authSnapshot] : undefined,
   };
   if (props.preset.entryKey === 'setLimit') {
     const minor = parseUsdInputToMinor(activeLimitAmountStr());
@@ -349,6 +774,21 @@ async function onConfirm() {
   } else if (removeAuthLike) {
     payload.friendCheckOk = true;
     payload.removeAuthForm = { deleteCurrentFacebookPerm: deleteCurrentFbPerm.value };
+  } else if (isUpdateBusinessSpecial.value) {
+    payload.friendCheckOk = true;
+    payload.updateBusinessForm = buildUpdateBusinessFormPayload();
+    payload.uidsText = '';
+  } else if (isAccountPushSpecial.value) {
+    const rec = pushRecipient.value;
+    const email = pushRecipientEmail.value.trim();
+    if (!email) return;
+    payload.friendCheckOk = true;
+    payload.accountPushForm = {
+      recipientEmail: email,
+      recipientDisplayName: rec?.displayName ?? email,
+      recipientUserId: rec?.userId,
+    };
+    payload.uidsText = email;
   }
   emit('confirm', payload);
 }
@@ -541,7 +981,7 @@ async function onConfirm() {
             </div>
 
             <!-- 添加到 BM：顶栏双下拉 + 填写 BM ID + 执行间隔 -->
-            <div v-else-if="isAddBmSpecial" class="bod-batch-op-root bod-remove-auth-root">
+            <div v-else-if="isBmIdDrawerSpecial" class="bod-batch-op-root bod-remove-auth-root">
               <select class="bod-batch-select bod-batch-select--main bod-remove-auth-header-select" disabled>
                 <option>{{ preset.headerTitle }}</option>
               </select>
@@ -623,6 +1063,192 @@ async function onConfirm() {
               </div>
             </div>
 
+            <!-- 账号重命名 -->
+            <div v-else-if="isAccountRenameSpecial" class="bod-batch-op-root bod-rename-root">
+              <select class="bod-batch-select bod-batch-select--main bod-remove-auth-header-select" disabled>
+                <option>{{ preset.headerTitle }}</option>
+              </select>
+              <div class="bod-steps bod-remove-auth-steps">
+                <div class="bod-step-line" aria-hidden="true"></div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">1</span>
+                  <div class="bod-step-body">
+                    <label class="bod-step-label bod-step-label--required">
+                      <span class="bod-required">*</span>自动重命名账号
+                    </label>
+                    <p class="bod-rename-line-hint muted small">
+                      每行一个新名称；与已选账户顺序一致，第一行对应第一个选中账户。仅填一行时，全部账户改为该名称。
+                    </p>
+                    <textarea
+                      v-model="uidsText"
+                      class="bod-batch-textarea bod-rename-textarea"
+                      rows="6"
+                      :placeholder="preset.step1.placeholder"
+                    ></textarea>
+                  </div>
+                </div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">2</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="useDefaultInterval" type="checkbox" />
+                      <span>系统默认执行时间间隔</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 推送数据 -->
+            <div v-else-if="isAccountPushSpecial" class="bod-batch-op-root bod-push-root">
+              <select class="bod-batch-select bod-batch-select--main bod-remove-auth-header-select" disabled>
+                <option>{{ preset.headerTitle }}</option>
+              </select>
+              <div class="bod-push-info" role="status">
+                <span class="bod-push-info-ico" aria-hidden="true">i</span>
+                <span
+                  >已选中 {{ selectedAccountCount }} 个广告账号 (重复推送会被覆盖)</span
+                >
+              </div>
+              <div class="bod-push-search">
+                <label class="bod-push-search-label">输入接收者邮箱</label>
+                <div class="bod-push-search-row">
+                  <input
+                    v-model="pushRecipientEmail"
+                    type="email"
+                    class="bod-update-biz-input bod-push-email-input"
+                    placeholder="xxx@xxx.com"
+                    @keydown.enter.prevent="onPushSearchUser"
+                  />
+                  <button
+                    type="button"
+                    class="bod-push-search-btn"
+                    :disabled="pushSearchRunning"
+                    @click="onPushSearchUser"
+                  >
+                    {{ pushSearchRunning ? '搜索中…' : '搜索' }}
+                  </button>
+                </div>
+                <p v-if="pushSearchMsg" class="bod-push-search-msg err">{{ pushSearchMsg }}</p>
+              </div>
+              <div v-if="pushRecipient" class="bod-push-user-card">
+                <div class="bod-push-user-name">{{ pushRecipient.displayName }}</div>
+                <div class="bod-push-user-email muted">{{ pushRecipient.email }}</div>
+              </div>
+              <div v-else class="bod-push-empty">
+                <div class="bod-push-empty-ico" aria-hidden="true" />
+                <p class="muted">请先搜索用户</p>
+              </div>
+            </div>
+
+            <!-- 更新 Business 信息 -->
+            <div v-else-if="isUpdateBusinessSpecial" class="bod-batch-op-root bod-update-biz-root">
+              <select class="bod-batch-select bod-batch-select--main bod-remove-auth-header-select" disabled>
+                <option>{{ preset.headerTitle }}</option>
+              </select>
+              <p class="bod-update-biz-hint muted">请选择要修改的信息</p>
+              <div class="bod-steps bod-update-biz-steps">
+                <div class="bod-step-line" aria-hidden="true"></div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">1</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="modifyCurrency" type="checkbox" />
+                      <span>修改广告账号币种</span>
+                    </label>
+                    <div v-if="modifyCurrency" class="bod-update-biz-panel">
+                      <label class="bod-field-label">选择币种</label>
+                      <select v-model="updateCurrency" class="bod-batch-select bod-update-biz-field">
+                        <option v-for="c in UPDATE_BUSINESS_CURRENCIES" :key="c.code" :value="c.code">
+                          {{ c.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">2</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="modifyBmInfo" type="checkbox" />
+                      <span>修改BM信息</span>
+                    </label>
+                    <div v-if="modifyBmInfo" class="bod-update-biz-panel">
+                      <label class="bod-field-label">选择国家</label>
+                      <select v-model="updateCountry" class="bod-batch-select bod-update-biz-field">
+                        <option v-for="c in UPDATE_BUSINESS_COUNTRIES" :key="c.code" :value="c.code">
+                          {{ c.label }}
+                        </option>
+                      </select>
+                      <label class="bod-field-label">公司名称</label>
+                      <input v-model="updateCompanyName" type="text" class="bod-update-biz-input" />
+                      <label class="bod-field-label">市/镇</label>
+                      <input v-model="updateCity" type="text" class="bod-update-biz-input" />
+                      <div class="bod-field-grid">
+                        <div>
+                          <label class="bod-field-label">街道地址第 1 行</label>
+                          <input v-model="updateStreet1" type="text" class="bod-update-biz-input" />
+                        </div>
+                        <div>
+                          <label class="bod-field-label">街道地址第 1 行(选填)</label>
+                          <input v-model="updateStreet2" type="text" class="bod-update-biz-input" placeholder="Street 2" />
+                        </div>
+                      </div>
+                      <div class="bod-field-grid">
+                        <div>
+                          <label class="bod-field-label">州、省或地区</label>
+                          <input v-model="updateState" type="text" class="bod-update-biz-input" />
+                        </div>
+                        <div>
+                          <label class="bod-field-label">邮编</label>
+                          <input v-model="updateZip" type="text" class="bod-update-biz-input" />
+                        </div>
+                      </div>
+                      <label class="bod-field-label">税号(选填)</label>
+                      <input v-model="updateTaxId" type="text" class="bod-update-biz-input" placeholder="tax code" />
+                      <p class="bod-update-biz-question">您购买广告是为了商业目的吗?</p>
+                      <div class="bod-radio-stack bod-update-biz-radios">
+                        <label class="bod-radio-row">
+                          <input v-model="updateAdsForBusiness" type="radio" :value="true" />
+                          <span>是</span>
+                        </label>
+                        <label class="bod-radio-row">
+                          <input v-model="updateAdsForBusiness" type="radio" :value="false" />
+                          <span>否</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">3</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check">
+                      <input v-model="modifyTimezone" type="checkbox" />
+                      <span>修改时区信息</span>
+                    </label>
+                    <div v-if="modifyTimezone" class="bod-update-biz-panel">
+                      <label class="bod-field-label">选择时区</label>
+                      <select v-model="updateTimezone" class="bod-batch-select bod-update-biz-field">
+                        <option v-for="tz in UPDATE_BUSINESS_TIMEZONES" :key="tz.id" :value="tz.id">
+                          {{ tz.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div class="bod-step">
+                  <span class="bod-step-badge">4</span>
+                  <div class="bod-step-body">
+                    <label class="bod-check bod-check--muted">
+                      <input v-model="useDefaultInterval" type="checkbox" />
+                      <span>系统默认执行时间间隔</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- 其他批量入口（原样） -->
             <div v-else class="bod-batch-op-root">
               <select v-model="selectedOpId" class="bod-batch-select bod-batch-select--main">
@@ -691,12 +1317,20 @@ async function onConfirm() {
             <div v-else class="bod-result-cards bod-drawer-scroll">
               <article
                 v-for="(r, idx) in resultRows"
-                :key="`${r.accountId}-${idx}-${r.resultKind || 'ad'}`"
+                :key="`${r.accountId}-${idx}-${r.resultKind || 'ad'}-${r.friendCheckPending ? 'p' : 'd'}`"
                 class="bod-result-card"
+                :class="{ 'bod-result-card--friend-pending': r.friendCheckPending }"
               >
                 <div class="bod-result-card-row">
                   <span class="bod-result-card-k">状态</span>
                   <span
+                    v-if="r.friendCheckPending"
+                    class="bod-result-badge bod-result-badge--pending"
+                  >
+                    {{ r.status }}
+                  </span>
+                  <span
+                    v-else
                     class="bod-result-badge"
                     :class="r.status === '成功' ? 'bod-result-badge--ok' : 'bod-result-badge--err'"
                   >
@@ -705,23 +1339,105 @@ async function onConfirm() {
                 </div>
                 <div class="bod-result-card-row">
                   <span class="bod-result-card-k">{{ resultTargetFieldLabel(r) }}</span>
+                  <span class="bod-result-card-v mono bod-result-wrap bod-result-preline">{{
+                    resultTargetDisplay(r)
+                  }}</span>
+                </div>
+                <div v-if="showAdAccountIdRow(r)" class="bod-result-card-row">
+                  <span class="bod-result-card-k">广告账户 ID</span>
                   <span class="bod-result-card-v mono bod-result-wrap">{{ r.accountId }}</span>
                 </div>
                 <div class="bod-result-card-row">
                   <span class="bod-result-card-k">当前账号</span>
                   <span class="bod-result-card-v bod-result-wrap">{{ currentFbDisplay(r) }}</span>
                 </div>
-                <div class="bod-result-card-row bod-result-card-row--detail">
+                <div v-if="!r.friendCheckPending" class="bod-result-card-row bod-result-card-row--detail">
                   <span class="bod-result-card-k">返回信息</span>
-                  <span class="bod-result-card-v bod-result-wrap">
+                  <div class="bod-result-card-v bod-result-detail">
                     <template v-if="r.resultKind === 'friend_uid'">
                       <span class="bod-friend-return-base">与当前Facebook社交账号</span>
                       <span v-if="r.status === '成功'" class="bod-friend-return-ok">是好友</span>
                       <span v-else class="bod-friend-return-err">不是好友</span>
                       <span v-if="r.status === '成功'">。</span>
                     </template>
-                    <template v-else>{{ r.detail }}</template>
-                  </span>
+                    <template v-else-if="resultDetailView(r.detail).plain">
+                      <p class="bod-result-detail-plain">{{ resultDetailView(r.detail).plain }}</p>
+                    </template>
+                    <template v-else>
+                      <p v-if="resultDetailView(r.detail).summary" class="bod-result-detail-summary">
+                        {{ resultDetailView(r.detail).summary }}
+                      </p>
+                      <ul
+                        v-if="resultDetailView(r.detail).segments.length"
+                        class="bod-result-detail-list"
+                      >
+                        <li
+                          v-for="(seg, segIdx) in resultDetailView(r.detail).segments"
+                          :key="segIdx"
+                          class="bod-result-detail-item"
+                        >
+                          <div v-if="seg.label" class="bod-result-detail-item-label">{{ seg.label }}</div>
+                          <div class="bod-result-detail-item-msg">{{ seg.message }}</div>
+                          <div v-if="showBmInviteForSegment(seg)" class="bod-bm-invite">
+                            <p class="bod-bm-invite-hint muted small">
+                              需先加入该广告账户所属 Business Manager。请填写对方 Facebook
+                              账号<strong>已验证的主邮箱</strong>（须与 facebook.com → 设置 → 邮箱 中一致，不是昵称）。
+                              系统将每 1 分钟确认是否已加入（最多 5 次），成功后将自动重新授权。
+                            </p>
+                            <p class="bod-bm-invite-hint muted small">
+                              若提示 code=10 / 1752203「应用无权限」：API 无法代发 BM 邀请，请到商务管理平台手动邀请。
+                            </p>
+                            <p class="bod-bm-invite-hint muted small">
+                              若收不到邮件：查垃圾箱；确认此前未报「双重验证」错误；或到
+                              <a
+                                href="https://business.facebook.com/latest/settings/people"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="bod-bm-invite-link"
+                              >商务管理平台 → 用户</a>
+                              手动邀请后让对方接受，再点本页「发送 BM 邀请」仅做确认。
+                            </p>
+                            <div class="bod-bm-invite-row">
+                              <input
+                                v-model="getBmInviteSlot(bmInviteKey(r.accountId, seg.label)).email"
+                                type="email"
+                                class="bod-bm-invite-input"
+                                placeholder="例如 name@example.com"
+                                :disabled="getBmInviteSlot(bmInviteKey(r.accountId, seg.label)).running"
+                              />
+                              <button
+                                type="button"
+                                class="bod-bm-invite-btn"
+                                :disabled="getBmInviteSlot(bmInviteKey(r.accountId, seg.label)).running"
+                                @click="startBmInvite(r, seg)"
+                              >
+                                {{
+                                  getBmInviteSlot(bmInviteKey(r.accountId, seg.label)).running
+                                    ? '处理中…'
+                                    : '发送 BM 邀请'
+                                }}
+                              </button>
+                            </div>
+                            <p
+                              v-if="getBmInviteSlot(bmInviteKey(r.accountId, seg.label)).statusText"
+                              class="bod-bm-invite-status small"
+                            >
+                              {{ getBmInviteSlot(bmInviteKey(r.accountId, seg.label)).statusText }}
+                            </p>
+                          </div>
+                        </li>
+                      </ul>
+                    </template>
+                  </div>
+                </div>
+                <div
+                  v-if="r.friendCheckPending"
+                  class="bod-result-card-pending-mask"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="bod-result-card-pending-spinner" aria-hidden="true" />
+                  <span class="bod-result-card-pending-text">程序正在努力检测中</span>
                 </div>
               </article>
             </div>
@@ -733,7 +1449,10 @@ async function onConfirm() {
           <button
             type="button"
             class="bod-btn-confirm"
-            :class="{ 'bod-btn-confirm--busy': batchRunning || friendVerifyRunning }"
+            :class="{
+              'bod-btn-confirm--busy': batchRunning || friendVerifyRunning,
+              'bod-btn-confirm--danger': footPrimaryDanger,
+            }"
             :disabled="confirmDisabled"
             @click="onConfirm"
           >
@@ -1116,11 +1835,49 @@ async function onConfirm() {
   padding: 4px 0 8px;
 }
 .bod-result-card {
+  position: relative;
   border: 1px solid var(--fb-border, #4b5563);
   border-radius: 8px;
   background: var(--fb-modal-input-bg, #2d2d2d);
   padding: 12px 14px;
   font-size: 13px;
+}
+.bod-result-card--friend-pending {
+  min-height: 108px;
+}
+.bod-result-card-pending-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  margin: -1px;
+  background: rgba(15, 17, 23, 0.78);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+}
+.bod-result-card-pending-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: bod-foot-spin 0.75s linear infinite;
+}
+.bod-result-card-pending-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  line-height: 1.45;
+  max-width: 14em;
+}
+.bod-result-badge--pending {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
 }
 .bod-result-card-row {
   display: flex;
@@ -1156,6 +1913,110 @@ async function onConfirm() {
 }
 .bod-result-wrap {
   max-width: 100%;
+}
+.bod-result-preline {
+  white-space: pre-line;
+  text-align: left;
+}
+.bod-result-detail {
+  width: 100%;
+  min-width: 0;
+}
+.bod-result-detail-plain,
+.bod-result-detail-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.bod-result-detail-summary {
+  color: var(--fb-muted, #9ca3af);
+  margin-bottom: 8px;
+}
+.bod-result-detail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bod-result-detail-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--fb-surface-b, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--fb-cell-border, #1f2937);
+}
+.bod-result-detail-item-label {
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  color: var(--fb-dash-view-all, #93c5fd);
+  word-break: break-all;
+  margin-bottom: 6px;
+}
+.bod-result-detail-item-msg {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fb-modal-text, #e5e7eb);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.bod-bm-invite {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--fb-cell-border, #374151);
+}
+.bod-bm-invite-hint {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+.bod-bm-invite-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.bod-bm-invite-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-input-border, #4b5563);
+  background: var(--fb-modal-input-bg, #111827);
+  color: var(--fb-input-text, #e5e7eb);
+  font-size: 13px;
+}
+.bod-bm-invite-btn {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #1877f2;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.bod-bm-invite-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.bod-bm-invite-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.bod-bm-invite-status {
+  margin: 8px 0 0;
+  color: var(--fb-muted, #9ca3af);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.bod-bm-invite-link {
+  color: var(--fb-dash-view-all, #93c5fd);
+  text-decoration: underline;
+}
+.bod-bm-invite-hint strong {
+  color: var(--fb-modal-text, #e5e7eb);
+  font-weight: 600;
 }
 .bod-friend-return-base {
   color: var(--fb-modal-text, #e5e7eb);
@@ -1208,6 +2069,12 @@ async function onConfirm() {
 }
 .bod-btn-confirm:hover:not(:disabled) {
   filter: brightness(1.05);
+}
+.bod-btn-confirm--danger {
+  background: #c0392b;
+}
+.bod-btn-confirm--danger:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 .bod-btn-confirm:disabled {
   opacity: 0.45;
@@ -1356,5 +2223,200 @@ async function onConfirm() {
 }
 .bod-remove-auth-steps {
   margin-top: 10px;
+}
+.bod-update-biz-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.bod-update-biz-hint {
+  margin: 10px 0 4px;
+  font-size: 13px;
+}
+.bod-update-biz-steps {
+  margin-top: 8px;
+}
+.bod-update-biz-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--fb-border, #4b5563);
+  background: var(--fb-surface-a, #1e1e1e);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bod-field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--fb-muted, #9ca3af);
+  margin-bottom: 4px;
+}
+.bod-update-biz-field {
+  width: 100%;
+  max-width: none;
+}
+.bod-update-biz-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-input-border, #4b5563);
+  background: var(--fb-modal-input-bg, #2d2d2d);
+  color: var(--fb-input-text, #e5e7eb);
+  font-size: 13px;
+  font-family: inherit;
+}
+.bod-update-biz-input:focus {
+  outline: none;
+  border-color: #1877f2;
+}
+.bod-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+@media (max-width: 520px) {
+  .bod-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bod-update-biz-question {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--fb-modal-text, #e5e7eb);
+}
+.bod-update-biz-radios {
+  gap: 8px;
+}
+.bod-check--muted {
+  color: var(--fb-muted, #9ca3af);
+}
+.bod-step-label--required .bod-required {
+  color: #ef4444;
+  margin-right: 2px;
+}
+.bod-rename-root {
+  display: flex;
+  flex-direction: column;
+}
+.bod-rename-line-hint {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+.bod-rename-textarea {
+  min-height: 120px;
+}
+.bod-push-root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bod-push-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(24, 119, 242, 0.12);
+  border: 1px solid rgba(24, 119, 242, 0.35);
+  font-size: 13px;
+  line-height: 1.45;
+  color: #93c5fd;
+}
+.bod-push-info-ico {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1877f2;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bod-push-search-label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--fb-modal-text, #e5e7eb);
+}
+.bod-push-search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.bod-push-email-input {
+  flex: 1;
+  min-width: 0;
+}
+.bod-push-search-btn {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #1877f2;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bod-push-search-btn:hover:not(:disabled) {
+  background: rgba(24, 119, 242, 0.12);
+}
+.bod-push-search-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.bod-push-search-msg {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.bod-push-search-msg.err {
+  color: #f87171;
+}
+.bod-push-empty {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 12px;
+}
+.bod-push-empty-ico {
+  width: 72px;
+  height: 56px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #6b7280 0%, #4b5563 100%);
+  opacity: 0.45;
+  position: relative;
+}
+.bod-push-empty-ico::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 14px;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.35) 0%, transparent 70%);
+}
+.bod-push-user-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--fb-border, #4b5563);
+  background: var(--fb-modal-input-bg, #2d2d2d);
+}
+.bod-push-user-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.bod-push-user-email {
+  font-size: 12px;
+  margin-top: 4px;
 }
 </style>

@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import type { FbPixelCollectPayload } from '../interfaces/fbControl';
 import { fbControlError, fbControlLog } from '../utils/fbControlLog';
 
 /**
@@ -31,7 +32,7 @@ export default {
           return true;
           
         case 'fetchPageData':
-          handleFetchPageData(fetchAccounts, fetchPixels, isAccountPage, isPixelPage)
+          handleFetchPageData(fetchAccounts, fetchPixels, isAccountPage, isPixelPage, message)
             .then(sendResponse)
             .catch(err => sendResponse({ success: false, error: err.message }));
           return true;
@@ -56,7 +57,8 @@ async function handleFetchPageData(
   fetchAccounts: any,
   fetchPixels: any,
   isAccountPage: any,
-  isPixelPage: any
+  isPixelPage: any,
+  message?: { pixelCollect?: FbPixelCollectPayload }
 ) {
   const url = window.location.href;
   let data = null;
@@ -66,9 +68,13 @@ async function handleFetchPageData(
     fbControlLog('content', 'handleFetchPageData: 账户页', { url });
     data = await fetchAccounts();
     type = 'accounts';
-  } else if (isPixelPage()) {
-    fbControlLog('content', 'handleFetchPageData: 像素页', { url });
-    data = await fetchPixels();
+  } else if (message?.pixelCollect || isPixelPage()) {
+    fbControlLog('content', 'handleFetchPageData: 像素采集', {
+      url,
+      pixelCollect: message?.pixelCollect,
+      isPixelPage: isPixelPage(),
+    });
+    data = await fetchPixels(message?.pixelCollect);
     type = 'pixels';
   }
 

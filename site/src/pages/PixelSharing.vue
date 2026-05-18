@@ -1,22 +1,51 @@
 <script lang="ts" setup>
 import { ref, computed, watch, reactive, onMounted, onUnmounted } from 'vue';
 import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
-import { extensionConfigured, collectPixelSharesFromActiveFacebookTab, fetchPixelSharesFromExtension } from '../lib/extensionBridge';
+import {
+  extensionConfigured,
+  collectPixelSharesFromActiveFacebookTab,
+  fetchPixelSharesFromExtension,
+  mergePixelShareInExtension,
+  syncPixelSharesFromGraphViaExtension,
+} from '../lib/extensionBridge';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import ExtensionMenuGate from '../components/ExtensionMenuGate.vue';
+import PixelOperationDrawer from '../components/PixelOperationDrawer.vue';
+import {
+  getPixelDrawerPreset,
+  pixelDrawerContextFromRows,
+  type PixelDrawerContext,
+  type PixelDrawerKind,
+} from '../lib/pixelOperationTypes';
+import {
+  fetchPixelRelationCountFromSite,
+  type PixelRelationCountKind,
+} from '../lib/pixelOperationsBridge';
 import {
   markPixelListFetched,
   pixelsShellExtensionReady,
-  registerPixelListRefresh,
-  unregisterPixelListRefresh,
-} from '../lib/pixelListHub';
+  registerPixelsGraphSync,
+  unregisterPixelsGraphSync,
+} from '../lib/pixelListSyncHub';
 
-const COL_COUNT = 13;
-const REMARK_KEY = (id: string) => `fb_pixel_remark:${id}`;
+const COL_COUNT = 16;
+const COLLECT_MODE_KEY = 'fb_pixel_share_collect_mode';
 
-type PixelSortKey = 'pixelName' | 'bmName' | 'ownerName' | 'capturedAt' | 'role' | '';
+type PixelSortKey = 'pixelName' | 'bmName' | 'ownerName' | 'capturedAt' | 'role' | 'activeTime' | '';
+
+function loadSavedCollectMode(): 'all_pixels' | 'bm_id' {
+  try {
+    const v = localStorage.getItem(COLLECT_MODE_KEY);
+    if (v === 'bm_id' || v === 'all_pixels') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'all_pixels';
+}
 
 const rows = ref<FbPixelShareRecord[]>([]);
+/** 输入框草稿；点击搜索或回车后写入 searchQuery 才过滤表格 */
+const searchInput = ref('');
 const searchQuery = ref('');
 const loading = ref(false);
 const errorMsg = ref('');
@@ -25,16 +54,41 @@ const currentPage = ref(1);
 const pageSize = ref(10);
 
 const selectedIds = ref<Record<string, boolean>>({});
-const favoriteOverrides = ref<Record<string, boolean>>({});
 
 const sortCol = ref<PixelSortKey>('');
 const sortDir = ref<'asc' | 'desc'>('asc');
 
+const settingsWrapRef = ref<HTMLElement | null>(null);
+const settingsOpen = ref(false);
+const savedCollectMode = ref<'all_pixels' | 'bm_id'>(loadSavedCollectMode());
+const settingsDraftMode = ref<'all_pixels' | 'bm_id'>(savedCollectMode.value);
+const batchSettingsWrapRef = ref<HTMLElement | null>(null);
+
 const remarkModalRow = ref<FbPixelShareRecord | null>(null);
 const remarkDraft = ref('');
 
-const pixelAdLoadUi = reactive<Record<string, 'idle' | 'loading' | 'empty' | 'error'>>({});
-const pixelAdminLoadUi = reactive<Record<string, 'idle' | 'loading' | 'empty' | 'error'>>({});
+type PixelCountCellState = {
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  count?: number;
+};
+
+const pixelCountCells = reactive<Record<string, PixelCountCellState>>({});
+
+function pixelCountKey(rowId: string, kind: PixelRelationCountKind) {
+  return `${rowId}:${kind}`;
+}
+
+function getPixelCountCell(rowId: string, kind: PixelRelationCountKind): PixelCountCellState {
+  return pixelCountCells[pixelCountKey(rowId, kind)] ?? { status: 'idle' };
+}
+
+const pixelDrawerOpen = ref(false);
+const pixelDrawerKind = ref<PixelDrawerKind>('batch_create');
+const pixelDrawerContext = ref<PixelDrawerContext | null>(null);
+
+const pixelDrawerPreset = computed(() => getPixelDrawerPreset(pixelDrawerKind.value, pixelDrawerContext.value));
+
+const selectedRows = computed(() => sortedFiltered.value.filter((r) => selectedIds.value[r.id]));
 
 function dash(v: unknown) {
   if (v === null || v === undefined || v === '') return '—';
@@ -42,26 +96,22 @@ function dash(v: unknown) {
 }
 
 function remarkDisplay(row: FbPixelShareRecord): string {
-  try {
-    const stored = sessionStorage.getItem(REMARK_KEY(row.id));
-    if (stored != null) return stored;
-  } catch {
-    /* ignore */
-  }
   return row.remark ?? '';
 }
 
-function isFavorite(row: FbPixelShareRecord): boolean {
-  if (favoriteOverrides.value[row.id] !== undefined) return !!favoriteOverrides.value[row.id];
-  return !!row.favorite;
-}
-
-function toggleFavorite(row: FbPixelShareRecord) {
-  favoriteOverrides.value = {
-    ...favoriteOverrides.value,
-    [row.id]: !isFavorite(row),
-  };
-  fbControlLog('site:pixel-page', '切换像素收藏（本地）', { id: row.id });
+async function toggleFavorite(row: FbPixelShareRecord) {
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    return;
+  }
+  const next = !row.favorite;
+  try {
+    await mergePixelShareInExtension({ id: row.id, favorite: next });
+    row.favorite = next;
+    fbControlLog('site:pixel-page', '切换像素收藏（IndexedDB）', { id: row.id, favorite: next });
+  } catch (e: unknown) {
+    errorMsg.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 function sortMark(key: Exclude<PixelSortKey, ''>): 'none' | 'asc' | 'desc' {
@@ -84,7 +134,17 @@ const filtered = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) return rows.value;
   return rows.value.filter((r) => {
-    const blob = [r.pixelName, r.pixelId, r.bmName, r.bmId, r.ownerName, r.ownerId, r.role, remarkDisplay(r)]
+    const blob = [
+      r.pixelName,
+      r.pixelId,
+      r.bmName,
+      r.bmId,
+      r.ownerName,
+      r.ownerId,
+      r.role,
+      r.activeTime,
+      remarkDisplay(r),
+    ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -104,6 +164,8 @@ function getSortable(row: FbPixelShareRecord, key: Exclude<PixelSortKey, ''>): s
       return (row.role || '').toLowerCase();
     case 'capturedAt':
       return row.capturedAt || 0;
+    case 'activeTime':
+      return row.activeTime || '';
     default:
       return '';
   }
@@ -141,9 +203,19 @@ const pagedRows = computed(() => {
   return sortedFiltered.value.slice(start, start + pageSize.value);
 });
 
-watch(searchQuery, () => {
+function runPixelSearch() {
+  searchQuery.value = searchInput.value.trim();
   currentPage.value = 1;
-});
+  errorMsg.value = '';
+  fbControlLog('site:pixel-page', '执行搜索', { q: searchQuery.value || '(全部)' });
+}
+
+function onSearchInputKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    runPixelSearch();
+  }
+}
 
 watch(totalPages, (tp) => {
   if (currentPage.value > tp) currentPage.value = tp;
@@ -198,34 +270,58 @@ async function copyBmLine(row: FbPixelShareRecord) {
 }
 
 function shareCellClass(ok?: boolean) {
-  if (ok === true) return 'share-ico share-ico--ok';
-  if (ok === false) return 'share-ico share-ico--bad';
-  return 'share-ico share-ico--none';
+  return ok === true ? 'share-ico share-ico--ok' : 'share-ico share-ico--bad';
 }
 
-function loadAdState(id: string) {
-  return pixelAdLoadUi[id] ?? 'idle';
+function shareMark(ok?: boolean) {
+  return ok === true ? '✓' : '✗';
 }
 
-function loadAdminState(id: string) {
-  return pixelAdminLoadUi[id] ?? 'idle';
+async function loadPixelRelationCount(row: FbPixelShareRecord, kind: PixelRelationCountKind) {
+  const key = pixelCountKey(row.id, kind);
+  const cur = pixelCountCells[key];
+  if (cur?.status === 'loading') return;
+
+  const pixelId = row.pixelId?.trim() || '';
+  const bmId = row.bmId?.trim() || '';
+  if (!pixelId || !bmId) {
+    pixelCountCells[key] = { status: 'error', count: 0 };
+    errorMsg.value = '该行缺少像素 ID 或 BM ID，无法拉取数量';
+    return;
+  }
+
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    return;
+  }
+
+  pixelCountCells[key] = { status: 'loading' };
+  errorMsg.value = '';
+  fbControlLog('site:pixel-page', '拉取像素关联数量', { kind, pixelId, bmId });
+  try {
+    const count = await fetchPixelRelationCountFromSite(kind, pixelId, bmId);
+    pixelCountCells[key] = { status: 'loaded', count };
+  } catch (e: unknown) {
+    pixelCountCells[key] = { status: 'error', count: 0 };
+    errorMsg.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
-async function onLoadAdAccount(row: FbPixelShareRecord) {
-  if (loadAdState(row.id) === 'loading') return;
-  pixelAdLoadUi[row.id] = 'loading';
-  fbControlLog('site:pixel-page', '加载广告账号（占位）', { pixelId: row.pixelId });
-  await new Promise((r) => setTimeout(r, 500));
-  pixelAdLoadUi[row.id] = row.adAccountId ? 'idle' : 'empty';
+function onPixelCountClick(row: FbPixelShareRecord, kind: PixelRelationCountKind) {
+  const cell = getPixelCountCell(row.id, kind);
+  if (cell.status === 'loaded') return;
+  void loadPixelRelationCount(row, kind);
 }
 
-async function onLoadAdmin(row: FbPixelShareRecord) {
-  if (loadAdminState(row.id) === 'loading') return;
-  pixelAdminLoadUi[row.id] = 'loading';
-  fbControlLog('site:pixel-page', '加载管理员（占位）', { pixelId: row.pixelId });
-  await new Promise((r) => setTimeout(r, 500));
-  pixelAdminLoadUi[row.id] = 'empty';
+function onPixelCountRefresh(row: FbPixelShareRecord, kind: PixelRelationCountKind) {
+  void loadPixelRelationCount(row, kind);
 }
+
+const pixelCountColumnDefs: { kind: PixelRelationCountKind; label: string }[] = [
+  { kind: 'ad_account', label: '广告账号' },
+  { kind: 'admin', label: '管理员' },
+  { kind: 'partner', label: '合作伙伴' },
+];
 
 function openRemarkModal(row: FbPixelShareRecord) {
   remarkModalRow.value = row;
@@ -237,51 +333,105 @@ function closeRemarkModal() {
   remarkDraft.value = '';
 }
 
-function saveRemarkModal() {
+async function saveRemarkModal() {
   if (!remarkModalRow.value) return;
-  const id = remarkModalRow.value.id;
-  try {
-    sessionStorage.setItem(REMARK_KEY(id), remarkDraft.value.trim());
-  } catch {
-    errorMsg.value = '无法写入本地备注';
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
     return;
   }
-  errorMsg.value = '';
-  closeRemarkModal();
+  const row = remarkModalRow.value;
+  const text = remarkDraft.value.trim();
+  try {
+    await mergePixelShareInExtension({ id: row.id, remark: text });
+    row.remark = text || undefined;
+    errorMsg.value = '';
+    closeRemarkModal();
+    fbControlLog('site:pixel-page', '备注已写入 IndexedDB', { id: row.id });
+  } catch (e: unknown) {
+    errorMsg.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 function batchPlaceholder(action: string) {
-  if (!selectedCount.value) {
+  if (action !== '筛选' && !selectedCount.value) {
     errorMsg.value = '请先在表格中勾选至少一行';
     return;
   }
   errorMsg.value = '';
   fbControlLog('site:pixel-page', `批量操作（待接入）：${action}`, { selected: selectedCount.value });
-  errorMsg.value = `「${action}」待对接扩展，已记录操作意图`;
+  errorMsg.value = `「${action}」待对接，已记录操作意图`;
 }
 
-async function refreshFromExtension() {
+function openPixelDrawer(kind: PixelDrawerKind) {
+  errorMsg.value = '';
+  if (kind !== 'batch_create') {
+    if (selectedRows.value.length !== 1) {
+      errorMsg.value = '请仅勾选一行像素后再操作';
+      return;
+    }
+    const ctx = pixelDrawerContextFromRows(selectedRows.value);
+    if (!ctx) {
+      errorMsg.value = '所选行需包含有效的 BM ID 与像素 ID';
+      return;
+    }
+    pixelDrawerContext.value = ctx;
+  } else {
+    pixelDrawerContext.value = null;
+  }
+  pixelDrawerKind.value = kind;
+  pixelDrawerOpen.value = true;
+}
+
+function closePixelDrawer() {
+  pixelDrawerOpen.value = false;
+}
+
+async function onPixelDrawerCompleted() {
+  await syncFromGraph();
+}
+
+function toggleSettingsPopover() {
+  settingsOpen.value = !settingsOpen.value;
+  if (settingsOpen.value) {
+    settingsDraftMode.value = savedCollectMode.value;
+  }
+}
+
+function savePixelSettings() {
+  savedCollectMode.value = settingsDraftMode.value;
+  try {
+    localStorage.setItem(COLLECT_MODE_KEY, savedCollectMode.value);
+  } catch {
+    /* ignore */
+  }
+  settingsOpen.value = false;
+  fbControlLog('site:pixel-page', '已保存像素采集设置', { mode: savedCollectMode.value });
+}
+
+function onGlobalPointerDown(ev: PointerEvent) {
+  if (!settingsOpen.value) return;
+  const t = ev.target as Node;
+  const b = batchSettingsWrapRef.value;
+  if (b && b.contains(t)) return;
+  settingsOpen.value = false;
+}
+
+/** 从扩展 IndexedDB 读取缓存（不请求 Graph） */
+async function loadFromExtensionCache() {
   errorMsg.value = '';
   loading.value = true;
-  fbControlLog('site:pixel-page', '从扩展拉取像素分享列表');
+  fbControlLog('site:pixel-page', '从扩展 IndexedDB 读取像素缓存');
   try {
     if (!extensionConfigured()) {
       throw new Error('请在 site/.env.development 中配置 VITE_EXTENSION_ID');
     }
-    try {
-      await collectPixelSharesFromActiveFacebookTab();
-    } catch (e: unknown) {
-      fbControlLog(
-        'site:pixel-page',
-        '活动页采集跳过（可忽略：若当前 Chrome 活动标签不是 Facebook）',
-        e instanceof Error ? e.message : e
-      );
-    }
     const res = await fetchPixelSharesFromExtension();
     if (!res.success) throw new Error(res.error || '读取失败');
     rows.value = [...(res.payload?.list || [])].sort((a, b) => (b.capturedAt || 0) - (a.capturedAt || 0));
-    markPixelListFetched();
-    fbControlLog('site:pixel-page', '像素列表已更新', { count: rows.value.length });
+    if (rows.value.length) {
+      markPixelListFetched();
+    }
+    fbControlLog('site:pixel-page', '像素缓存已加载', { count: rows.value.length });
   } catch (e: unknown) {
     errorMsg.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -289,18 +439,55 @@ async function refreshFromExtension() {
   }
 }
 
+/** 顶栏「更新」：Graph 同步写入 IndexedDB 后再读缓存 */
+async function syncFromGraph() {
+  errorMsg.value = '';
+  loading.value = true;
+  fbControlLog('site:pixel-page', '请求扩展执行 Graph 同步像素');
+  try {
+    if (!extensionConfigured()) {
+      throw new Error('请在 site/.env.development 中配置 VITE_EXTENSION_ID');
+    }
+    const syncRes = await syncPixelSharesFromGraphViaExtension({ mode: savedCollectMode.value });
+    if (!syncRes.success) {
+      throw new Error(syncRes.error || 'Graph 同步像素失败');
+    }
+    fbControlLog('site:pixel-page', 'Graph 同步像素完成', syncRes.payload);
+
+    if (!syncRes.payload?.total) {
+      try {
+        await collectPixelSharesFromActiveFacebookTab({ mode: savedCollectMode.value });
+      } catch (e: unknown) {
+        fbControlLog(
+          'site:pixel-page',
+          'Graph 无数据，活动页 DOM 回退失败（需 Facebook 标签在前台）',
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+
+    await loadFromExtensionCache();
+  } catch (e: unknown) {
+    errorMsg.value = e instanceof Error ? e.message : String(e);
+    loading.value = false;
+  }
+}
+
 function onExtensionMenuReady() {
   pixelsShellExtensionReady.value = true;
-  fbControlLog('site:pixel-page', '扩展已连通，拉取像素列表');
-  void refreshFromExtension();
+  fbControlLog('site:pixel-page', '扩展已连通，加载像素本地缓存');
+  void loadFromExtensionCache();
 }
 
 onMounted(() => {
-  registerPixelListRefresh(refreshFromExtension);
+  document.addEventListener('pointerdown', onGlobalPointerDown, true);
+  registerPixelsGraphSync(syncFromGraph);
+  fbControlLog('site:pixel-page', '页面挂载，已注册 Graph 更新');
 });
 
 onUnmounted(() => {
-  unregisterPixelListRefresh();
+  document.removeEventListener('pointerdown', onGlobalPointerDown, true);
+  unregisterPixelsGraphSync();
   pixelsShellExtensionReady.value = false;
 });
 </script>
@@ -308,19 +495,21 @@ onUnmounted(() => {
 <template>
   <ExtensionMenuGate @ready="onExtensionMenuReady">
     <div class="fb-page">
-      <p v-if="loading" class="sync-hint muted">正在从扩展同步列表…</p>
+      <p v-if="loading" class="sync-hint muted">正在加载…</p>
 
       <div class="search-actions-row">
         <div class="search-cluster search-row search-row--flex">
           <input
-            v-model="searchQuery"
+            v-model="searchInput"
             class="search-input"
             type="search"
             placeholder="搜索：像素ID或BM ID"
+            @keydown="onSearchInputKeydown"
           />
-          <button type="button" class="btn-filter" title="筛选（占位）" @click="batchPlaceholder('筛选')">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16v4H4zM7 12h10v4H7zM10 20h4v2h-4z"></path>
+          <button type="button" class="btn-search" title="搜索" @click="runPixelSearch">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="M20 20l-4-4"></path>
             </svg>
           </button>
         </div>
@@ -330,20 +519,20 @@ onUnmounted(() => {
             <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="batchPlaceholder('BM间分享')">
               BM间分享
             </button>
-            <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="batchPlaceholder('分配给账号')">
+            <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="openPixelDrawer('assign_to_account')">
               分配给账号
             </button>
-            <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="batchPlaceholder('分配给人员')">
+            <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="openPixelDrawer('assign_to_people')">
               分配给人员
             </button>
-            <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="batchPlaceholder('批量创建')">
+            <button type="button" class="btn batch-btn batch-btn--create" @click="openPixelDrawer('batch_create')">
               批量创建
             </button>
             <button
               type="button"
               class="btn batch-btn batch-btn--danger"
               :disabled="!selectedCount"
-              @click="batchPlaceholder('删除广告账号')"
+              @click="openPixelDrawer('delete_ad_account')"
             >
               删除广告账号
             </button>
@@ -351,7 +540,7 @@ onUnmounted(() => {
               type="button"
               class="btn batch-btn batch-btn--danger"
               :disabled="!selectedCount"
-              @click="batchPlaceholder('删除合作伙伴')"
+              @click="openPixelDrawer('delete_partner')"
             >
               删除合作伙伴
             </button>
@@ -359,18 +548,42 @@ onUnmounted(() => {
               type="button"
               class="btn batch-btn batch-btn--danger"
               :disabled="!selectedCount"
-              @click="batchPlaceholder('删除管理员')"
+              @click="openPixelDrawer('delete_admin')"
             >
               删除管理员
             </button>
-            <button type="button" class="btn-filter batch-gear" title="设置（占位）" @click="batchPlaceholder('设置')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path
-                  d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-                ></path>
-              </svg>
-            </button>
+            <div ref="batchSettingsWrapRef" class="pixel-settings-wrap">
+              <button
+                type="button"
+                class="batch-gear batch-gear--solid"
+                title="默认设置"
+                @click.stop="toggleSettingsPopover"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path
+                    d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+                  ></path>
+                </svg>
+              </button>
+              <div
+                v-if="settingsOpen"
+                class="pixel-settings-popover"
+                role="dialog"
+                aria-label="像素采集设置"
+                @click.stop
+              >
+                <label class="pixel-settings-row">
+                  <input v-model="settingsDraftMode" type="radio" name="pixel-collect-mode-batch" value="all_pixels" />
+                  <span>搜索所有像素</span>
+                </label>
+                <label class="pixel-settings-row">
+                  <input v-model="settingsDraftMode" type="radio" name="pixel-collect-mode-batch" value="bm_id" />
+                  <span>搜索 BM ID</span>
+                </label>
+                <button type="button" class="btn primary pixel-settings-save" @click="savePixelSettings">保存设置</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -390,6 +603,9 @@ onUnmounted(() => {
             <col class="colgroup-bmshare" />
             <col class="colgroup-ad" />
             <col class="colgroup-admin" />
+            <col class="colgroup-partner" />
+            <col class="colgroup-active" />
+            <col class="colgroup-active-time" />
             <col class="colgroup-time" />
           </colgroup>
           <thead>
@@ -404,64 +620,93 @@ onUnmounted(() => {
               <th class="num sticky-col sticky-num">序号</th>
               <th class="ico sticky-col sticky-ico">收藏</th>
               <th
-                class="sticky-col sticky-pixel sort-th"
+                class="sticky-col sticky-pixel col-align-left sort-th"
                 :class="{ 'sort-th--on': sortMark('pixelName') !== 'none' }"
                 @click="sortToggle('pixelName')"
               >
-                <span class="sort-th-label">像素</span>
-                <span class="sort-carets"
-                  ><span class="caret" :class="{ on: sortMark('pixelName') === 'asc' }">▲</span
-                  ><span class="caret" :class="{ on: sortMark('pixelName') === 'desc' }">▼</span></span
-                >
+                <span class="sort-th-inner">
+                  <span class="sort-th-label">像素</span>
+                  <span class="sort-carets"
+                    ><span class="caret" :class="{ on: sortMark('pixelName') === 'asc' }">▲</span
+                    ><span class="caret" :class="{ on: sortMark('pixelName') === 'desc' }">▼</span></span
+                  >
+                </span>
               </th>
               <th
-                class="sticky-col sticky-bm sort-th"
+                class="col-bm col-align-left sort-th"
                 :class="{ 'sort-th--on': sortMark('bmName') !== 'none' }"
                 @click="sortToggle('bmName')"
               >
-                <span class="sort-th-label">BM</span>
-                <span class="sort-carets"
-                  ><span class="caret" :class="{ on: sortMark('bmName') === 'asc' }">▲</span
-                  ><span class="caret" :class="{ on: sortMark('bmName') === 'desc' }">▼</span></span
-                >
+                <span class="sort-th-inner">
+                  <span class="sort-th-label">BM</span>
+                  <span class="sort-carets"
+                    ><span class="caret" :class="{ on: sortMark('bmName') === 'asc' }">▲</span
+                    ><span class="caret" :class="{ on: sortMark('bmName') === 'desc' }">▼</span></span
+                  >
+                </span>
               </th>
               <th
-                class="col-owner sort-th"
+                class="col-owner col-align-left sort-th"
                 :class="{ 'sort-th--on': sortMark('ownerName') !== 'none' }"
                 @click="sortToggle('ownerName')"
               >
-                <span class="sort-th-label">业主</span>
-                <span class="sort-carets"
-                  ><span class="caret" :class="{ on: sortMark('ownerName') === 'asc' }">▲</span
-                  ><span class="caret" :class="{ on: sortMark('ownerName') === 'desc' }">▼</span></span
-                >
+                <span class="sort-th-inner">
+                  <span class="sort-th-label">业主</span>
+                  <span class="sort-carets"
+                    ><span class="caret" :class="{ on: sortMark('ownerName') === 'asc' }">▲</span
+                    ><span class="caret" :class="{ on: sortMark('ownerName') === 'desc' }">▼</span></span
+                  >
+                </span>
               </th>
-              <th class="col-remark">备注</th>
+              <th class="center col-remark th-plain">备注</th>
               <th
-                class="col-role sort-th"
+                class="center col-role sort-th"
                 :class="{ 'sort-th--on': sortMark('role') !== 'none' }"
                 @click="sortToggle('role')"
               >
-                <span class="sort-th-label">角色</span>
-                <span class="sort-carets"
-                  ><span class="caret" :class="{ on: sortMark('role') === 'asc' }">▲</span
-                  ><span class="caret" :class="{ on: sortMark('role') === 'desc' }">▼</span></span
-                >
+                <span class="sort-th-inner">
+                  <span class="sort-th-label">角色</span>
+                  <span class="sort-carets"
+                    ><span class="caret" :class="{ on: sortMark('role') === 'asc' }">▲</span
+                    ><span class="caret" :class="{ on: sortMark('role') === 'desc' }">▼</span></span
+                  >
+                </span>
               </th>
-              <th class="center col-share">分享</th>
-              <th class="center col-share">BM分享</th>
-              <th class="col-load">广告账号</th>
-              <th class="col-load">管理员</th>
+              <th class="center col-share th-plain">分享</th>
+              <th class="center col-bmshare th-plain">BM分享</th>
               <th
-                class="col-captured sort-th"
+                v-for="col in pixelCountColumnDefs"
+                :key="col.kind"
+                class="col-load center th-plain"
+              >
+                {{ col.label }}
+              </th>
+              <th class="center col-active th-plain">活跃状态</th>
+              <th
+                class="center col-active-time sort-th"
+                :class="{ 'sort-th--on': sortMark('activeTime') !== 'none' }"
+                @click="sortToggle('activeTime')"
+              >
+                <span class="sort-th-inner">
+                  <span class="sort-th-label">活跃时间</span>
+                  <span class="sort-carets"
+                    ><span class="caret" :class="{ on: sortMark('activeTime') === 'asc' }">▲</span
+                    ><span class="caret" :class="{ on: sortMark('activeTime') === 'desc' }">▼</span></span
+                  >
+                </span>
+              </th>
+              <th
+                class="center col-captured sort-th"
                 :class="{ 'sort-th--on': sortMark('capturedAt') !== 'none' }"
                 @click="sortToggle('capturedAt')"
               >
-                <span class="sort-th-label">采集时间</span>
-                <span class="sort-carets"
-                  ><span class="caret" :class="{ on: sortMark('capturedAt') === 'asc' }">▲</span
-                  ><span class="caret" :class="{ on: sortMark('capturedAt') === 'desc' }">▼</span></span
-                >
+                <span class="sort-th-inner">
+                  <span class="sort-th-label">采集时间</span>
+                  <span class="sort-carets"
+                    ><span class="caret" :class="{ on: sortMark('capturedAt') === 'asc' }">▲</span
+                    ><span class="caret" :class="{ on: sortMark('capturedAt') === 'desc' }">▼</span></span
+                  >
+                </span>
               </th>
             </tr>
           </thead>
@@ -472,91 +717,88 @@ onUnmounted(() => {
               </td>
               <td class="num sticky-col sticky-num">{{ rowSerial(idx) }}</td>
               <td class="ico sticky-col sticky-ico">
-                <button type="button" class="star" :class="{ on: isFavorite(row) }" @click="toggleFavorite(row)">★</button>
+                <button type="button" class="star" :class="{ on: row.favorite }" @click="toggleFavorite(row)">★</button>
               </td>
-              <td class="sticky-col sticky-pixel">
+              <td class="sticky-col sticky-pixel col-align-left">
                 <div class="linkish">{{ dash(row.pixelName) }}</div>
                 <div class="mono sub">{{ dash(row.pixelId) }}</div>
               </td>
-              <td class="sticky-col sticky-bm bm-cell">
+              <td class="col-bm col-align-left bm-cell">
                 <div class="bm-name-row">
                   <span class="linkish bm-name">{{ dash(row.bmName) }}</span>
                   <button type="button" class="btn-icon-copy" title="复制 BM" @click="copyBmLine(row)">⎘</button>
                 </div>
                 <div v-if="row.bmId" class="mono sub">{{ row.bmId }}</div>
               </td>
-              <td class="col-owner">
+              <td class="col-owner col-align-left">
                 <div class="cell-ellipsis">{{ dash(row.ownerName) }}</div>
                 <div v-if="row.ownerId" class="mono sub cell-ellipsis">{{ row.ownerId }}</div>
               </td>
-              <td class="remark-cell col-remark">
-                <span class="remark-text">{{ dash(remarkDisplay(row)) }}</span>
-                <button type="button" class="btn-icon-edit" title="编辑备注" @click="openRemarkModal(row)">✎</button>
+              <td class="remark-cell col-remark center">
+                <div class="remark-cell-inner">
+                  <span class="remark-text">{{ dash(remarkDisplay(row)) }}</span>
+                  <button type="button" class="btn-icon-edit" title="编辑备注" @click="openRemarkModal(row)">✎</button>
+                </div>
               </td>
-              <td class="col-role cell-ellipsis">{{ dash(row.role) }}</td>
+              <td class="center col-role">{{ dash(row.role) }}</td>
               <td class="center col-share">
-                <span :class="shareCellClass(row.shareOk)">{{ row.shareOk === true ? '✓' : row.shareOk === false ? '✗' : '—' }}</span>
+                <span :class="shareCellClass(row.shareOk)">{{ shareMark(row.shareOk) }}</span>
               </td>
-              <td class="center col-share">
-                <span :class="shareCellClass(row.bmShareOk)">{{
-                  row.bmShareOk === true ? '✓' : row.bmShareOk === false ? '✗' : '—'
-                }}</span>
+              <td class="center col-bmshare">
+                <span :class="shareCellClass(row.bmShareOk)">{{ shareMark(row.bmShareOk) }}</span>
               </td>
-              <td class="col-load">
-                <button
-                  type="button"
-                  class="btn-pay btn-pay--sm"
-                  :class="{ 'btn-pay--empty': loadAdState(row.id) === 'empty', 'btn-pay--err': loadAdState(row.id) === 'error' }"
-                  :disabled="loadAdState(row.id) === 'loading'"
-                  @click="onLoadAdAccount(row)"
-                >
-                  <template v-if="loadAdState(row.id) === 'loading'">
-                    <span class="pay-spin" aria-hidden="true"></span>
-                    加载中
+              <td
+                v-for="col in pixelCountColumnDefs"
+                :key="col.kind"
+                class="col-load center"
+              >
+                <div class="pixel-count-cell">
+                  <template v-if="getPixelCountCell(row.id, col.kind).status === 'idle'">
+                    <button
+                      type="button"
+                      class="btn-pay btn-pay--sm btn-pay--load"
+                      @click="onPixelCountClick(row, col.kind)"
+                    >
+                      加载
+                    </button>
                   </template>
-                  <template v-else-if="loadAdState(row.id) === 'empty'">无账号</template>
-                  <template v-else-if="loadAdState(row.id) === 'error'">重试</template>
-                  <template v-else>加载</template>
-                </button>
-              </td>
-              <td class="col-load">
-                <button
-                  type="button"
-                  class="btn-pay btn-pay--sm"
-                  :class="{
-                    'btn-pay--empty': loadAdminState(row.id) === 'empty',
-                    'btn-pay--err': loadAdminState(row.id) === 'error',
-                  }"
-                  :disabled="loadAdminState(row.id) === 'loading'"
-                  @click="onLoadAdmin(row)"
-                >
-                  <template v-if="loadAdminState(row.id) === 'loading'">
+                  <template v-else-if="getPixelCountCell(row.id, col.kind).status === 'loading'">
                     <span class="pay-spin" aria-hidden="true"></span>
-                    加载中
                   </template>
-                  <template v-else-if="loadAdminState(row.id) === 'empty'">无数据</template>
-                  <template v-else-if="loadAdminState(row.id) === 'error'">重试</template>
-                  <template v-else>加载</template>
-                </button>
+                  <template v-else>
+                    <span class="count-badge">{{ getPixelCountCell(row.id, col.kind).count ?? 0 }}</span>
+                    <button
+                      type="button"
+                      class="btn-count-refresh"
+                      title="刷新"
+                      :disabled="getPixelCountCell(row.id, col.kind).status === 'loading'"
+                      @click="onPixelCountRefresh(row, col.kind)"
+                    >
+                      ↻
+                    </button>
+                  </template>
+                </div>
               </td>
-              <td class="col-captured muted small cell-ellipsis">{{ row.capturedAt ? new Date(row.capturedAt).toLocaleString('zh-CN') : '—' }}</td>
+              <td class="center col-active">
+                <span
+                  class="active-dot"
+                  :class="{ 'active-dot--on': row.activeOk === true }"
+                  :title="row.activeOk === true ? '活跃' : row.activeOk === false ? '未活跃' : '—'"
+                ></span>
+              </td>
+              <td class="center col-active-time muted small">{{ dash(row.activeTime) }}</td>
+              <td class="center col-captured muted small">{{ row.capturedAt ? new Date(row.capturedAt).toLocaleString('zh-CN') : '—' }}</td>
             </tr>
             <tr v-if="!pagedRows.length">
               <td :colspan="COL_COUNT" class="empty">
-                暂无数据。请确认扩展已加载、扩展 ID 正确，并已在 Facebook 相关页面触发采集。
+                暂无数据。请点击顶栏「更新」从 Graph 同步，或确认扩展已加载且已保存 access_token。
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div v-if="sortedFiltered.length" class="pager pixel-pager">
-        <div class="pixel-pager-tags">
-          <span class="pixel-tag">列表：{{ pagedRows.length }} / 筛后 {{ filtered.length }}</span>
-          <span class="pixel-tag">已选 {{ selectedCount }} / 共 {{ rows.length }}</span>
-          <button type="button" class="btn batch-btn" @click="batchPlaceholder('购买')">购买</button>
-          <button type="button" class="btn batch-btn" @click="batchPlaceholder('记录')">记录</button>
-        </div>
+      <div v-if="sortedFiltered.length" class="pager">
         <div class="pager-info">
           共 <strong>{{ sortedFiltered.length }}</strong> 条
           <label class="pager-size">
@@ -597,14 +839,6 @@ onUnmounted(() => {
           >
             末页
           </button>
-          <button type="button" class="btn-filter pager-gear" title="列设置（占位）" @click="batchPlaceholder('列设置')">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path
-                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-              ></path>
-            </svg>
-          </button>
         </div>
       </div>
     </div>
@@ -620,6 +854,13 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <PixelOperationDrawer
+      :open="pixelDrawerOpen"
+      :preset="pixelDrawerPreset"
+      :context="pixelDrawerContext"
+      @close="closePixelDrawer"
+      @completed="onPixelDrawerCompleted"
+    />
   </ExtensionMenuGate>
 </template>
 
@@ -679,7 +920,7 @@ onUnmounted(() => {
 }
 .search-actions-row .search-cluster {
   flex: 1;
-  min-width: 240px;
+  min-width: 250px;
 }
 .search-actions-row .batch-cluster {
   display: flex;
@@ -695,7 +936,7 @@ onUnmounted(() => {
 }
 .search-input {
   flex: 1;
-  min-width: 200px;
+  min-width: 210px;
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid var(--fb-border, #374151);
@@ -703,7 +944,7 @@ onUnmounted(() => {
   color: var(--fb-input-text, #e5e7eb);
   font-size: 13px;
 }
-.btn-filter {
+.btn-search {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -716,9 +957,10 @@ onUnmounted(() => {
   color: var(--fb-muted, #9ca3af);
   cursor: pointer;
 }
-.btn-filter:hover {
+.btn-search:hover {
   color: var(--fb-link, #93c5fd);
   border-color: var(--fb-link, #3b82f6);
+  background: rgba(59, 130, 246, 0.12);
 }
 .batch-meta {
   font-size: 13px;
@@ -749,9 +991,76 @@ onUnmounted(() => {
 .batch-btn--danger:hover:not(:disabled) {
   background: #b91c1c;
 }
+.batch-btn--create {
+  background: #7c3aed;
+  color: #fff;
+}
+.batch-btn--create:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
 .batch-gear {
   width: 38px;
   height: 38px;
+}
+.pixel-settings-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.pixel-settings-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 218px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pixel-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.pixel-settings-save {
+  width: 100%;
+  margin-top: 2px;
+}
+.batch-gear--solid {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+.batch-gear--solid:hover {
+  filter: brightness(1.06);
+}
+.active-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6b7280;
+  vertical-align: middle;
+}
+.active-dot--on {
+  background: #22c55e;
 }
 .table-wrap {
   width: 100%;
@@ -783,27 +1092,27 @@ onUnmounted(() => {
 /* 像素表：列宽全部用百分比，避免最小宽度超过视区导致横向滚动条 */
 .pixel-table-wrap {
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 .pixel-table {
   width: 100%;
-  min-width: 0;
+  min-width: 1280px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
 }
 .pixel-table col.colgroup-chk {
-  width: 3%;
+  width: 54px;
 }
 .pixel-table col.colgroup-num {
-  width: 3%;
+  width: 66px;
 }
 .pixel-table col.colgroup-ico {
-  width: 2.5%;
+  width: 62px;
 }
 .pixel-table col.colgroup-pixel {
-  width: 10%;
+  width: 188px;
 }
 .pixel-table col.colgroup-bm {
   width: 12%;
@@ -815,40 +1124,73 @@ onUnmounted(() => {
   width: 9%;
 }
 .pixel-table col.colgroup-role {
-  width: 5%;
+  width: 128px;
 }
 .pixel-table col.colgroup-share {
-  width: 4%;
+  width: 64px;
 }
 .pixel-table col.colgroup-bmshare {
-  width: 4%;
+  width: 88px;
 }
-.pixel-table col.colgroup-ad {
-  width: 6%;
+.pixel-table col.colgroup-ad,
+.pixel-table col.colgroup-admin,
+.pixel-table col.colgroup-partner {
+  width: 116px;
 }
-.pixel-table col.colgroup-admin {
-  width: 6%;
+.pixel-table col.colgroup-active {
+  width: 5%;
+}
+.pixel-table col.colgroup-active-time {
+  width: 12%;
 }
 .pixel-table col.colgroup-time {
-  width: 20.5%;
+  width: 9%;
 }
-/* 无横向滚动时不必 sticky；百分比列宽也无法与固定 left 对齐 */
+/* 前四列（勾选/序号/收藏/像素）横向滚动时固定左侧 */
 .pixel-table-wrap .sticky-col {
-  position: static;
-  left: auto;
-  box-shadow: none;
+  position: sticky;
+  background-clip: padding-box;
 }
-.pixel-table-wrap .sticky-chk,
-.pixel-table-wrap .sticky-num,
-.pixel-table-wrap .sticky-ico,
-.pixel-table-wrap .sticky-pixel,
-.pixel-table-wrap .sticky-bm,
-.pixel-table-wrap .chk,
-.pixel-table-wrap .num,
-.pixel-table-wrap .ico {
-  width: auto;
-  min-width: 0;
-  max-width: none;
+.pixel-table-wrap thead th.sticky-col {
+  z-index: 6;
+  background-color: var(--fb-th-bg, #0f172a);
+}
+.pixel-table-wrap tbody td.sticky-col {
+  z-index: 2;
+}
+.pixel-table-wrap tbody tr:nth-child(even) td.sticky-col {
+  background-color: var(--fb-row-even, #0c1222);
+}
+.pixel-table-wrap tbody tr:nth-child(odd) td.sticky-col {
+  background-color: var(--fb-surface-a, #111827);
+}
+.pixel-table-wrap .sticky-chk {
+  left: 0;
+  width: 54px;
+  min-width: 54px;
+  max-width: 54px;
+}
+.pixel-table-wrap .sticky-num {
+  left: 54px;
+  width: 66px;
+  min-width: 66px;
+  max-width: 66px;
+}
+.pixel-table-wrap .sticky-ico {
+  left: 120px;
+  width: 62px;
+  min-width: 62px;
+  max-width: 62px;
+}
+.pixel-table-wrap .sticky-pixel {
+  left: 182px;
+  width: 188px;
+  min-width: 188px;
+  max-width: 188px;
+  box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.45);
+}
+.pixel-table-wrap thead th.sticky-pixel {
+  z-index: 7;
 }
 .pixel-table tbody tr:nth-child(even) td {
   background-color: var(--fb-row-even, #0c1222);
@@ -894,36 +1236,34 @@ tbody td.sticky-col {
 }
 .sticky-chk {
   left: 0;
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
+  width: 54px;
+  min-width: 54px;
+  max-width: 54px;
   box-sizing: border-box;
 }
 .sticky-num {
-  left: 44px;
-  width: 56px;
-  min-width: 56px;
-  max-width: 56px;
+  left: 54px;
+  width: 66px;
+  min-width: 66px;
+  max-width: 66px;
   box-sizing: border-box;
 }
 .sticky-ico {
-  left: 100px;
-  width: 52px;
-  min-width: 52px;
-  max-width: 52px;
+  left: 120px;
+  width: 62px;
+  min-width: 62px;
+  max-width: 62px;
   box-sizing: border-box;
 }
 .sticky-pixel {
-  left: 152px;
-  width: 236px;
-  min-width: 236px;
-  max-width: 236px;
+  left: 182px;
+  width: 188px;
+  min-width: 188px;
+  max-width: 188px;
   box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.55);
 }
-.sticky-bm {
-  left: 388px;
-  min-width: 200px;
-  box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.55);
+.col-bm {
+  min-width: 210px;
 }
 .chk {
   width: 44px;
@@ -995,10 +1335,14 @@ tbody td.sticky-col {
   color: var(--fb-link, #93c5fd);
 }
 .remark-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   min-width: 0;
+}
+.remark-cell-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  vertical-align: middle;
 }
 .cell-ellipsis {
   min-width: 0;
@@ -1018,8 +1362,9 @@ tbody td.sticky-col {
   white-space: nowrap;
 }
 .remark-text {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: calc(100% - 28px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1055,19 +1400,159 @@ tbody td.sticky-col {
 .share-ico--bad {
   color: #f87171;
 }
-.share-ico--none {
-  color: var(--fb-muted, #6b7280);
+.pixel-table th,
+.pixel-table td {
+  min-width: 58px;
+  text-align: center;
+}
+.pixel-table th.col-align-left,
+.pixel-table td.col-align-left {
+  text-align: left;
+}
+.pixel-table .num {
+  text-align: center;
+}
+.pixel-table .sort-th.center .sort-th-inner {
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+}
+.pixel-table .remark-cell.center .remark-cell-inner {
+  justify-content: center;
+}
+.pixel-table .col-share {
+  min-width: 64px;
+  width: 64px;
+  max-width: 64px;
+  box-sizing: border-box;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.pixel-table .col-bmshare {
+  min-width: 88px;
+  width: 88px;
+  max-width: 88px;
+  box-sizing: border-box;
+  padding-left: 6px;
+  padding-right: 6px;
+  white-space: nowrap;
+}
+.pixel-table .col-load {
+  min-width: 116px;
+  width: 116px;
+  max-width: 116px;
+  box-sizing: border-box;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.pixel-table .col-load .btn-pay--sm {
+  min-width: 0;
+  width: 100%;
+  max-width: 100px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.pixel-table .col-load .pixel-count-cell {
+  width: 100%;
+  max-width: 100px;
+  margin: 0 auto;
+  flex-wrap: nowrap;
+}
+.pixel-table .col-remark {
+  min-width: 100px;
+}
+.pixel-table .col-owner {
+  min-width: 110px;
+}
+.pixel-table .col-role {
+  min-width: 128px;
+  width: 128px;
+  max-width: 160px;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+  vertical-align: middle;
+}
+.pixel-table .col-active-time,
+.pixel-table .col-captured {
+  min-width: 118px;
+}
+.pixel-count-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+}
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.btn-count-refresh {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.16);
+  color: #22c55e;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+}
+.btn-count-refresh:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.28);
+}
+.btn-count-refresh:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.btn-pay--load {
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.1);
+}
+.btn-pay--load:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.18);
+}
+.pixel-table thead th.th-plain {
+  white-space: nowrap;
+  vertical-align: middle;
+  line-height: 1.25;
 }
 .sort-th {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  vertical-align: middle;
 }
 .sort-th:hover {
   color: var(--fb-link, #93c5fd);
 }
+.sort-th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  line-height: 1.25;
+  vertical-align: middle;
+}
 .sort-th-label {
-  margin-right: 4px;
+  margin-right: 0;
+  flex-shrink: 0;
 }
 .sort-carets {
   display: inline-flex;
@@ -1075,8 +1560,7 @@ tbody td.sticky-col {
   align-items: center;
   justify-content: center;
   gap: 1px;
-  margin-left: 4px;
-  vertical-align: middle;
+  flex-shrink: 0;
   font-size: 10px;
   line-height: 1;
 }
@@ -1096,7 +1580,7 @@ tbody td.sticky-col {
   font-size: 11px;
 }
 .btn-pay {
-  min-width: 84px;
+  min-width: 94px;
   padding: 4px 10px;
   font-size: 12px;
   border-radius: 6px;
@@ -1113,7 +1597,7 @@ tbody td.sticky-col {
   background: var(--fb-btn-pay-hover-bg, #254a73);
 }
 .btn-pay--sm {
-  min-width: 64px;
+  min-width: 74px;
   padding: 4px 8px;
   font-size: 11px;
 }
@@ -1158,32 +1642,18 @@ tbody td.sticky-col {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
-  padding: 12px 14px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--fb-surface-a, #111827);
   border-radius: 8px;
   border: 1px solid var(--fb-border, #374151);
-  background: var(--fb-surface-b, #1f2937);
   font-size: 13px;
-}
-.pixel-pager-tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.pixel-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--fb-link, #3b82f6);
-  color: var(--fb-link, #93c5fd);
-  font-size: 12px;
 }
 .pager-info {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   color: var(--fb-muted, #9ca3af);
 }
 .pager-size {
@@ -1209,9 +1679,6 @@ tbody td.sticky-col {
 .pager-page {
   color: var(--fb-mono, #d1d5db);
   padding: 0 6px;
-}
-.pager-gear {
-  margin-left: 4px;
 }
 .modal-overlay {
   position: fixed;

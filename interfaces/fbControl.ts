@@ -117,6 +117,25 @@ export interface FbPixelShareRecord {
   favorite?: boolean;
   /** 关联广告账户 ID，「广告账号」列加载用 */
   adAccountId?: string;
+  /** 是否有近期活跃事件（表格绿点） */
+  activeOk?: boolean;
+  /** Graph `last_fired_time` 解析后的展示时间 YYYY-MM-DD HH:mm:ss */
+  activeTime?: string;
   capturedAt: number;
   sourceUrl?: string;
 }
+
+/** 像素分享抽屉批量操作类型 */
+export type PixelDrawerKind =
+  | 'batch_create'
+  | 'assign_to_account'
+  | 'assign_to_people'
+  | 'delete_ad_account'
+  | 'delete_partner'
+  | 'delete_admin';
+
+/** 扩展向 content 传递的像素采集策略（与站点「设置」联动） */
+export type FbPixelCollectPayload = {
+  /** `all_pixels`：遍历 `me/businesses` 逐 BM 拉像素；`bm_id`：仅用当前页 URL 的 business_id */
+  mode?: 'all_pixels' | 'bm_id';
+};

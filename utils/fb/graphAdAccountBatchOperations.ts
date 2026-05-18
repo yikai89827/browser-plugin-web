@@ -4,6 +4,20 @@ import { fbControlLog } from '../fbControlLog';
 import { fetchFacebookMeNumericId } from './graphFetchMe';
 import { graphFetch } from './graphExternalFetch';
 import { redactUrlForLog } from './tokenDebugLog';
+import {
+  assignBusinessUserToAdAccount,
+  buildAdAccountAssignedUsersReadUrl,
+  formatNotBusinessScopedUserHint,
+  inviteBusinessUserByEmail,
+  parsePrimaryBmIdFromText,
+  postBusinessPartnerAgency,
+  resolveBusinessIdForAdAccount,
+  resolveBusinessIdsForAccounts,
+  resolveBusinessUserIdForPersonalInBusinesses,
+  searchBusinessUserByEmailInBusinesses,
+  type AssignedUserLookupRow,
+  type GraphBusinessUserMatch,
+} from './graphBusinessManagement';
 
 const GRAPH_VERSION = 'v21.0';
 
@@ -16,8 +30,12 @@ export type AdAccountBatchResultRow = {
   detail: string;
   /** 默认按广告账户展示；friend_uid 时第二行标题为「检测账号」 */
   resultKind?: AdAccountBatchResultKind;
+  /** 好友预检：展示用户原始输入（主页链接或 UID） */
+  displayInput?: string;
   /** 当前登录 Facebook 主页链接（检测好友卡展示） */
   currentFbProfileUrl?: string | null;
+  /** 好友预检：尚未请求 Graph，仅用于占位与遮盖层 */
+  friendCheckPending?: boolean;
 };
 
 /** Graph 单 UID 预检一行 */
@@ -26,6 +44,8 @@ export type UidGraphVerifyDetailRow = {
   ok: boolean;
   /** 成功：面向操作的说明；失败：面向用户的固定说明（不暴露 Graph 原文） */
   detail: string;
+  /** 用户输入的原始值（主页链接或 UID），用于结果卡展示 */
+  displayInput?: string;
 };
 
 export type VerifyFacebookUserIdsForBatchResult = {
@@ -33,6 +53,14 @@ export type VerifyFacebookUserIdsForBatchResult = {
   message: string;
   rows: UidGraphVerifyDetailRow[];
   currentUserProfileUrl: string | null;
+};
+
+/** 批量 Graph 可选能力（站点经扩展桥接注入） */
+export type GraphBatchOperationOptions = {
+  /** vanity 主页：扩展内 Comet 解析数字 uid */
+  resolveProfileNumericId?: (profileUrl: string) => Promise<string | null>;
+  /** 站点从 BM 列等带入的 BM id，用于 assigned_users 的 business 参数 */
+  accountBmHintIds?: string[];
 };
 
 function actPath(accountId: string): string {
@@ -183,47 +211,58 @@ function parseOneFacebookUserRefFromLine(line: string): string | null {
 }
 
 /**
- * 从多行文本解析 Facebook 用户标识（数字 UID 或 vanity 用户名），用于预检与授权接口。
- * Graph `GET /{id-or-username}?fields=…` 与后续解析为数字 id 均支持。
+ * 从多行文本解析 Facebook 用户标识，并保留原始行（用于 Graph `?id=完整主页 URL` 解析）。
  */
-export function parseFacebookUserIdsFromText(text: string): string[] {
-  const out: string[] = [];
+export type FacebookUserRefWithSource = { ref: string; sourceLine: string };
+
+/** 好友预检结果卡：优先展示用户粘贴的原始行（链接或 ID） */
+export function friendCheckDisplayInput(ref: string, sourceLine?: string): string {
+  const line = sourceLine?.trim();
+  if (line) return line;
+  return ref.trim();
+}
+
+export function parseFacebookUserRefsWithLinesFromText(text: string): FacebookUserRefWithSource[] {
+  const out: FacebookUserRefWithSource[] = [];
   const seen = new Set<string>();
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   for (const line of lines) {
     const ref = parseOneFacebookUserRefFromLine(line);
     if (ref && !seen.has(ref)) {
       seen.add(ref);
-      out.push(ref);
+      out.push({ ref, sourceLine: line });
     }
   }
   return out;
 }
 
-/** 将用户名或非规范引用解析为数字用户 id（Marketing API assigned_users 等需要数字 id） */
-async function resolveFacebookUserRefToNumericId(
-  accessToken: string,
-  userRef: string,
-  cache: Map<string, string>
-): Promise<string> {
-  const key = userRef.trim();
-  if (/^\d{5,}$/.test(key)) return key;
-  const hit = cache.get(key);
-  if (hit) return hit;
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
-    key
-  )}?fields=id&access_token=${encodeURIComponent(accessToken)}`;
-  const { ok, json, status } = await graphJson(url, { method: 'GET' });
-  if (!ok || json.error) {
-    throw new Error(formatGraphErrorBody(json, status));
+/**
+ * 从多行文本解析 Facebook 用户标识（数字 UID 或 vanity 用户名），用于预检与授权接口。
+ * 注意：Graph 对 `GET /{username}` 常不可用，好友预检会结合 `?id=主页 URL` 等方式解析。
+ */
+export function parseFacebookUserIdsFromText(text: string): string[] {
+  return parseFacebookUserRefsWithLinesFromText(text).map((p) => p.ref);
+}
+
+/**
+ * 当 `GET /{username}` 不可用（如 100/33）时，用根路径 `?id=编码后的主页 URL` 尝试解析数字 id（Open Graph 风格）。
+ */
+function profileUrlsForOgLookup(userRef: string, sourceLine?: string): string[] {
+  const ref = userRef.trim();
+  const urls = new Set<string>();
+  const add = (u: string) => {
+    const t = u.trim();
+    if (t) urls.add(t);
+  };
+  if (/^https?:\/\//i.test(ref)) add(ref);
+  if (sourceLine && /^https?:\/\//i.test(sourceLine.trim())) add(sourceLine.trim());
+  if (!/^\d+$/.test(ref)) {
+    add(`https://www.facebook.com/${ref}`);
+    add(`https://m.facebook.com/${ref}`);
+    add(`https://facebook.com/${ref}`);
+    add(`https://www.facebook.com/${ref}/`);
   }
-  const id = (json as { id?: string | number }).id;
-  const sid = id != null ? String(id).trim() : '';
-  if (!sid || !/^\d+$/.test(sid)) {
-    throw new Error('Graph 未返回有效的用户 id');
-  }
-  cache.set(key, sid);
-  return sid;
+  return Array.from(urls);
 }
 
 /** Graph `POST .../assigned_users` 的 `tasks` 仅允许（见 #100）：MANAGE、ADVERTISE、ANALYZE、DRAFT、AA_ANALYZE；不得含 VIEW */
@@ -270,6 +309,12 @@ function formatGraphErrorBody(json: Record<string, unknown>, httpStatus: number)
   return parts.join(' | ');
 }
 
+/** 批量 UID 操作结果：汇总行 + 每条失败完整拼接（不截断）。 */
+function formatPartialBatchDetail(ok: number, total: number, errs: string[], successDetail: string): string {
+  if (errs.length === 0) return successDetail;
+  return `${ok}/${total} 成功。${errs.join('；')}`;
+}
+
 async function graphJson(
   url: string,
   init: RequestInit
@@ -280,6 +325,87 @@ async function graphJson(
   return { ok: res.ok, json, status: res.status };
 }
 
+async function graphFacebookObjectIdFromProfileUrl(
+  accessToken: string,
+  profileUrl: string
+): Promise<string | null> {
+  const idParam = encodeURIComponent(profileUrl);
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/?id=${idParam}&fields=id&access_token=${encodeURIComponent(accessToken)}`;
+  const { ok, json } = await graphJson(url, { method: 'GET' });
+  if (!ok || json.error) return null;
+  const oid = json.id != null ? String(json.id).trim() : '';
+  return /^\d+$/.test(oid) ? oid : null;
+}
+
+/** 将用户名或非规范引用解析为数字用户 id（Marketing API assigned_users 等需要数字 id） */
+async function resolveFacebookUserRefToNumericId(
+  accessToken: string,
+  userRef: string,
+  cache: Map<string, string>,
+  sourceLine?: string,
+  opts?: GraphBatchOperationOptions
+): Promise<string> {
+  const key = userRef.trim();
+  if (/^\d{5,}$/.test(key)) return key;
+  const hit = cache.get(key);
+  if (hit) return hit;
+
+  let lastFail: { json: Record<string, unknown>; status: number } | null = null;
+  const candidates = [key, key.toLowerCase()].filter((v, i, a) => a.indexOf(v) === i);
+  for (const c of candidates) {
+    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
+      c
+    )}?fields=id&access_token=${encodeURIComponent(accessToken)}`;
+    const { ok, json, status } = await graphJson(url, { method: 'GET' });
+    if (!ok || json.error) {
+      lastFail = { json, status };
+      continue;
+    }
+    const sid = json.id != null ? String(json.id).trim() : '';
+    if (/^\d+$/.test(sid)) {
+      cache.set(key, sid);
+      return sid;
+    }
+  }
+
+  for (const profileUrl of profileUrlsForOgLookup(key, sourceLine)) {
+    const ogId = await graphFacebookObjectIdFromProfileUrl(accessToken, profileUrl);
+    if (!ogId) continue;
+    const confirmUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
+      ogId
+    )}?fields=id&access_token=${encodeURIComponent(accessToken)}`;
+    const { ok, json, status } = await graphJson(confirmUrl, { method: 'GET' });
+    if (!ok || json.error) {
+      lastFail = { json, status };
+      continue;
+    }
+    const sid = json.id != null ? String(json.id).trim() : '';
+    if (/^\d+$/.test(sid)) {
+      cache.set(key, sid);
+      return sid;
+    }
+  }
+
+  if (opts?.resolveProfileNumericId) {
+    for (const profileUrl of profileUrlsForOgLookup(key, sourceLine)) {
+      try {
+        const numeric = await opts.resolveProfileNumericId(profileUrl);
+        if (numeric && /^\d{5,}$/.test(numeric)) {
+          cache.set(key, numeric);
+          return numeric;
+        }
+      } catch {
+        /* 尝试下一 URL */
+      }
+    }
+  }
+
+  if (lastFail) {
+    throw new Error(formatGraphErrorBody(lastFail.json, lastFail.status));
+  }
+  throw new Error('Graph 未返回有效的用户 id');
+}
+
 /** 将 UID 预检结果转为抽屉结果卡行（检测好友关系） */
 export function mapUidVerifyRowsToFriendBatchResultRows(
   rows: UidGraphVerifyDetailRow[],
@@ -287,6 +413,7 @@ export function mapUidVerifyRowsToFriendBatchResultRows(
 ): AdAccountBatchResultRow[] {
   return rows.map((r) => ({
     accountId: r.uid,
+    displayInput: r.displayInput ?? r.uid,
     status: r.ok ? '成功' : '失败',
     detail: r.detail,
     resultKind: 'friend_uid',
@@ -294,7 +421,27 @@ export function mapUidVerifyRowsToFriendBatchResultRows(
   }));
 }
 
-/** Graph 校验 UID 是否可被当前 token 读取；逐行结果用于结果卡「返回信息」等（非真实好友关系 API）。 */
+/**
+ * 好友预检进度展示：已完成行 + 未检测占位行（由 UI 显示「程序正在努力检测中」遮盖层）。
+ */
+export function mapFriendCheckRowsWithPending(
+  completed: UidGraphVerifyDetailRow[],
+  pendingRefs: FacebookUserRefWithSource[],
+  currentUserProfileUrl: string | null
+): AdAccountBatchResultRow[] {
+  const done = mapUidVerifyRowsToFriendBatchResultRows(completed, currentUserProfileUrl);
+  const pending: AdAccountBatchResultRow[] = pendingRefs.map(({ ref, sourceLine }) => ({
+    accountId: ref,
+    displayInput: friendCheckDisplayInput(ref, sourceLine),
+    status: '检测中',
+    detail: '',
+    resultKind: 'friend_uid',
+    currentFbProfileUrl: currentUserProfileUrl,
+    friendCheckPending: true,
+  }));
+  return [...done, ...pending];
+}
+
 /** 好友预检成功/失败面向用户的固定文案（不向用户展示 Graph 技术错误） */
 const FRIEND_CHECK_OK_DETAIL = '与当前Facebook社交账号是好友。';
 const FRIEND_CHECK_FAIL_DETAIL = '与当前Facebook社交账号不是好友';
@@ -309,31 +456,67 @@ export async function fetchFriendCheckCurrentUserProfileUrl(accessToken: string)
   }
 }
 
-/** 单条好友预检：Graph 可读则视为「是好友」；否则统一为「不是好友」文案。 */
+/** 单条好友预检：仅请求 `id`（避免 `name` 等字段在无权限时误判失败）；非数字用户名再尝试小写路径，失败时用 `?id=主页 URL` 解析数字 id 再查。 */
 export async function verifyFacebookUserIdForFriendCheck(
   accessToken: string,
-  ref: string
+  ref: string,
+  sourceLine?: string
 ): Promise<UidGraphVerifyDetailRow> {
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
-    ref
-  )}?fields=id,name&access_token=${encodeURIComponent(accessToken)}`;
-  const { ok, json } = await graphJson(url, { method: 'GET' });
-  if (!ok || json.error) {
-    return { uid: ref, ok: false, detail: FRIEND_CHECK_FAIL_DETAIL };
+  const trimmed = ref.trim();
+  const displayInput = friendCheckDisplayInput(trimmed, sourceLine);
+  const candidates: string[] = [];
+  if (/^\d{5,}$/.test(trimmed)) {
+    candidates.push(trimmed);
+  } else {
+    candidates.push(trimmed);
+    const lower = trimmed.toLowerCase();
+    if (lower !== trimmed) candidates.push(lower);
   }
-  const graphId =
-    json.id != null && String(json.id).trim() !== '' ? String(json.id).trim() : ref;
-  return { uid: graphId, ok: true, detail: FRIEND_CHECK_OK_DETAIL };
+
+  const tried = new Set<string>();
+  for (const candidate of candidates) {
+    if (tried.has(candidate)) continue;
+    tried.add(candidate);
+    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
+      candidate
+    )}?fields=id&access_token=${encodeURIComponent(accessToken)}`;
+    const { ok, json } = await graphJson(url, { method: 'GET' });
+    if (ok && !json.error) {
+      const graphId =
+        json.id != null && String(json.id).trim() !== '' ? String(json.id).trim() : '';
+      if (graphId) {
+        return { uid: graphId, ok: true, detail: FRIEND_CHECK_OK_DETAIL, displayInput };
+      }
+    }
+  }
+
+  for (const profileUrl of profileUrlsForOgLookup(trimmed, sourceLine)) {
+    const ogId = await graphFacebookObjectIdFromProfileUrl(accessToken, profileUrl);
+    if (!ogId) continue;
+    const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(
+      ogId
+    )}?fields=id&access_token=${encodeURIComponent(accessToken)}`;
+    const { ok, json } = await graphJson(url, { method: 'GET' });
+    if (ok && !json.error) {
+      const graphId =
+        json.id != null && String(json.id).trim() !== '' ? String(json.id).trim() : '';
+      if (graphId) {
+        return { uid: graphId, ok: true, detail: FRIEND_CHECK_OK_DETAIL, displayInput };
+      }
+    }
+  }
+
+  return { uid: trimmed, ok: false, detail: FRIEND_CHECK_FAIL_DETAIL, displayInput };
 }
 
 export async function verifyFacebookUserIdsForBatch(
   accessToken: string,
   uidsText: string
 ): Promise<VerifyFacebookUserIdsForBatchResult> {
-  const ids = parseFacebookUserIdsFromText(uidsText);
+  const pairs = parseFacebookUserRefsWithLinesFromText(uidsText);
   const currentUserProfileUrl = await fetchFriendCheckCurrentUserProfileUrl(accessToken);
 
-  if (!ids.length) {
+  if (!pairs.length) {
     return {
       ok: false,
       message:
@@ -344,8 +527,8 @@ export async function verifyFacebookUserIdsForBatch(
   }
 
   const rows: UidGraphVerifyDetailRow[] = [];
-  for (const id of ids) {
-    rows.push(await verifyFacebookUserIdForFriendCheck(accessToken, id));
+  for (const { ref, sourceLine } of pairs) {
+    rows.push(await verifyFacebookUserIdForFriendCheck(accessToken, ref, sourceLine));
   }
 
   const allOk = rows.every((r) => r.ok);
@@ -357,18 +540,95 @@ export async function verifyFacebookUserIdsForBatch(
   return { ok: allOk, message, rows, currentUserProfileUrl };
 }
 
+function uidPairsForBatchPayload(payload: BatchDrawerSubmitPayload): FacebookUserRefWithSource[] {
+  if (payload.authorizedUsers?.length) {
+    return payload.authorizedUsers.map((u) => ({
+      ref: u.uid.trim(),
+      sourceLine: u.sourceLine?.trim() || u.displayInput.trim(),
+    }));
+  }
+  return parseFacebookUserRefsWithLinesFromText(payload.uidsText);
+}
+
+function displayLabelForUidRef(
+  ref: string,
+  sourceLine: string | undefined,
+  payload: BatchDrawerSubmitPayload
+): string {
+  const auth = payload.authorizedUsers?.find(
+    (u) => u.uid === ref || u.sourceLine === sourceLine || u.displayInput === sourceLine
+  );
+  if (auth) return auth.displayInput;
+  return friendCheckDisplayInput(ref, sourceLine);
+}
+
+/**
+ * 将用户输入（个人 UID / 主页）换算为 assigned_users API 所需的商务用户编号。
+ */
+async function resolveAssignedApiUserId(
+  accessToken: string,
+  accountId: string,
+  userRef: string,
+  idCache: Map<string, string>,
+  sourceLine?: string,
+  opts?: GraphBatchOperationOptions
+): Promise<{ businessUserId: string; businessId: string }> {
+  const personalId = await resolveFacebookUserRefToNumericId(
+    accessToken,
+    userRef,
+    idCache,
+    sourceLine,
+    opts
+  );
+  const cacheKey = `bu:${accountId}:${personalId}`;
+  const cached = idCache.get(cacheKey);
+  const hintBmIds = opts?.accountBmHintIds ?? [];
+  const businessId = await resolveBusinessIdForAdAccount(accessToken, accountId, hintBmIds);
+  if (cached) {
+    return { businessUserId: cached, businessId };
+  }
+
+  const assignedRows = await fetchAssignedUserRows(accessToken, accountId, hintBmIds);
+  const allBms = await resolveBusinessIdsForAccounts(accessToken, [accountId], hintBmIds);
+  const bmList = allBms.length ? allBms : [businessId];
+  const hit = await resolveBusinessUserIdForPersonalInBusinesses(
+    accessToken,
+    personalId,
+    bmList,
+    assignedRows
+  );
+  if (hit) {
+    idCache.set(cacheKey, hit.businessUserId);
+    return { businessUserId: hit.businessUserId, businessId: hit.businessId };
+  }
+
+  throw new Error(
+    `无法将 UID ${personalId} 自动换算为商务用户编号。请确认对方已加入 BM（${businessId}）且已被分配到此广告账户。`
+  );
+}
+
 async function postAssignedUser(
   accessToken: string,
   accountId: string,
   userRef: string,
   tasks: string[],
-  idCache: Map<string, string>
+  idCache: Map<string, string>,
+  sourceLine?: string,
+  opts?: GraphBatchOperationOptions
 ): Promise<void> {
-  const userId = await resolveFacebookUserRefToNumericId(accessToken, userRef, idCache);
+  const { businessUserId, businessId } = await resolveAssignedApiUserId(
+    accessToken,
+    accountId,
+    userRef,
+    idCache,
+    sourceLine,
+    opts
+  );
   const act = actPath(accountId);
   const body = new URLSearchParams();
   body.set('access_token', accessToken);
-  body.set('user', userId);
+  body.set('user', businessUserId);
+  body.set('business', businessId);
   const safeTasks = sanitizeAssignedUserTasksForPost(tasks);
   if (!safeTasks.length) {
     throw new Error('授权 tasks 为空：请使用 MANAGE / ADVERTISE / ANALYZE / DRAFT / AA_ANALYZE 之一');
@@ -378,55 +638,99 @@ async function postAssignedUser(
   const res = await graphFetch(url, { method: 'POST', body });
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok || json.error) {
-    throw new Error(formatGraphErrorBody(json, res.status));
+    const raw = formatGraphErrorBody(json, res.status);
+    throw new Error(formatNotBusinessScopedUserHint(raw));
   }
+}
+
+type AssignedUserListRow = AssignedUserLookupRow;
+
+/** 分页拉取广告账户已分配用户（含个人 UID 映射，用于删除时换算商务用户 id） */
+async function fetchAssignedUserRows(
+  accessToken: string,
+  accountId: string,
+  hintBmIds: string[] = []
+): Promise<AssignedUserListRow[]> {
+  const businessId = await resolveBusinessIdForAdAccount(accessToken, accountId, hintBmIds);
+  let url = buildAdAccountAssignedUsersReadUrl(
+    accountId,
+    businessId,
+    'id,user{id,name,email}',
+    accessToken
+  );
+  const out: AssignedUserListRow[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < 25 && url; page++) {
+    let { ok, json, status } = await graphJson(url, { method: 'GET' });
+    if (!ok && page === 0) {
+      url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, 'id', accessToken);
+      ({ ok, json, status } = await graphJson(url, { method: 'GET' }));
+    }
+    if (!ok) {
+      throw new Error(formatGraphErrorBody(json, status));
+    }
+    const rows = Array.isArray((json as { data?: unknown[] }).data)
+      ? (json as { data: { id?: string; user?: { id?: string; email?: string } }[] }).data
+      : [];
+    for (const row of rows) {
+      const assignedUserId = row.id != null ? String(row.id).trim() : '';
+      if (!assignedUserId || seen.has(assignedUserId)) continue;
+      seen.add(assignedUserId);
+      const fbUid =
+        row.user?.id != null && /^\d{5,}$/.test(String(row.user.id).trim())
+          ? String(row.user.id).trim()
+          : undefined;
+      const email =
+        row.user?.email != null && String(row.user.email).includes('@')
+          ? String(row.user.email).trim()
+          : undefined;
+      out.push({ assignedUserId, facebookUserId: fbUid, email });
+    }
+    const next = (json as { paging?: { next?: string } }).paging?.next;
+    url = typeof next === 'string' && next.length ? next : '';
+  }
+  return out;
+}
+
+/** 分页拉取广告账户已分配用户 id（用于批量删权限） */
+async function fetchAssignedUserIds(
+  accessToken: string,
+  accountId: string,
+  hintBmIds: string[] = []
+): Promise<string[]> {
+  const rows = await fetchAssignedUserRows(accessToken, accountId, hintBmIds);
+  return rows.map((r) => r.assignedUserId);
 }
 
 async function deleteAssignedUser(
   accessToken: string,
   accountId: string,
   userRef: string,
-  idCache: Map<string, string>
+  idCache: Map<string, string>,
+  sourceLine?: string,
+  opts?: GraphBatchOperationOptions
 ): Promise<void> {
-  const userId = await resolveFacebookUserRefToNumericId(accessToken, userRef, idCache);
+  const { businessUserId: userId, businessId } = await resolveAssignedApiUserId(
+    accessToken,
+    accountId,
+    userRef,
+    idCache,
+    sourceLine,
+    opts
+  );
   const act = actPath(accountId);
   const q = new URLSearchParams({
     user: userId,
+    business: businessId,
     access_token: accessToken,
   });
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users?${q.toString()}`;
   const res = await graphFetch(url, { method: 'DELETE' });
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok || json.error) {
-    throw new Error(formatGraphErrorBody(json, res.status));
+    const raw = formatGraphErrorBody(json, res.status);
+    throw new Error(formatNotBusinessScopedUserHint(raw));
   }
-}
-
-/** 分页拉取广告账户已分配用户 id（用于批量删权限） */
-async function fetchAssignedUserIds(accessToken: string, accountId: string): Promise<string[]> {
-  const act = actPath(accountId);
-  let url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users?fields=id&limit=500&access_token=${encodeURIComponent(accessToken)}`;
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (let page = 0; page < 25 && url; page++) {
-    const { ok, json, status } = await graphJson(url, { method: 'GET' });
-    if (!ok) {
-      throw new Error(formatGraphErrorBody(json, status));
-    }
-    const rows = Array.isArray((json as { data?: { id?: string }[] }).data)
-      ? (json as { data: { id?: string }[] }).data
-      : [];
-    for (const row of rows) {
-      const id = row.id != null ? String(row.id) : '';
-      if (id && !seen.has(id)) {
-        seen.add(id);
-        out.push(id);
-      }
-    }
-    const next = (json as { paging?: { next?: string } }).paging?.next;
-    url = typeof next === 'string' && next.length ? next : '';
-  }
-  return out;
 }
 
 async function postAdAccountField(
@@ -488,6 +792,39 @@ export async function renameAdAccountViaAdsManagerGraph(
     const msg = formatGraphErrorBody(json, res.status);
     throw new Error(msg !== `HTTP ${res.status}` ? msg : JSON.stringify(json.error));
   }
+  if (json.success === false) {
+    throw new Error(`重命名失败（success=false）：${JSON.stringify(json).slice(0, 500)}`);
+  }
+}
+
+/**
+ * 在 Meta 侧更新广告账户名称：
+ * 1. 优先 Marketing API `POST graph.facebook.com/.../act_{id}` 与 `name`（与用户 token 常见权限一致）；
+ * 2. 失败时再尝试 Ads Manager Graph（与后台部分路径一致）。
+ */
+export async function renameAdAccountOnFacebook(
+  accessToken: string,
+  accountId: string,
+  newName: string
+): Promise<void> {
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    throw new Error('新名称不能为空');
+  }
+  try {
+    await postAdAccountField(accessToken, accountId, { name: trimmed });
+    fbControlLog('fb:graph-batch', 'rename via Marketing Graph OK', {
+      accountIdPreview: String(accountId).replace(/^act_/i, '').slice(0, 12),
+    });
+    return;
+  } catch (firstErr: unknown) {
+    const m1 = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    fbControlLog('fb:graph-batch', 'rename Marketing Graph failed, fallback adsmanager-graph', {
+      accountIdPreview: String(accountId).replace(/^act_/i, '').slice(0, 12),
+      detail: m1.slice(0, 200),
+    });
+  }
+  await renameAdAccountViaAdsManagerGraph(accessToken, accountId, trimmed);
 }
 
 async function fetchAdAccountSpendCapMinor(accessToken: string, accountId: string): Promise<number | null> {
@@ -526,72 +863,107 @@ function parseSpendCapMinors(text: string, accountCount: number): number[] | nul
  */
 export async function executeAdAccountBatchOperation(
   accessToken: string,
-  payload: BatchDrawerSubmitPayload
+  payload: BatchDrawerSubmitPayload,
+  opts?: GraphBatchOperationOptions
 ): Promise<AdAccountBatchResultRow[]> {
   /** `useDefaultInterval` 为 true 时用 `config/fbControlBatch.json` / `VITE_FB_BATCH_STEP_DELAY_MS`；为 false 则立即（0） */
   const delayMs = payload.useDefaultInterval ? getConfiguredGraphBatchStepDelayMs() : 0;
   const accounts = [...payload.selectedAccountIds];
   const results: AdAccountBatchResultRow[] = [];
 
-  const pushResult = (accountId: string, status: string, detail: string) => {
-    results.push({ accountId, status, detail });
+  const pushResult = (
+    accountId: string,
+    status: string,
+    detail: string,
+    displayInput?: string
+  ) => {
+    results.push({
+      accountId,
+      status,
+      detail,
+      ...(displayInput ? { displayInput } : {}),
+    });
   };
 
   /** 将 vanity 用户名等解析为数字 id，同一批操作内去重请求 */
   const userIdResolveCache = new Map<string, string>();
+  const graphOpts: GraphBatchOperationOptions = {
+    ...(opts ?? {}),
+    accountBmHintIds: [
+      ...(opts?.accountBmHintIds ?? []),
+      ...(payload.accountBmHintIds ?? []),
+    ],
+  };
+  const bmHints = graphOpts.accountBmHintIds ?? [];
 
   switch (payload.operationId) {
     case 'add_ad_permissions': {
-      const uids = parseFacebookUserIdsFromText(payload.uidsText);
-      if (!uids.length) {
+      const uidPairs = uidPairsForBatchPayload(payload);
+      if (!uidPairs.length) {
         throw new Error('请填写至少一个 Facebook 用户 UID 或主页链接');
       }
+      const authDisplay =
+        payload.authorizedUsers?.map((u) => u.displayInput).join('\n') ||
+        uidPairs.map((p) => displayLabelForUidRef(p.ref, p.sourceLine, payload)).join('\n');
       const tasks = adAccountTasksForSubId(payload.subId);
       for (const accountId of accounts) {
         const errs: string[] = [];
         let ok = 0;
-        for (const uid of uids) {
+        for (const { ref, sourceLine } of uidPairs) {
+          const label = displayLabelForUidRef(ref, sourceLine, payload);
           try {
-            await postAssignedUser(accessToken, accountId, uid, tasks, userIdResolveCache);
+            await postAssignedUser(
+              accessToken,
+              accountId,
+              ref,
+              tasks,
+              userIdResolveCache,
+              sourceLine,
+              opts
+            );
             ok++;
             if (delayMs) await sleep(delayMs);
           } catch (e: unknown) {
-            errs.push(`${uid}: ${e instanceof Error ? e.message : String(e)}`);
+            errs.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
         const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
-        const detail =
-          errs.length === 0
-            ? `已为 ${uids.length} 个用户添加权限（${tasks.join(',')}）`
-            : `${ok}/${uids.length} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
-        pushResult(accountId, status, detail);
+        const detail = formatPartialBatchDetail(
+          ok,
+          uidPairs.length,
+          errs,
+          `已为 ${uidPairs.length} 个用户添加权限（${tasks.join(',')}）`
+        );
+        pushResult(accountId, status, detail, authDisplay);
       }
       break;
     }
 
     case 'remove_ad_permissions':
     case 'remove_admin': {
-      const uids = parseFacebookUserIdsFromText(payload.uidsText);
-      if (!uids.length) {
+      const uidPairs = parseFacebookUserRefsWithLinesFromText(payload.uidsText);
+      if (!uidPairs.length) {
         throw new Error('请填写要移除的用户 UID（每行一个）');
       }
       for (const accountId of accounts) {
         const errs: string[] = [];
         let ok = 0;
-        for (const uid of uids) {
+        for (const { ref, sourceLine } of uidPairs) {
           try {
-            await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
+            await deleteAssignedUser(accessToken, accountId, ref, userIdResolveCache, sourceLine, graphOpts);
             ok++;
             if (delayMs) await sleep(delayMs);
           } catch (e: unknown) {
-            errs.push(`${uid}: ${e instanceof Error ? e.message : String(e)}`);
+            errs.push(`${ref}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
         const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
-        const detail =
-          errs.length === 0
-            ? `已移除 ${uids.length} 个用户的账户权限`
-            : `${ok}/${uids.length} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
+        const detail = formatPartialBatchDetail(
+          ok,
+          uidPairs.length,
+          errs,
+          `已移除 ${uidPairs.length} 个用户的账户权限`
+        );
         pushResult(accountId, status, detail);
       }
       break;
@@ -600,13 +972,15 @@ export async function executeAdAccountBatchOperation(
     case 'remove_perm_their': {
       const me = await fetchFacebookMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
-      const targetRefs = parseFacebookUserIdsFromText(payload.uidsText);
-      if (!targetRefs.length) {
+      const targetPairs = parseFacebookUserRefsWithLinesFromText(payload.uidsText);
+      if (!targetPairs.length) {
         throw new Error('请填写至少一个要移除权限的 Facebook 用户 UID 或主页链接');
       }
       const targetNumericIds: string[] = [];
-      for (const ref of targetRefs) {
-        targetNumericIds.push(await resolveFacebookUserRefToNumericId(accessToken, ref, userIdResolveCache));
+      for (const { ref, sourceLine } of targetPairs) {
+        targetNumericIds.push(
+          await resolveFacebookUserRefToNumericId(accessToken, ref, userIdResolveCache, sourceLine, graphOpts)
+        );
       }
       let targetUids = targetNumericIds;
       if (!removeCurrent && me) {
@@ -620,7 +994,7 @@ export async function executeAdAccountBatchOperation(
         let ok = 0;
         for (const uid of targetUids) {
           try {
-            await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
+            await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache, undefined, graphOpts);
             ok++;
             if (delayMs) await sleep(delayMs);
           } catch (e: unknown) {
@@ -629,10 +1003,7 @@ export async function executeAdAccountBatchOperation(
         }
         const n = targetUids.length;
         const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
-        const detail =
-          errs.length === 0
-            ? `已按列表尝试移除 ${n} 个用户的权限`
-            : `${ok}/${n} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
+        const detail = formatPartialBatchDetail(ok, n, errs, `已按列表尝试移除 ${n} 个用户的权限`);
         pushResult(accountId, status, detail);
       }
       break;
@@ -645,7 +1016,9 @@ export async function executeAdAccountBatchOperation(
       }
       for (const accountId of accounts) {
         try {
-          const uids = (await fetchAssignedUserIds(accessToken, accountId)).filter((u) => u !== me);
+          const uids = (await fetchAssignedUserIds(accessToken, accountId, bmHints)).filter(
+            (u) => u !== me
+          );
           if (!uids.length) {
             pushResult(accountId, '成功', '除当前账号外无其他协作者');
             continue;
@@ -654,7 +1027,7 @@ export async function executeAdAccountBatchOperation(
           let ok = 0;
           for (const uid of uids) {
             try {
-              await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
+              await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache, undefined, graphOpts);
               ok++;
               if (delayMs) await sleep(delayMs);
             } catch (e: unknown) {
@@ -662,10 +1035,12 @@ export async function executeAdAccountBatchOperation(
             }
           }
           const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
-          const detail =
-            errs.length === 0
-              ? `已移除 ${uids.length} 个协作者（已保留当前账号）`
-              : `${ok}/${uids.length} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
+          const detail = formatPartialBatchDetail(
+            ok,
+            uids.length,
+            errs,
+            `已移除 ${uids.length} 个协作者（已保留当前账号）`
+          );
           pushResult(accountId, status, detail);
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
@@ -681,7 +1056,7 @@ export async function executeAdAccountBatchOperation(
       }
       for (const accountId of accounts) {
         try {
-          await deleteAssignedUser(accessToken, accountId, me, userIdResolveCache);
+          await deleteAssignedUser(accessToken, accountId, me, userIdResolveCache, undefined, graphOpts);
           if (delayMs) await sleep(delayMs);
           pushResult(accountId, '成功', '已移除当前账号在本广告账户上的权限');
         } catch (e: unknown) {
@@ -694,17 +1069,19 @@ export async function executeAdAccountBatchOperation(
     case 'remove_perm_except_them': {
       const me = await fetchFacebookMeNumericId(accessToken);
       const removeCurrent = payload.removeAuthForm?.deleteCurrentFacebookPerm === true;
-      const keepRefs = parseFacebookUserIdsFromText(payload.uidsText);
-      if (!keepRefs.length) {
+      const keepPairs = parseFacebookUserRefsWithLinesFromText(payload.uidsText);
+      if (!keepPairs.length) {
         throw new Error('请填写至少一个要保留的 Facebook 用户 UID 或主页链接');
       }
       const keep = new Set<string>();
-      for (const ref of keepRefs) {
-        keep.add(await resolveFacebookUserRefToNumericId(accessToken, ref, userIdResolveCache));
+      for (const { ref, sourceLine } of keepPairs) {
+        keep.add(
+          await resolveFacebookUserRefToNumericId(accessToken, ref, userIdResolveCache, sourceLine, graphOpts)
+        );
       }
       for (const accountId of accounts) {
         try {
-          const assigned = await fetchAssignedUserIds(accessToken, accountId);
+          const assigned = await fetchAssignedUserIds(accessToken, accountId, bmHints);
           let toRemove = assigned.filter((u) => !keep.has(u));
           if (!removeCurrent && me) {
             toRemove = toRemove.filter((u) => u !== me);
@@ -717,7 +1094,7 @@ export async function executeAdAccountBatchOperation(
           let ok = 0;
           for (const uid of toRemove) {
             try {
-              await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache);
+              await deleteAssignedUser(accessToken, accountId, uid, userIdResolveCache, undefined, graphOpts);
               ok++;
               if (delayMs) await sleep(delayMs);
             } catch (e: unknown) {
@@ -726,10 +1103,12 @@ export async function executeAdAccountBatchOperation(
           }
           const n = toRemove.length;
           const status = errs.length === 0 ? '成功' : ok > 0 ? '部分成功' : '失败';
-          const detail =
-            errs.length === 0
-              ? `已移除 ${n} 个协作者（已保留列表中的账号）`
-              : `${ok}/${n} 成功。${errs.slice(0, 2).join('；')}${errs.length > 2 ? '…' : ''}`;
+          const detail = formatPartialBatchDetail(
+            ok,
+            n,
+            errs,
+            `已移除 ${n} 个协作者（已保留列表中的账号）`
+          );
           pushResult(accountId, status, detail);
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
@@ -897,13 +1276,24 @@ export async function executeAdAccountBatchOperation(
     }
 
     case 'account_rename': {
-      const name = payload.uidsText.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0];
-      if (!name) {
-        throw new Error('请填写新账号名称（第一行生效，对所有选中账户相同）');
+      const names = payload.uidsText
+        .trim()
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (!names.length) {
+        throw new Error('请填写新账号名称（每行一个；仅一行时全部账户使用同一名称）');
       }
-      for (const accountId of accounts) {
+      const singleForAll = names.length === 1;
+      for (let i = 0; i < accounts.length; i++) {
+        const accountId = accounts[i];
+        const name = singleForAll ? names[0] : names[i];
+        if (!name) {
+          pushResult(accountId, '失败', `缺少第 ${i + 1} 行新名称（已选 ${accounts.length} 个账户，需 ${accounts.length} 行）`);
+          continue;
+        }
         try {
-          await renameAdAccountViaAdsManagerGraph(accessToken, accountId, name);
+          await renameAdAccountOnFacebook(accessToken, accountId, name);
           if (delayMs) await sleep(delayMs);
           pushResult(accountId, '成功', `名称已更新为「${name}」`);
         } catch (e: unknown) {
@@ -913,9 +1303,166 @@ export async function executeAdAccountBatchOperation(
       break;
     }
 
-    case 'bm_partner':
-    case 'update_business':
-    case 'account_push':
+    case 'update_business': {
+      const form = payload.updateBusinessForm;
+      if (!form) {
+        throw new Error('请至少勾选一项要修改的信息');
+      }
+      if (!form.modifyCurrency && !form.modifyBmInfo && !form.modifyTimezone) {
+        throw new Error('请至少勾选一项要修改的信息');
+      }
+      for (const accountId of accounts) {
+        const parts: string[] = [];
+        const errs: string[] = [];
+        try {
+          if (form.modifyCurrency) {
+            try {
+              await postAdAccountField(accessToken, accountId, { currency: form.currency });
+              parts.push(`币种→${form.currency}`);
+            } catch (e: unknown) {
+              errs.push(`币种: ${e instanceof Error ? e.message : String(e)}`);
+            }
+            if (delayMs) await sleep(delayMs);
+          }
+          if (form.modifyTimezone) {
+            try {
+              await postAdAccountField(accessToken, accountId, { timezone_name: form.timezone });
+              parts.push(`时区→${form.timezone}`);
+            } catch (e: unknown) {
+              errs.push(`时区: ${e instanceof Error ? e.message : String(e)}`);
+            }
+            if (delayMs) await sleep(delayMs);
+          }
+          if (form.modifyBmInfo) {
+            const b = form.bmInfo;
+            parts.push(
+              `BM 公司信息已记录（${b.countryCode} / ${b.companyName}）；完整地址与税号需 Business API，当前版本未写入 Graph`
+            );
+          }
+          if (!parts.length && errs.length) {
+            pushResult(accountId, '失败', errs.join('；'));
+          } else if (errs.length) {
+            pushResult(accountId, '部分成功', `${parts.join('；')}。${errs.join('；')}`);
+          } else {
+            pushResult(accountId, '成功', parts.join('；'));
+          }
+        } catch (e: unknown) {
+          pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+        }
+      }
+      break;
+    }
+
+    case 'bm_partner': {
+      const partnerBmId = parsePrimaryBmIdFromText(payload.uidsText);
+      if (!partnerBmId) {
+        throw new Error('请填写有效的 Business Manager ID（纯数字 BM ID，至少一行）');
+      }
+      const permittedTasks =
+        payload.subId === 'assign_partner_ads' ? ['ADVERTISE', 'ANALYZE'] : ['ADVERTISE', 'ANALYZE'];
+      const ownerBmByAccount = new Map<string, string>();
+      for (const accountId of accounts) {
+        const ownerBm = await fetchAdAccountOwnerBusinessId(accessToken, accountId);
+        if (ownerBm) ownerBmByAccount.set(accountId, ownerBm);
+      }
+      const agencyDone = new Set<string>();
+      for (const accountId of accounts) {
+        const ownerBm = ownerBmByAccount.get(accountId);
+        if (!ownerBm) {
+          pushResult(accountId, '失败', '无法读取该广告账户所属 Business Manager ID');
+          continue;
+        }
+        try {
+          if (!agencyDone.has(ownerBm)) {
+            const r = await postBusinessPartnerAgency(
+              accessToken,
+              ownerBm,
+              partnerBmId,
+              permittedTasks
+            );
+            agencyDone.add(ownerBm);
+            if (delayMs) await sleep(delayMs);
+            const agencyNote = r.alreadyLinked
+              ? `合作伙伴 BM ${partnerBmId} 已与所属 BM ${ownerBm} 关联`
+              : `已向所属 BM ${ownerBm} 添加合作伙伴 BM ${partnerBmId}`;
+            pushResult(
+              accountId,
+              '成功',
+              `${agencyNote}（权限：${permittedTasks.join(', ')}）`
+            );
+          } else {
+            pushResult(
+              accountId,
+              '成功',
+              `合作伙伴 BM ${partnerBmId} 已关联至所属 BM ${ownerBm}（本批其余同 BM 账户已处理）`
+            );
+          }
+        } catch (e: unknown) {
+          pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+        }
+      }
+      break;
+    }
+
+    case 'account_push': {
+      const push = payload.accountPushForm;
+      const email = push?.recipientEmail?.trim() || payload.uidsText.trim();
+      if (!email) {
+        throw new Error('请先搜索并确认接收者邮箱');
+      }
+      const hintBms = payload.accountBmHintIds ?? [];
+      const businessIds = await resolveBusinessIdsForAccounts(accessToken, accounts, hintBms);
+      if (!businessIds.length) {
+        throw new Error('无法确定广告账户所属 Business Manager，请在商务管理平台打开对应 BM 后重试');
+      }
+      let recipient: GraphBusinessUserMatch | null = null;
+      if (push?.recipientUserId) {
+        recipient = {
+          businessUserId: push.recipientUserId,
+          email,
+          name: push.recipientDisplayName,
+          businessId: businessIds[0],
+        };
+      } else {
+        recipient = await searchBusinessUserByEmailInBusinesses(accessToken, businessIds, email);
+      }
+      if (!recipient) {
+        const inviteBm = businessIds[0];
+        try {
+          await inviteBusinessUserByEmail(accessToken, inviteBm, email, 'EMPLOYEE');
+          for (const accountId of accounts) {
+            pushResult(
+              accountId,
+              '部分成功',
+              `已向 BM ${inviteBm} 发送邀请邮件 ${email}；对方接受邀请后请再次执行推送以分配广告权限`
+            );
+          }
+        } catch (e: unknown) {
+          throw new Error(
+            `未在 BM 中找到邮箱 ${email}，且邀请失败：${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+        break;
+      }
+      const tasks = ['ADVERTISE', 'ANALYZE'];
+      const label = recipient.name ? `${recipient.name} (${recipient.email})` : recipient.email;
+      for (const accountId of accounts) {
+        try {
+          await assignBusinessUserToAdAccount(
+            accessToken,
+            accountId,
+            recipient.businessUserId,
+            tasks
+          );
+          if (delayMs) await sleep(delayMs);
+          pushResult(accountId, '成功', `已推送：${label} 获得广告权限（${tasks.join(', ')}）`);
+        } catch (e: unknown) {
+          pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
+        }
+      }
+      break;
+    }
+
     case 'batch_payment_records':
     default: {
       for (const accountId of accounts) {

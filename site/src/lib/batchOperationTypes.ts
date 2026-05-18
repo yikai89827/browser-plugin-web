@@ -69,6 +69,8 @@ export type BatchAccountPreviewRow = {
   accountId: string;
   name?: string;
   currency?: string;
+  timezone?: string;
+  belongsToBmId?: string;
   spendCapMinor?: number;
   balanceMinor?: number;
   spendingLimit?: string;
@@ -89,6 +91,29 @@ export interface ResetLimitFormPayload {
   amountMinor?: number;
 }
 
+/** 「更新 Business 信息」抽屉：勾选后提交的字段 */
+export interface UpdateBusinessBmInfoPayload {
+  countryCode: string;
+  companyName: string;
+  city: string;
+  street1: string;
+  street2?: string;
+  state: string;
+  zip: string;
+  taxId?: string;
+  /** true = 购买广告是为了商业目的 */
+  adsForBusinessPurpose: boolean;
+}
+
+export interface UpdateBusinessFormPayload {
+  modifyCurrency: boolean;
+  currency: string;
+  modifyBmInfo: boolean;
+  bmInfo: UpdateBusinessBmInfoPayload;
+  modifyTimezone: boolean;
+  timezone: string;
+}
+
 /** 「删除广告账号权限」抽屉第 2 步：与「删除它们的权限」组合使用 */
 export interface RemoveAuthFormPayload {
   /**
@@ -98,6 +123,15 @@ export interface RemoveAuthFormPayload {
   deleteCurrentFacebookPerm: boolean;
 }
 
+/** 好友预检通过后用于批量授权（含原始输入，供 Graph 与结果卡展示） */
+export type BatchAuthorizedUser = {
+  /** 数字 UID（Marketing API assigned_users 需要） */
+  uid: string;
+  /** 用户原始输入：主页链接或 UID */
+  displayInput: string;
+  sourceLine?: string;
+};
+
 export interface BatchDrawerSubmitPayload {
   entryKey: string;
   operationId: BatchOperationId;
@@ -106,7 +140,18 @@ export interface BatchDrawerSubmitPayload {
   useDefaultInterval: boolean;
   friendCheckOk: boolean;
   selectedAccountIds: string[];
+  /** 好友预检通过后仅授权这些用户（优先于 uidsText 解析） */
+  authorizedUsers?: BatchAuthorizedUser[];
   spendLimitForm?: SpendLimitFormPayload;
   resetLimitForm?: ResetLimitFormPayload;
   removeAuthForm?: RemoveAuthFormPayload;
+  updateBusinessForm?: UpdateBusinessFormPayload;
+  /** 推送数据：接收方邮箱与搜索命中用户 */
+  accountPushForm?: {
+    recipientEmail: string;
+    recipientUserId?: string;
+    recipientDisplayName?: string;
+  };
+  /** 推送/合作伙伴：账户列表已知的所属 BM ID（减少 Graph 探测） */
+  accountBmHintIds?: string[];
 }

@@ -1,3 +1,7 @@
+import {
+  buildAdAccountAssignedUsersReadUrl,
+  resolveBusinessIdForAdAccount,
+} from './graphBusinessManagement';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { graphFetch } from './graphExternalFetch';
 
@@ -36,21 +40,33 @@ function graphErrorToString(json: unknown, httpStatus: number): string {
   return `HTTP ${httpStatus}`;
 }
 
+export type AdAccountAssignedUsersQueryOptions = {
+  /** BM id 提示（表格「所属 BM」列等），用于 assigned_users 的 business 参数 */
+  hintBmIds?: string[];
+};
+
 /**
  * 分页统计 `act_{id}/assigned_users` 人数（用于「隐藏管理员」列）。
  * 需 token 具备相应广告账户权限。
  */
 export async function fetchAdAccountAssignedUserCount(
   accessToken: string,
-  accountId: string
+  accountId: string,
+  options?: AdAccountAssignedUsersQueryOptions
 ): Promise<number> {
   const path = actPath(accountId);
-  let url = `https://graph.facebook.com/${GRAPH_VERSION}/${path}/assigned_users?fields=id&limit=500&access_token=${encodeURIComponent(accessToken)}`;
+  const businessId = await resolveBusinessIdForAdAccount(
+    accessToken,
+    accountId,
+    options?.hintBmIds ?? []
+  );
+  let url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, 'id', accessToken);
   let total = 0;
   let pages = 0;
   console.info('[fbControl:graph] 拉取 assigned_users', {
     graphVersion: GRAPH_VERSION,
     path,
+    businessId,
     token: describeToken(accessToken),
   });
   while (url && pages < MAX_PAGES) {
@@ -107,7 +123,7 @@ function rowHasManageTask(tasks: unknown): boolean {
   return normalizeAssignedUserTasks(tasks).includes('MANAGE');
 }
 
-export type ManageAdminCountOptions = {
+export type ManageAdminCountOptions = AdAccountAssignedUsersQueryOptions & {
   /** 排除当前登录用户（单 id，兼容旧调用） */
   excludeFacebookUserId?: string | null;
   /** 排除多个候选 id（与 excludeFacebookUserId 合并），应对 /me 与 assigned_users id 形态不一致 */
@@ -123,8 +139,12 @@ export async function fetchAdAccountManageAdminCount(
   accountId: string,
   options?: ManageAdminCountOptions
 ): Promise<number> {
-  const path = actPath(accountId);
-  let url = `https://graph.facebook.com/${GRAPH_VERSION}/${path}/assigned_users?fields=id,tasks&limit=500&access_token=${encodeURIComponent(accessToken)}`;
+  const businessId = await resolveBusinessIdForAdAccount(
+    accessToken,
+    accountId,
+    options?.hintBmIds ?? []
+  );
+  let url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, 'id,tasks', accessToken);
   let total = 0;
   let pages = 0;
   const excludeSet = new Set<string>();

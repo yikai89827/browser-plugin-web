@@ -5,7 +5,8 @@ import { graphFetch } from './graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 
-const PIXEL_FIELDS = ['id', 'name', 'owner_business{id,name}'].join(',');
+const PIXEL_FIELDS = ['id', 'name', 'last_fired_time', 'owner_business{id,name}'].join(',');
+const PIXEL_FIELDS_BASIC = ['id', 'name', 'owner_business{id,name}'].join(',');
 
 /** 与 content/pixels 中规则一致：像素 ID + BM ID 稳定主键 */
 function stablePixelShareId(pixelId: string, bmId: string): string {
@@ -16,19 +17,37 @@ function stablePixelShareId(pixelId: string, bmId: string): string {
 
 /**
  * 从当前页 URL 解析 Meta Business Manager 数字 ID（与 fbspider 等工具常用 query 一致）。
+ * 同时匹配 hash 内参数（SPA 路由常见）。
  */
 export function parseMetaBusinessIdFromPageUrl(href: string): string | null {
+  const fromRaw = (s: string) => {
+    let m = s.match(/[?&#]business_id=(\d{5,})/i);
+    if (m?.[1]) return m[1];
+    m = s.match(/[?&#]bm_id=(\d{5,})/i);
+    if (m?.[1]) return m[1];
+    return null;
+  };
+  const direct = fromRaw(href);
+  if (direct) return direct;
   try {
     const u = new URL(href);
     for (const key of ['business_id', 'bm_id']) {
       const v = u.searchParams.get(key);
       if (v && /^\d{5,}$/.test(v)) return v;
     }
+    const hash = u.hash || '';
+    if (hash.length > 1) {
+      const h = fromRaw(hash);
+      if (h) return h;
+      const qStart = hash.indexOf('?');
+      if (qStart >= 0) {
+        const inner = fromRaw(hash.slice(qStart));
+        if (inner) return inner;
+      }
+    }
   } catch {
     /* ignore */
   }
-  const m = href.match(/[?&]business_id=(\d{5,})/);
-  if (m) return m[1];
   return null;
 }
 
@@ -59,6 +78,26 @@ async function graphGetPaged(firstPathWithQuery: string): Promise<Record<string,
   return rows;
 }
 
+function parseLastFiredFields(lastFired: unknown): Pick<FbPixelShareRecord, 'activeOk' | 'activeTime'> {
+  if (lastFired == null || lastFired === '') return {};
+  let ms: number;
+  if (typeof lastFired === 'number') {
+    ms = lastFired < 2e12 ? lastFired * 1000 : lastFired;
+  } else {
+    const d = new Date(String(lastFired));
+    ms = d.getTime();
+  }
+  if (!Number.isFinite(ms) || Number.isNaN(ms)) return {};
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const activeTime = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}:${pad(d.getSeconds())}`;
+  const ageDays = (Date.now() - ms) / 86400000;
+  const activeOk = ageDays <= 730;
+  return { activeTime, activeOk };
+}
+
 async function fetchBusinessName(accessToken: string, businessId: string): Promise<string | undefined> {
   try {
     const q = `fields=name&access_token=${encodeURIComponent(accessToken)}`;
@@ -87,6 +126,7 @@ function mapNodeToRecord(
   const ob = node.owner_business as { id?: string | number; name?: string } | undefined;
   const ownerId = ob?.id != null ? String(ob.id) : undefined;
   const ownerName = ob?.name;
+  const activeFields = parseLastFiredFields(node.last_fired_time);
 
   const role =
     ctx.edge === 'owned_pixels' ? '自有' : ctx.edge === 'client_pixels' ? '客户' : '广告';
@@ -105,6 +145,7 @@ function mapNodeToRecord(
     role,
     shareOk,
     bmShareOk,
+    ...activeFields,
     capturedAt: ctx.now,
     sourceUrl: ctx.sourceUrl,
   };
@@ -127,6 +168,14 @@ function mergeIntoMap(map: Map<string, FbPixelShareRecord>, row: FbPixelShareRec
   if (!merged.bmId && row.bmId) merged.bmId = row.bmId;
   if (merged.role && row.role && merged.role !== row.role) merged.role = `${merged.role}/${row.role}`;
   else if (row.role && !merged.role) merged.role = row.role;
+  if (row.activeTime) {
+    if (!merged.activeTime || row.activeTime > merged.activeTime) {
+      merged.activeTime = row.activeTime;
+      merged.activeOk = row.activeOk;
+    }
+  } else if (row.activeOk && merged.activeOk === undefined) {
+    merged.activeOk = row.activeOk;
+  }
   map.set(row.id, merged);
 }
 
@@ -141,21 +190,16 @@ export function mergeFbPixelShareIntoMap(map: Map<string, FbPixelShareRecord>, r
  * 使用用户 access_token 分页拉取 BM 下 `owned_pixels` / `client_pixels` / `adspixels`（与 fbspider 常用 Graph 边一致），
  * 合并去重后映射为 `FbPixelShareRecord[]`。
  */
-export async function fetchBusinessPixelsFromGraph(
+async function fetchBusinessPixelsForFields(
   accessToken: string,
   businessId: string,
   nowMs: number,
   sourceUrl: string,
-  bmNameHint?: string
+  fields: string,
+  bmName?: string
 ): Promise<FbPixelShareRecord[]> {
-  const fieldsEnc = encodeURIComponent(PIXEL_FIELDS);
+  const fieldsEnc = encodeURIComponent(fields);
   const tokenEnc = encodeURIComponent(accessToken);
-
-  let bmName = bmNameHint;
-  if (!bmName) {
-    bmName = await fetchBusinessName(accessToken, businessId);
-  }
-
   const edges = ['owned_pixels', 'client_pixels', 'adspixels'] as const;
   const map = new Map<string, FbPixelShareRecord>();
 
@@ -166,14 +210,94 @@ export async function fetchBusinessPixelsFromGraph(
       for (const node of batch) {
         mergeFbPixelShareIntoMap(map, mapNodeToRecord(node, { bmId: businessId, bmName, edge, now: nowMs, sourceUrl }));
       }
-      fbControlLog('fb:graph-pixels', `边 ${edge} 完成`, { count: batch.length });
+      fbControlLog('fb:graph-pixels', `边 ${edge} 完成`, { count: batch.length, fields: fields.slice(0, 24) });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       fbControlWarn('fb:graph-pixels', `边 ${edge} 跳过`, { message: msg });
     }
   }
 
-  const list = [...map.values()].sort((a, b) => (a.pixelName || '').localeCompare(b.pixelName || '', 'zh-CN'));
+  return [...map.values()];
+}
+
+export async function fetchBusinessPixelsFromGraph(
+  accessToken: string,
+  businessId: string,
+  nowMs: number,
+  sourceUrl: string,
+  bmNameHint?: string
+): Promise<FbPixelShareRecord[]> {
+  let bmName = bmNameHint;
+  if (!bmName) {
+    bmName = await fetchBusinessName(accessToken, businessId);
+  }
+
+  let list = await fetchBusinessPixelsForFields(
+    accessToken,
+    businessId,
+    nowMs,
+    sourceUrl,
+    PIXEL_FIELDS,
+    bmName
+  );
+  if (!list.length) {
+    fbControlLog('fb:graph-pixels', '含 last_fired_time 无数据，回退基础字段重试', { businessId });
+    list = await fetchBusinessPixelsForFields(
+      accessToken,
+      businessId,
+      nowMs,
+      sourceUrl,
+      PIXEL_FIELDS_BASIC,
+      bmName
+    );
+  }
+
+  list.sort((a, b) => (a.pixelName || '').localeCompare(b.pixelName || '', 'zh-CN'));
   fbControlLog('fb:graph-pixels', '合并后像素行', { count: list.length, businessId });
+  return list;
+}
+
+/**
+ * 当前用户可管理的 BM 列表（需 token 含 `business_management`）。
+ */
+export async function fetchMeBusinessesFromGraph(accessToken: string): Promise<{ id: string; name?: string }[]> {
+  const fieldsEnc = encodeURIComponent('id,name');
+  const tokenEnc = encodeURIComponent(accessToken);
+  const path = `me/businesses?fields=${fieldsEnc}&limit=200&access_token=${tokenEnc}`;
+  const batch = await graphGetPaged(path);
+  const out: { id: string; name?: string }[] = [];
+  for (const node of batch) {
+    const raw = node.id;
+    const id = raw != null ? String(raw).replace(/\D/g, '') : '';
+    if (!id) continue;
+    const name = typeof node.name === 'string' ? node.name : undefined;
+    out.push({ id, name });
+  }
+  fbControlLog('fb:graph-pixels', 'me/businesses', { count: out.length });
+  return out;
+}
+
+/**
+ * 遍历 `me/businesses` 逐 BM 拉像素并合并（与「搜索所有像素」采集策略一致，解决单页无 business_id 时拉不到数据的问题）。
+ */
+export async function fetchPixelsAcrossMeBusinesses(
+  accessToken: string,
+  nowMs: number,
+  sourceUrl: string
+): Promise<FbPixelShareRecord[]> {
+  const businesses = await fetchMeBusinessesFromGraph(accessToken);
+  const map = new Map<string, FbPixelShareRecord>();
+  for (const b of businesses) {
+    try {
+      const rows = await fetchBusinessPixelsFromGraph(accessToken, b.id, nowMs, sourceUrl, b.name);
+      for (const r of rows) {
+        mergeFbPixelShareIntoMap(map, r);
+      }
+    } catch (e: unknown) {
+      fbControlWarn('fb:graph-pixels', `BM ${b.id} 像素合并跳过`, e instanceof Error ? e.message : e);
+    }
+  }
+  const list = [...map.values()].sort((a, x) => (a.pixelName || '').localeCompare(x.pixelName || '', 'zh-CN'));
+  fbControlLog('fb:graph-pixels', '多 BM 合并后像素行', { count: list.length });
   return list;
 }

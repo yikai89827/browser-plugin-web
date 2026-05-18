@@ -1,7 +1,8 @@
 import { browser } from 'wxt/browser';
-import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
+import type { FbPixelCollectPayload, FbPixelShareRecord } from '../../../interfaces/fbControl';
 import {
   fetchBusinessPixelsFromGraph,
+  fetchPixelsAcrossMeBusinesses,
   mergeFbPixelShareIntoMap,
   parseMetaBusinessIdFromPageUrl,
 } from '../../../utils/fb/graphFetchBusinessPixels';
@@ -108,24 +109,41 @@ function collectPixelsFromDom(url: string, now: number): FbPixelShareRecord[] {
 
 /**
  * 在 BM「数据集 / 事件管理」等页：优先用 Graph `owned_pixels` / `client_pixels` / `adspixels`（与 fbspider 常用方式一致），
- * 失败或无 token 时回退 DOM / 内嵌 JSON。
+ * `all_pixels` 模式会遍历 `me/businesses` 拉齐多 BM 像素；失败或无 token 时回退 DOM / 内嵌 JSON。
  */
-export async function fetchPixels(): Promise<FbPixelShareRecord[]> {
+export async function fetchPixels(opts?: FbPixelCollectPayload): Promise<FbPixelShareRecord[]> {
   const now = Date.now();
   const url = window.location.href;
   const merged = new Map<string, FbPixelShareRecord>();
 
   try {
-    const bmId = parseMetaBusinessIdFromPageUrl(url);
+    const mode = opts?.mode === 'bm_id' ? 'bm_id' : 'all_pixels';
+    const bmIdFromUrl = parseMetaBusinessIdFromPageUrl(url);
     const token = await getAccessTokenFromExtension();
 
-    if (bmId && token) {
+    if (token) {
+      const useAllBusinesses = mode === 'all_pixels' || (mode === 'bm_id' && !bmIdFromUrl);
+      if (mode === 'bm_id' && !bmIdFromUrl) {
+        fbControlWarn(
+          'content:pixels',
+          '搜索 BM ID 模式但当前页 URL 无 business_id，已回退为遍历 me/businesses',
+          { href: url.slice(0, 120) }
+        );
+      }
       try {
-        const graphRows = await fetchBusinessPixelsFromGraph(token, bmId, now, url);
-        for (const r of graphRows) {
-          mergeFbPixelShareIntoMap(merged, r);
+        if (useAllBusinesses) {
+          const graphRows = await fetchPixelsAcrossMeBusinesses(token, now, url);
+          for (const r of graphRows) {
+            mergeFbPixelShareIntoMap(merged, r);
+          }
+          fbControlLog('content:pixels', 'Graph 像素（多 BM）已合并', { count: graphRows.length });
+        } else if (bmIdFromUrl) {
+          const graphRows = await fetchBusinessPixelsFromGraph(token, bmIdFromUrl, now, url);
+          for (const r of graphRows) {
+            mergeFbPixelShareIntoMap(merged, r);
+          }
+          fbControlLog('content:pixels', 'Graph 像素列表已合并', { bmId: bmIdFromUrl, count: graphRows.length });
         }
-        fbControlLog('content:pixels', 'Graph 像素列表已合并', { bmId, count: graphRows.length });
       } catch (e: unknown) {
         fbControlWarn(
           'content:pixels',
@@ -134,10 +152,7 @@ export async function fetchPixels(): Promise<FbPixelShareRecord[]> {
         );
       }
     } else {
-      fbControlLog('content:pixels', '跳过 Graph：无 business_id 或未保存 token', {
-        hasBmId: Boolean(bmId),
-        hasToken: Boolean(token),
-      });
+      fbControlLog('content:pixels', '跳过 Graph：未保存 token', { mode, hasBmId: Boolean(bmIdFromUrl) });
     }
 
     const domRelevant =

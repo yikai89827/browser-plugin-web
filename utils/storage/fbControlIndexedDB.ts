@@ -54,6 +54,33 @@ function mergeAdAccount(
   return out;
 }
 
+/** 写入时合并，保留本地已改的收藏、备注等 */
+function mergePixelShare(
+  prev: FbPixelShareRecord | undefined,
+  incoming: FbPixelShareRecord
+): FbPixelShareRecord {
+  const p = prev;
+  const out: FbPixelShareRecord = {
+    ...(p ?? ({} as FbPixelShareRecord)),
+    ...incoming,
+    id: incoming.id,
+    pixelId: incoming.pixelId || p?.pixelId || incoming.id,
+    pixelName: incoming.pixelName || p?.pixelName || incoming.pixelId,
+    capturedAt: incoming.capturedAt ?? p?.capturedAt ?? Date.now(),
+  };
+  if (incoming.favorite === undefined && p?.favorite !== undefined) {
+    out.favorite = p.favorite;
+  }
+  if (
+    (incoming.remark === undefined || incoming.remark === '') &&
+    p?.remark != null &&
+    p.remark !== ''
+  ) {
+    out.remark = p.remark;
+  }
+  return out;
+}
+
 /** 打开或升级 IndexedDB；失败时通过 Promise reject */
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -147,18 +174,43 @@ export async function fbIdbMergeAccount(
   await fbIdbUpsertAccounts([incoming]);
 }
 
-/** 批量写入像素分享记录 */
+/** 按键读取单条像素分享 */
+export async function fbIdbGetPixelShare(id: string): Promise<FbPixelShareRecord | undefined> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PIXELS, 'readonly');
+    const req = tx.objectStore(STORE_PIXELS).get(id);
+    req.onsuccess = () => {
+      db.close();
+      resolve(req.result as FbPixelShareRecord | undefined);
+    };
+    req.onerror = () => {
+      db.close();
+      reject(req.error);
+    };
+  });
+}
+
+/**
+ * 批量合并写入像素分享；与已有行按 `id` 合并，保留收藏/备注等本地字段。
+ * @returns 本次参与合并的传入行数（非库内总行数）
+ */
 export async function fbIdbUpsertPixelShares(rows: FbPixelShareRecord[]): Promise<number> {
   if (!rows.length) return 0;
-  const db = await openDb();
+  const existing = await fbIdbGetAllPixelShares();
+  const map = new Map(existing.map((r) => [r.id, r]));
   let count = 0;
+  for (const row of rows) {
+    if (!row.id) continue;
+    map.set(row.id, mergePixelShare(map.get(row.id), row));
+    count++;
+  }
+  const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_PIXELS, 'readwrite');
     const store = tx.objectStore(STORE_PIXELS);
-    for (const row of rows) {
-      if (!row.id) continue;
-      store.put(row);
-      count++;
+    for (const r of map.values()) {
+      store.put(r);
     }
     tx.oncomplete = () => {
       db.close();
@@ -173,8 +225,25 @@ export async function fbIdbUpsertPixelShares(rows: FbPixelShareRecord[]): Promis
       reject(tx.error);
     };
   });
-  fbControlLog('idb', 'fbIdbUpsertPixelShares 完成', { upserted: count });
+  fbControlLog('idb', 'fbIdbUpsertPixelShares 完成', { incomingRows: count, storeSizeAfter: map.size });
   return count;
+}
+
+/** 局部更新单条像素（如站点改收藏、备注） */
+export async function fbIdbMergePixelShare(
+  patch: Partial<FbPixelShareRecord> & { id: string }
+): Promise<void> {
+  const prev = await fbIdbGetPixelShare(patch.id);
+  const incoming: FbPixelShareRecord = {
+    id: patch.id,
+    pixelId: patch.pixelId ?? prev?.pixelId ?? patch.id,
+    pixelName: patch.pixelName ?? prev?.pixelName ?? patch.pixelId ?? patch.id,
+    capturedAt: prev?.capturedAt ?? Date.now(),
+    ...prev,
+    ...patch,
+    id: patch.id,
+  };
+  await fbIdbUpsertPixelShares([incoming]);
 }
 
 /** 读取全部广告账户 */

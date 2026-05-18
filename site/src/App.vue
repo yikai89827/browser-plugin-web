@@ -11,10 +11,11 @@ import { accountsShellExtensionReady } from './lib/accountsRouteGate';
 import GlobalToastStack from './components/GlobalToastStack.vue';
 import {
   pixelListLastUpdatedDisplay,
-  pixelListRefreshRunning,
-  requestPixelListRefresh,
+  pixelsGraphSyncReady,
+  pixelsGraphSyncRunning,
+  requestPixelsGraphSync,
   pixelsShellExtensionReady,
-} from './lib/pixelListHub';
+} from './lib/pixelListSyncHub';
 
 const THEME_KEY = 'fb_admin_theme';
 
@@ -22,6 +23,38 @@ const route = useRoute();
 const theme = ref<'dark' | 'light'>('dark');
 
 const pageTitle = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : '仪表盘'));
+
+const isAccountsRoute = computed(() => route.name === 'accounts');
+const isPixelsRoute = computed(() => route.name === 'pixels');
+
+/** 顶栏「更新」：仅账户管理 / 像素分享页可点 */
+const headerUpdateEnabled = computed(() => {
+  if (isAccountsRoute.value) {
+    return accountsShellExtensionReady.value && accountsGraphSyncReady.value;
+  }
+  if (isPixelsRoute.value) {
+    return pixelsShellExtensionReady.value && pixelsGraphSyncReady.value;
+  }
+  return false;
+});
+
+const headerUpdateRunning = computed(
+  () =>
+    (isAccountsRoute.value && accountsGraphSyncRunning.value) ||
+    (isPixelsRoute.value && pixelsGraphSyncRunning.value)
+);
+
+/** 按当前页面展示对应模块的上次更新时间 */
+const headerLastUpdatedDisplay = computed(() => {
+  if (isAccountsRoute.value) return accountsListLastUpdatedDisplay.value || '—';
+  if (isPixelsRoute.value) return pixelListLastUpdatedDisplay.value || '—';
+  return '—';
+});
+
+function onHeaderUpdate() {
+  if (isAccountsRoute.value) void requestAccountsGraphSync();
+  else if (isPixelsRoute.value) void requestPixelsGraphSync();
+}
 
 onMounted(() => {
   const stored = localStorage.getItem(THEME_KEY);
@@ -93,32 +126,17 @@ function navItemActive(item: { path: string }) {
       <header class="content-header">
         <h1>{{ pageTitle }}</h1>
         <div class="header-actions">
-          <template v-if="route.name === 'accounts' && accountsShellExtensionReady">
-            <span class="accounts-header-meta">
-              最近一次更新时间：{{ accountsListLastUpdatedDisplay || '—' }}
-            </span>
-            <button
-              type="button"
-              class="btn-header-update"
-              :disabled="!accountsGraphSyncReady || accountsGraphSyncRunning"
-              @click="requestAccountsGraphSync"
-            >
-              {{ accountsGraphSyncRunning ? '加载中…' : '更新' }}
-            </button>
-          </template>
-          <template v-if="route.name === 'pixels' && pixelsShellExtensionReady">
-            <span class="accounts-header-meta">
-              最近一次更新时间：{{ pixelListLastUpdatedDisplay || '—' }}
-            </span>
-            <button
-              type="button"
-              class="btn-header-update"
-              :disabled="pixelListRefreshRunning"
-              @click="requestPixelListRefresh"
-            >
-              {{ pixelListRefreshRunning ? '加载中…' : '更新' }}
-            </button>
-          </template>
+          <span class="accounts-header-meta">
+            最近一次更新时间：{{ headerLastUpdatedDisplay }}
+          </span>
+          <button
+            type="button"
+            class="btn-header-update"
+            :disabled="!headerUpdateEnabled || headerUpdateRunning"
+            @click="onHeaderUpdate"
+          >
+            {{ headerUpdateRunning ? '加载中…' : '更新' }}
+          </button>
           <div class="theme-switch" role="group" aria-label="界面主题">
             <button
               type="button"
