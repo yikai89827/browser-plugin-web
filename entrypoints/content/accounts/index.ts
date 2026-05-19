@@ -5,11 +5,9 @@ import {
   mapGraphApiAdAccountToRecord,
   normalizeAccountId,
 } from '../../../utils/fb/adAccount/mapGraphAdAccount';
-import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 
 export type { FbAdAccountRecord };
 
-/** ‰ª? DOM Ê??Ê?¨Ëß£Ê?êË?±Ë¥πÊ?∞Â≠? */
 function parseSpend(spendText?: string | null): number {
   if (!spendText) return 0;
   const cleaned = spendText.replace(/[^0-9.-]/g, '');
@@ -17,23 +15,19 @@ function parseSpend(spendText?: string | null): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-/** Â∞?È??È??Áª?Ê??Âè?È?ÅÂ?∞Âê?Âè∞ `FB_CONTROL_SAVE_ACCOUNTS` */
 async function persistAccounts(rows: FbAdAccountRecord[]) {
   if (!rows.length) return;
   try {
-    fbControlLog('content:accounts', 'persistAccounts', { count: rows.length });
     await browser.runtime.sendMessage({
       action: 'FB_CONTROL_SAVE_ACCOUNTS',
       data: rows,
     });
+    console.log(`[fbControl] persisted ${rows.length} accounts to extension IndexedDB`);
   } catch (e) {
-    fbControlError('content:accounts', 'persistAccounts Â§±Ë¥•', e);
+    console.error('[fbControl] persist accounts failed', e);
   }
 }
 
-/**
- * Â?®ÂπøÂ??ÁÆ°Áê? / BM Ë¥¶Ê?∑Â??Ë°®È°µ‰ª? DOMÔº?Ê??È°µÈù¢Â??Âµ? JSONÔº?È??È??ÂπøÂ??Ë¥¶Ê?∑Âπ∂Ê?Å‰π?Â??„??
- */
 export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
   const accounts: FbAdAccountRecord[] = [];
   const now = Date.now();
@@ -41,7 +35,6 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
 
   try {
     if (url.includes('/adsmanager/manage/') || url.includes('business.facebook.com')) {
-      fbControlLog('content:accounts', 'Âº?Âß? DOM Ê?´ÊèèË¥¶Ê?∑Ë°?', { url });
       const accountRows = document.querySelectorAll(
         '[data-testid*="account-row"], [role="row"]'
       );
@@ -75,12 +68,11 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
             });
           }
         } catch (err) {
-          fbControlError('content:accounts', 'Ëß£Ê?êÂç?Ë°? DOM Â§±Ë¥•', err);
+          console.error('Error parsing account row:', err);
         }
       });
 
       if (accounts.length === 0) {
-        fbControlLog('content:accounts', 'DOM Ê?†Ë°?Ôº?Â∞ùËØ? adsManagerContext Â??Âµ? JSON');
         const pageData = extractPageData();
         const list = pageData?.accounts ?? pageData?.adaccounts ?? pageData?.ad_accounts;
         if (Array.isArray(list) && list.length) {
@@ -95,18 +87,17 @@ export async function fetchAccounts(): Promise<FbAdAccountRecord[]> {
         }
       }
 
-      fbControlLog('content:accounts', 'È??È??ÂÆ?Ê?ê', { count: accounts.length });
+      console.log(`[fbControl] collected ${accounts.length} ad accounts`);
     }
 
     await persistAccounts(accounts);
     return accounts;
   } catch (error) {
-    fbControlError('content:accounts', 'fetchAccounts Â§±Ë¥•', error);
+    console.error('Error fetching accounts:', error);
     throw error;
   }
 }
 
-/** ‰ª?È°µÈù¢ script ‰∏≠Ëß£Ê?ê `adsManagerContext` JSONÔº?Â??È??Ê?∞ÊçÆÊ∫êÔº? */
 function extractPageData(): { accounts?: any[]; adaccounts?: any[]; ad_accounts?: any[] } | null {
   try {
     const scripts: NodeListOf<HTMLScriptElement> = document.querySelectorAll('script');
@@ -121,12 +112,11 @@ function extractPageData(): { accounts?: any[]; adaccounts?: any[]; ad_accounts?
       }
     }
   } catch (error) {
-    fbControlError('content:accounts', 'extractPageData Â§±Ë¥•', error);
+    console.error('Error extracting page data:', error);
   }
   return null;
 }
 
-/** ÂΩ?Â?ç URL Ê?ØÂê¶‰∏∫ÂπøÂ??Ë¥¶Ê?∑Á?∏Â?≥ÁÆ°Áê?È°µ */
 export function isAccountPage(): boolean {
   return (
     window.location.href.includes('/adsmanager/manage/') ||

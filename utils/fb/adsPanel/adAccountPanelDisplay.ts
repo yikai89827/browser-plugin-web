@@ -344,3 +344,25 @@ export function buildDisplayOptions(
     usdToAccountRate,
   };
 }
+
+/** 悬浮窗表格行（兼容旧 widget 批量渲染） */
+export type AdsPanelDisplayRow = {
+  label: string;
+  value: string;
+  valueKind?: FormattedPanelField['valueKind'];
+};
+
+/** 将账户记录格式化为悬浮窗展示行 */
+export function buildAdsPanelDisplayRows(
+  row: FbAdAccountRecord,
+  opts?: AdsPanelDisplayOptions
+): AdsPanelDisplayRow[] {
+  return PANEL_FIELD_DEFS.map((def) => {
+    const formatted = formatPanelField(def.key, row, opts);
+    return {
+      label: def.label,
+      value: formatted.value,
+      valueKind: formatted.valueKind,
+    };
+  });
+}
