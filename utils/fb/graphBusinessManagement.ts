@@ -112,6 +112,29 @@ export type BusinessUserProfile = {
   facebookUserId?: string;
 };
 
+function isNumericGraphId(v: unknown): boolean {
+  const s = v != null ? String(v).trim() : '';
+  return /^\d{5,}$/.test(s);
+}
+
+/** 从 BusinessUser / assigned_users 节点 JSON 解析个人 Facebook 数字 UID（与商务用户 id 区分） */
+function parsePersonalFacebookIdFromNode(
+  json: Record<string, unknown>,
+  businessUserId: string
+): string | undefined {
+  const buId = String(businessUserId).trim();
+  const user = json.user as { id?: string } | undefined;
+  if (user?.id != null && isNumericGraphId(user.id)) {
+    const uid = String(user.id).trim();
+    if (uid !== buId) return uid;
+  }
+  if (json.uid != null && isNumericGraphId(json.uid)) {
+    const uid = String(json.uid).trim();
+    if (uid !== buId) return uid;
+  }
+  return undefined;
+}
+
 /** 分页拉取 BM 内 business_users，建立 businessUserId → 资料索引 */
 export async function fetchBusinessUsersIndex(
   accessToken: string,
@@ -120,24 +143,38 @@ export async function fetchBusinessUsersIndex(
   const map = new Map<string, BusinessUserProfile>();
   const bid = String(businessId).trim();
   if (!/^\d{5,}$/.test(bid)) return map;
-  let url =
-    `https://graph.facebook.com/${GRAPH_VERSION}/${bid}/business_users?fields=id,name,email&limit=500&access_token=${encodeURIComponent(accessToken)}`;
-  for (let page = 0; page < 20 && url; page++) {
-    const { ok, json } = await graphJson(url, { method: 'GET' });
-    if (!ok || json.error) break;
-    const rows = Array.isArray((json as { data?: unknown[] }).data)
-      ? ((json as { data: { id?: string; email?: string; name?: string }[] }).data ?? [])
-      : [];
-    for (const row of rows) {
-      const businessUserId = row.id != null ? String(row.id).trim() : '';
-      if (!businessUserId || map.has(businessUserId)) continue;
-      const email =
-        row.email != null && String(row.email).includes('@') ? String(row.email).trim() : undefined;
-      const name = row.name != null && String(row.name).trim() ? String(row.name).trim() : undefined;
-      map.set(businessUserId, { businessUserId, name, email });
+  const fieldAttempts = ['id,name,email,user{id}', 'id,name,email'];
+  for (const fields of fieldAttempts) {
+    map.clear();
+    let url = `https://graph.facebook.com/${GRAPH_VERSION}/${bid}/business_users?fields=${fields}&limit=500&access_token=${encodeURIComponent(accessToken)}`;
+    let listOk = true;
+    for (let page = 0; page < 20 && url; page++) {
+      const { ok, json } = await graphJson(url, { method: 'GET' });
+      if (!ok || json.error) {
+        listOk = false;
+        break;
+      }
+      const rows = Array.isArray((json as { data?: unknown[] }).data)
+        ? ((json as {
+            data: { id?: string; email?: string; name?: string; user?: { id?: string } }[];
+          }).data ?? [])
+        : [];
+      for (const row of rows) {
+        const businessUserId = row.id != null ? String(row.id).trim() : '';
+        if (!businessUserId || map.has(businessUserId)) continue;
+        const email =
+          row.email != null && String(row.email).includes('@') ? String(row.email).trim() : undefined;
+        const name = row.name != null && String(row.name).trim() ? String(row.name).trim() : undefined;
+        const facebookUserId =
+          row.user?.id != null && isNumericGraphId(row.user.id)
+            ? String(row.user.id).trim()
+            : undefined;
+        map.set(businessUserId, { businessUserId, name, email, facebookUserId });
+      }
+      const next = (json as { paging?: { next?: string } }).paging?.next;
+      url = typeof next === 'string' && next.length ? next : '';
     }
-    const next = (json as { paging?: { next?: string } }).paging?.next;
-    url = typeof next === 'string' && next.length ? next : '';
+    if (listOk && map.size) return map;
   }
   return map;
 }
@@ -149,7 +186,13 @@ export async function fetchBusinessUserProfile(
 ): Promise<BusinessUserProfile | null> {
   const buId = String(businessUserId).trim();
   if (!/^\d{5,}$/.test(buId)) return null;
-  const fieldSets = ['name,email,user{id,name,email}', 'name,email', 'id,name,email'];
+  const fieldSets = [
+    'name,email,user{id,name,email}',
+    'user{id}',
+    'name,email,uid',
+    'name,email',
+    'id,name,email',
+  ];
   for (const fields of fieldSets) {
     const url = `https://graph.facebook.com/${GRAPH_VERSION}/${buId}?fields=${fields}&access_token=${encodeURIComponent(accessToken)}`;
     const { ok, json } = await graphJson(url, { method: 'GET' });
@@ -159,10 +202,7 @@ export async function fetchBusinessUserProfile(
     const email =
       json.email != null && String(json.email).includes('@') ? String(json.email).trim() : undefined;
     const user = json.user as { id?: string; name?: string; email?: string } | undefined;
-    const facebookUserId =
-      user?.id != null && /^\d{5,}$/.test(String(user.id).trim())
-        ? String(user.id).trim()
-        : undefined;
+    const facebookUserId = parsePersonalFacebookIdFromNode(json, buId);
     const userName =
       user?.name != null && String(user.name).trim() ? String(user.name).trim() : undefined;
     const userEmail =
@@ -175,6 +215,77 @@ export async function fetchBusinessUserProfile(
     };
   }
   return null;
+}
+
+/**
+ * 由 BM 商务用户编号反查个人 Facebook UID（`/{personalId}/business_users` 的反向）。
+ * 在 assigned_users 无法展开 `user{id}` 时依次尝试单节点与 BM 列表。
+ */
+export async function resolvePersonalFacebookIdFromBusinessUser(
+  accessToken: string,
+  businessId: string,
+  businessUserId: string,
+  emailHint?: string
+): Promise<string | null> {
+  const buId = String(businessUserId).trim();
+  const bid = String(businessId).trim();
+  if (!isNumericGraphId(buId) || !isNumericGraphId(bid)) return null;
+
+  const profile = await fetchBusinessUserProfile(accessToken, buId);
+  if (profile?.facebookUserId) return profile.facebookUserId;
+
+  let url = `https://graph.facebook.com/${GRAPH_VERSION}/${bid}/business_users?fields=id,email,user{id}&limit=200&access_token=${encodeURIComponent(accessToken)}`;
+  for (let page = 0; page < 20 && url; page++) {
+    const { ok, json } = await graphJson(url, { method: 'GET' });
+    if (!ok || json.error) break;
+    const rows = Array.isArray((json as { data?: unknown[] }).data)
+      ? ((json as { data: { id?: string; email?: string; user?: { id?: string } }[] }).data ?? [])
+      : [];
+    for (const row of rows) {
+      const rowId = row.id != null ? String(row.id).trim() : '';
+      if (rowId !== buId) continue;
+      if (row.user?.id != null && isNumericGraphId(row.user.id)) {
+        const uid = String(row.user.id).trim();
+        if (uid !== buId) return uid;
+      }
+    }
+    const next = (json as { paging?: { next?: string } }).paging?.next;
+    url = typeof next === 'string' && next.length ? next : '';
+  }
+
+  const viaPersonalEdge = await findBusinessUserIdViaUserBusinessUsersEdge(accessToken, buId, bid);
+  if (viaPersonalEdge && viaPersonalEdge !== buId) {
+    return buId;
+  }
+
+  const email = emailHint?.trim();
+  if (email?.includes('@')) {
+    const hit = await findBusinessUserByEmail(accessToken, bid, email);
+    if (hit?.businessUserId === buId) {
+      const again = await fetchBusinessUserProfile(accessToken, buId);
+      if (again?.facebookUserId) return again.facebookUserId;
+    }
+  }
+
+  return null;
+}
+
+/** 用 BM 邮箱索引校验商务用户 id 是否与邮箱一致（有邮箱时） */
+export async function validateBusinessUserIdInBm(
+  accessToken: string,
+  businessId: string,
+  businessUserId: string,
+  emailHint?: string
+): Promise<boolean> {
+  const buId = String(businessUserId).trim();
+  const bid = String(businessId).trim();
+  if (!isNumericGraphId(buId) || !isNumericGraphId(bid)) return false;
+  const email = emailHint?.trim();
+  if (!email?.includes('@')) {
+    return (await fetchBusinessUserProfile(accessToken, buId)) != null;
+  }
+  const hit = await findBusinessUserByEmail(accessToken, bid, email);
+  return hit?.businessUserId === buId;
 }
 
 /** 分页拉取 BM 内 business_users，按邮箱匹配 */

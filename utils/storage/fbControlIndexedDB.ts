@@ -127,6 +127,20 @@ export async function fbIdbGetAccount(accountId: string): Promise<FbAdAccountRec
   });
 }
 
+/** 按数字 ID 读取（兼容 act_ 前缀与库内主键差异） */
+export async function fbIdbGetAccountLoose(
+  accountId: string
+): Promise<FbAdAccountRecord | undefined> {
+  const raw = String(accountId).replace(/^act_/i, '').trim();
+  if (!raw) return undefined;
+  const direct = await fbIdbGetAccount(raw);
+  if (direct) return direct;
+  const prefixed = await fbIdbGetAccount(`act_${raw}`);
+  if (prefixed) return prefixed;
+  const all = await fbIdbGetAllAccounts();
+  return all.find((r) => String(r.accountId).replace(/^act_/i, '') === raw);
+}
+
 /**
  * 批量合并写入广告账户；与已有行按 `accountId` 合并，保留收藏/备注等本地字段。
  * @returns 本次参与合并的传入行数（非库内总行数）

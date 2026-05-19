@@ -16,6 +16,8 @@ export default {
 
     const { fetchAccounts, isAccountPage } = await import('./content/accounts');
     const { fetchPixels, isPixelPage } = await import('./content/pixels');
+    const { initAdsPanelOnPage } = await import('./content/adsPanel');
+    initAdsPanelOnPage();
 
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       fbControlLog('content', 'onMessage', { action: (message as { action?: string }).action });

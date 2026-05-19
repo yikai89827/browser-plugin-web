@@ -3,9 +3,14 @@ import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
 import { fbControlLog, fbControlWarn } from '../../fbControlLog';
 import { getFbAccessToken } from '../../fb/accessTokenStore';
 import { fetchAdAccountPaymentActivities } from '../../fb/graphFetchAdAccountPaymentActivities';
-import { syncAdAccountsFromGraphToIndexedDb } from '../../fb/graphAdAccountSyncService';
+import { renameAdAccountOnFacebook } from '../../fb/graphAdAccountBatchOperations';
+import {
+  syncAdAccountsFromGraphToIndexedDb,
+  syncSingleAdAccountFromGraphToIndexedDb,
+} from '../../fb/graphAdAccountSyncService';
 import {
   fbIdbClearAccounts,
+  fbIdbGetAccountLoose,
   fbIdbGetAllAccounts,
   fbIdbMergeAccount,
   fbIdbUpsertAccounts,
@@ -41,6 +46,17 @@ export async function handleFbControlAdAccountMessage(
       return { success: true, payload: { list } };
     }
 
+    case 'FB_CONTROL_GET_ACCOUNT': {
+      const body = message.data as { accountId?: string } | undefined;
+      const accountId = body?.accountId?.trim();
+      if (!accountId) {
+        return { success: false, error: 'accountId required' };
+      }
+      fbControlLog('messaging:accounts', 'FB_CONTROL_GET_ACCOUNT', { accountId });
+      const account = await fbIdbGetAccountLoose(accountId);
+      return { success: true, payload: { account: account ?? null } };
+    }
+
     case 'FB_CONTROL_CLEAR_ACCOUNTS':
       fbControlLog('messaging:accounts', 'FB_CONTROL_CLEAR_ACCOUNTS');
       await fbIdbClearAccounts();
@@ -55,6 +71,44 @@ export async function handleFbControlAdAccountMessage(
       }
       fbControlLog('messaging:accounts', 'Graph 同步成功', { upserted: r.upserted, total: r.total });
       return { success: true, payload: { upserted: r.upserted, total: r.total } };
+    }
+
+    case 'FB_CONTROL_SYNC_AD_ACCOUNT_FROM_GRAPH': {
+      const body = message.data as { accountId?: string } | undefined;
+      const accountId = body?.accountId?.trim();
+      if (!accountId) {
+        return { success: false, error: 'accountId required' };
+      }
+      fbControlLog('messaging:accounts', 'FB_CONTROL_SYNC_AD_ACCOUNT_FROM_GRAPH', { accountId });
+      const r = await syncSingleAdAccountFromGraphToIndexedDb(accountId);
+      if (!r.ok) {
+        fbControlWarn('messaging:accounts', '单账户 Graph 同步失败', r.error);
+        return { success: false, error: r.error };
+      }
+      return { success: true, payload: { account: r.account } };
+    }
+
+    case 'FB_CONTROL_RENAME_AD_ACCOUNT': {
+      const body = message.data as { accountId?: string; name?: string } | undefined;
+      const accountId = body?.accountId?.trim();
+      const name = body?.name?.trim();
+      if (!accountId || !name) {
+        return { success: false, error: 'accountId and name required' };
+      }
+      fbControlLog('messaging:accounts', 'FB_CONTROL_RENAME_AD_ACCOUNT', { accountId });
+      const token = await getFbAccessToken();
+      if (!token) {
+        return { success: false, error: '未保存 access_token，无法重命名' };
+      }
+      try {
+        await renameAdAccountOnFacebook(token, accountId, name);
+        await fbIdbMergeAccount({ accountId, name });
+        return { success: true, payload: { accountId, name } };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        fbControlWarn('messaging:accounts', '重命名失败', msg);
+        return { success: false, error: msg };
+      }
     }
 
     case 'FB_CONTROL_FETCH_AD_ACCOUNT_PAYMENTS': {

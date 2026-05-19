@@ -3,6 +3,7 @@ import {
   fetchBusinessUserProfile,
   fetchBusinessUsersIndex,
   resolveBusinessIdForAdAccount,
+  resolvePersonalFacebookIdFromBusinessUser,
 } from './graphBusinessManagement';
 import { fetchFacebookSelfUserIdsForExclude } from './graphFetchMe';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
@@ -167,7 +168,7 @@ async function enrichAssignedUserDetails(
     for (;;) {
       const i = next++;
       if (i >= rows.length) return;
-      out[i] = await enrichOneAssignedUserDetail(accessToken, rows[i], index);
+      out[i] = await enrichOneAssignedUserDetail(accessToken, businessId, rows[i], index);
     }
   }
   const n = Math.min(ENRICH_CONCURRENCY, rows.length);
@@ -177,6 +178,7 @@ async function enrichAssignedUserDetails(
 
 async function enrichOneAssignedUserDetail(
   accessToken: string,
+  businessId: string,
   row: AdAccountAssignedUserDetail,
   businessIndex: Map<string, { name?: string; email?: string; facebookUserId?: string }>
 ): Promise<AdAccountAssignedUserDetail> {
@@ -184,14 +186,22 @@ async function enrichOneAssignedUserDetail(
   let name = row.name ?? hit?.name;
   let email = row.email ?? hit?.email;
   let facebookUserId = row.facebookUserId ?? hit?.facebookUserId;
-  if (name && email && facebookUserId) {
-    return { ...row, name, email, facebookUserId };
+  if (!name || !email || !facebookUserId) {
+    const profile = await fetchBusinessUserProfile(accessToken, row.assignedUserId);
+    if (profile) {
+      name = name ?? profile.name;
+      email = email ?? profile.email;
+      facebookUserId = facebookUserId ?? profile.facebookUserId;
+    }
   }
-  const profile = await fetchBusinessUserProfile(accessToken, row.assignedUserId);
-  if (profile) {
-    name = name ?? profile.name;
-    email = email ?? profile.email;
-    facebookUserId = facebookUserId ?? profile.facebookUserId;
+  if (!facebookUserId) {
+    const resolved = await resolvePersonalFacebookIdFromBusinessUser(
+      accessToken,
+      businessId,
+      row.assignedUserId,
+      email
+    );
+    if (resolved) facebookUserId = resolved;
   }
   return { ...row, name, email, facebookUserId };
 }

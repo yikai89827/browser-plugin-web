@@ -150,3 +150,51 @@ export async function fetchAdAccountsFromGraph(accessToken: string): Promise<FbA
   console.info('[fbControl:graph] adminCount enrich 完成', { mappedCount: out.length });
   return out;
 }
+
+/**
+ * 按广告账户 ID 从 Graph 拉取单条并映射（用于悬浮窗本地无缓存时即时补全）。
+ */
+export async function fetchSingleAdAccountFromGraph(
+  accessToken: string,
+  accountId: string
+): Promise<FbAdAccountRecord | null> {
+  const id = String(accountId).replace(/^act_/i, '').trim();
+  if (!/^\d{10,}$/.test(id)) return null;
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/act_${id}?fields=${encodeURIComponent(AD_ACCOUNT_FIELDS)}&access_token=${encodeURIComponent(accessToken)}`;
+  console.info('[fbControl:graph] 拉取单条广告账户', {
+    accountId: id,
+    url: redactUrlForLog(url),
+    token: describeToken(accessToken),
+  });
+
+  const res = await graphFetch(url);
+  const json = (await res.json()) as Record<string, unknown> & {
+    error?: { message?: string };
+  };
+  if (!res.ok || json.error) {
+    const msg = json.error?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  const now = Date.now();
+  const record = mapGraphApiAdAccountToRecord(
+    json,
+    normalizeAccountId(id, id),
+    now,
+    `graph:${GRAPH_VERSION}/act_${id}`
+  );
+
+  try {
+    const hintBmIds = [record.belongsToBmId, record.createdFromBmId].filter(
+      (bid): bid is string => typeof bid === 'string' && /^\d{5,}$/.test(bid.trim())
+    );
+    record.adminCount = await fetchAdAccountManageAdminCount(accessToken, record.accountId, {
+      hintBmIds,
+    });
+  } catch {
+    record.adminCount = 0;
+  }
+
+  return record;
+}

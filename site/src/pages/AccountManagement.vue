@@ -882,6 +882,7 @@ type AdminDrawerField = {
   value: string;
   mono?: boolean;
   full?: boolean;
+  title?: string;
 };
 
 function adminDrawerCardTitle(ar: AdAccountAssignedUserDetail, index: number): string {
@@ -890,11 +891,30 @@ function adminDrawerCardTitle(ar: AdAccountAssignedUserDetail, index: number): s
   return `协作者 ${index + 1}`;
 }
 
+function formatAdminDrawerFacebookUid(ar: AdAccountAssignedUserDetail): string {
+  if (ar.facebookUserId?.trim()) return ar.facebookUserId.trim();
+  return '—';
+}
+
 function adminDrawerFields(ar: AdAccountAssignedUserDetail): AdminDrawerField[] {
+  const uidMissing = !ar.facebookUserId?.trim();
   return [
     { label: '名称', value: dash(ar.name) },
-    { label: '商务用户 ID', value: dash(ar.assignedUserId), mono: true },
-    { label: 'Facebook UID', value: dash(ar.facebookUserId), mono: true },
+    {
+      label: '商务用户 ID',
+      value: dash(ar.assignedUserId),
+      mono: true,
+      title:
+        'BM 协作者编号，来自 assigned_users 的 id，用于 Graph 授权/删除；与邮箱一致时即表示编号正确。',
+    },
+    {
+      label: 'Facebook UID',
+      value: formatAdminDrawerFacebookUid(ar),
+      mono: true,
+      title: uidMissing
+        ? '个人主页数字编号。Meta 未返回 user{id} 时无法显示，不影响按商务用户 ID 操作。'
+        : '个人 Facebook 主页数字编号（非商务用户 ID）。',
+    },
     { label: '邮箱', value: dash(ar.email) },
     { label: '权限', value: formatAssignedUserTasks(ar.tasks), full: true },
   ];
@@ -1868,7 +1888,7 @@ onUnmounted(() => {
                     class="admin-user-field"
                     :class="{ 'admin-user-field--full': field.full }"
                   >
-                    <div class="admin-user-field-label">{{ field.label }}</div>
+                    <div class="admin-user-field-label" :title="field.title">{{ field.label }}</div>
                     <div class="admin-user-field-value" :class="{ mono: field.mono }">
                       {{ field.value }}
                     </div>
