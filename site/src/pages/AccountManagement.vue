@@ -25,7 +25,7 @@ import {
   unregisterAccountsGraphSync,
 } from '../lib/accountListSyncHub';
 import { fbControlLog } from '../../../utils/fbControlLog';
-import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccountDisplayMaps';
+import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
 import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
 import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
 import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';

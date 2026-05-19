@@ -1,5 +1,5 @@
 import type { PixelDrawerKind, PixelDrawerSubmitPayload } from './pixelOperationTypes';
-import type { PixelBmOption, PixelChecklistItem, PixelOpResultRow } from '../../../utils/fb/graphPixelBatchOperations';
+import type { PixelBmOption, PixelChecklistItem, PixelOpResultRow } from '../../../utils/fb/pixel/graphPixelBatchOperations';
 import {
   executePixelDrawerOperation,
   fetchBmAdAccountsForPixelAssign,
@@ -8,7 +8,7 @@ import {
   fetchPixelOperationBusinesses,
   fetchPixelSharedAdAccounts,
   fetchPixelSharedAgencies,
-} from '../../../utils/fb/graphPixelBatchOperations';
+} from '../../../utils/fb/pixel/graphPixelBatchOperations';
 import { getFbAccessTokenFromExtension } from './extensionBridge';
 import { fbControlLog } from '../../../utils/fbControlLog';
 

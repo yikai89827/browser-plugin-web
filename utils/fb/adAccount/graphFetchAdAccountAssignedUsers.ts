@@ -5,9 +5,9 @@ import {
   resolveBusinessIdForAdAccount,
   resolvePersonalFacebookIdFromBusinessUser,
 } from './graphBusinessManagement';
-import { fetchFacebookSelfUserIdsForExclude } from './graphFetchMe';
-import { describeToken, redactUrlForLog } from './tokenDebugLog';
-import { graphFetch } from './graphExternalFetch';
+import { fetchFacebookSelfUserIdsForExclude } from '../graphFetchMe';
+import { describeToken, redactUrlForLog } from '../tokenDebugLog';
+import { graphFetch } from '../graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 const MAX_PAGES = 25;

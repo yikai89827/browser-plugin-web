@@ -2,12 +2,17 @@ import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
 import { fbControlLog, fbControlWarn } from '../../fbControlLog';
 import { getFbAccessToken } from '../../fb/accessTokenStore';
-import { fetchAdAccountPaymentActivities } from '../../fb/graphFetchAdAccountPaymentActivities';
-import { renameAdAccountOnFacebook } from '../../fb/graphAdAccountBatchOperations';
+import { fetchAdAccountPaymentActivities } from '../../fb/adAccount/graphFetchAdAccountPaymentActivities';
+import { renameAdAccountOnFacebook } from '../../fb/adAccount/graphAdAccountBatchOperations';
+import {
+  fetchAdAccountHiddenAdminCount,
+  fetchAdAccountManageAdminCount,
+} from '../../fb/adAccount/graphFetchAdAccountAssignedUsers';
 import {
   syncAdAccountsFromGraphToIndexedDb,
   syncSingleAdAccountFromGraphToIndexedDb,
-} from '../../fb/graphAdAccountSyncService';
+} from '../../fb/adAccount/graphAdAccountSyncService';
+import { fetchUsdToCurrencyRate } from '../../fb/adsPanel/currencyExchange';
 import {
   fbIdbClearAccounts,
   fbIdbGetAccountLoose,
@@ -107,6 +112,64 @@ export async function handleFbControlAdAccountMessage(
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         fbControlWarn('messaging:accounts', '重命名失败', msg);
+        return { success: false, error: msg };
+      }
+    }
+
+    case 'FB_CONTROL_GET_USD_EXCHANGE_RATE': {
+      const body = message.data as { currency?: string } | undefined;
+      const currency = body?.currency?.trim().toUpperCase();
+      if (!currency) {
+        return { success: false, error: 'currency required' };
+      }
+      try {
+        const rate = await fetchUsdToCurrencyRate(currency);
+        return { success: true, payload: { rate } };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        fbControlWarn('messaging:accounts', '汇率获取失败', msg);
+        return { success: false, error: msg };
+      }
+    }
+
+    case 'FB_CONTROL_FETCH_MANAGE_ADMIN_COUNT': {
+      const body = message.data as { accountId?: string; hintBmIds?: string[] } | undefined;
+      const accountId = body?.accountId?.trim();
+      if (!accountId) {
+        return { success: false, error: 'accountId required' };
+      }
+      const token = await getFbAccessToken();
+      if (!token) {
+        return { success: false, error: '未保存 access_token' };
+      }
+      try {
+        const count = await fetchAdAccountManageAdminCount(token, accountId, {
+          hintBmIds: body?.hintBmIds,
+        });
+        return { success: true, payload: { count } };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { success: false, error: msg };
+      }
+    }
+
+    case 'FB_CONTROL_FETCH_HIDDEN_ADMIN_COUNT': {
+      const body = message.data as { accountId?: string; hintBmIds?: string[] } | undefined;
+      const accountId = body?.accountId?.trim();
+      if (!accountId) {
+        return { success: false, error: 'accountId required' };
+      }
+      const token = await getFbAccessToken();
+      if (!token) {
+        return { success: false, error: '未保存 access_token' };
+      }
+      try {
+        const count = await fetchAdAccountHiddenAdminCount(token, accountId, {
+          hintBmIds: body?.hintBmIds,
+        });
+        return { success: true, payload: { count } };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
         return { success: false, error: msg };
       }
     }

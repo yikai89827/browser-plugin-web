@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import type { FbPixelCollectPayload, FbPixelShareRecord } from '../../../interfaces/fbControl';
 import type { FbControlIncomingMessage, FbControlMessageResult } from './types';
 import { fbControlError, fbControlLog } from '../../fbControlLog';
-import { syncPixelSharesFromGraphToIndexedDb } from '../../fb/graphPixelSyncService';
+import { syncPixelSharesFromGraphToIndexedDb } from '../../fb/pixel/graphPixelSyncService';
 import {
   fbIdbClearPixelShares,
   fbIdbGetAllPixelShares,

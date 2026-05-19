@@ -1,9 +1,9 @@
-import type { FbAdAccountRecord } from '../../interfaces/fbControl';
-import { describeToken, redactUrlForLog } from './tokenDebugLog';
+import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
+import { describeToken, redactUrlForLog } from '../tokenDebugLog';
 import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
-import { fetchFacebookSelfUserIdsForExclude } from './graphFetchMe';
+import { fetchFacebookSelfUserIdsForExclude } from '../graphFetchMe';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
-import { graphFetch } from './graphExternalFetch';
+import { graphFetch } from '../graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 

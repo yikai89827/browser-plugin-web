@@ -5,7 +5,7 @@ import {
   formatAccountLocalTime,
   type AdsPanelDisplayOptions,
   type AdsPanelDisplayRow,
-} from '../../../utils/fb/adAccountPanelDisplay';
+} from '../../../utils/fb/adsPanel/adAccountPanelDisplay';
 import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 import { detectSelectedAccountId, watchSelectedAccount } from './detectSelectedAccount';
 

@@ -1,8 +1,8 @@
-import type { PixelDrawerKind } from '../../interfaces/fbControl';
-import { fbControlLog, fbControlWarn } from '../fbControlLog';
-import { graphFetch } from './graphExternalFetch';
+import type { PixelDrawerKind } from '../../../interfaces/fbControl';
+import { fbControlLog, fbControlWarn } from '../../fbControlLog';
+import { graphFetch } from '../graphExternalFetch';
 import { fetchMeBusinessesFromGraph } from './graphFetchBusinessPixels';
-import { redactUrlForLog } from './tokenDebugLog';
+import { redactUrlForLog } from '../tokenDebugLog';
 
 const GRAPH_VERSION = 'v21.0';
 const DEFAULT_INTERVAL_MS = 1200;

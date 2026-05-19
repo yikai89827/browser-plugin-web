@@ -1,6 +1,6 @@
-import { fbControlLog } from '../fbControlLog';
-import { graphFetch } from './graphExternalFetch';
-import { redactUrlForLog } from './tokenDebugLog';
+import { fbControlLog } from '../../fbControlLog';
+import { graphFetch } from '../graphExternalFetch';
+import { redactUrlForLog } from '../tokenDebugLog';
 
 const GRAPH_VERSION = 'v21.0';
 

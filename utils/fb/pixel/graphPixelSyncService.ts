@@ -2,17 +2,17 @@
  * 使用本地已保存的 access_token 调用 Graph 拉取像素，并写入 IndexedDB。
  * 在扩展 Service Worker 中执行，不依赖 Facebook 活动标签是否为「像素页」。
  */
-import type { FbPixelCollectPayload, FbPixelShareRecord } from '../../interfaces/fbControl';
-import { getFbAccessToken } from './accessTokenStore';
+import type { FbPixelCollectPayload, FbPixelShareRecord } from '../../../interfaces/fbControl';
+import { getFbAccessToken } from '../accessTokenStore';
 import {
   fetchBusinessPixelsFromGraph,
   fetchPixelsAcrossMeBusinesses,
   mergeFbPixelShareIntoMap,
   parseMetaBusinessIdFromPageUrl,
 } from './graphFetchBusinessPixels';
-import { fbControlLog, fbControlWarn } from '../fbControlLog';
-import { fbIdbUpsertPixelShares } from '../storage/fbControlIndexedDB';
-import { describeToken } from './tokenDebugLog';
+import { fbControlLog, fbControlWarn } from '../../fbControlLog';
+import { fbIdbUpsertPixelShares } from '../../storage/fbControlIndexedDB';
+import { describeToken } from '../tokenDebugLog';
 
 export type GraphPixelSyncResult =
   | { ok: true; upserted: number; total: number }

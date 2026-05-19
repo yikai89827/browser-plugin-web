@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, watch, computed } from 'vue';
 import type { PixelDrawerKind, PixelDrawerPreset, PixelDrawerSubmitPayload, PixelDrawerContext } from '../lib/pixelOperationTypes';
-import type { PixelBmOption, PixelChecklistItem, PixelOpResultRow } from '../../../utils/fb/graphPixelBatchOperations';
+import type { PixelBmOption, PixelChecklistItem, PixelOpResultRow } from '../../../utils/fb/pixel/graphPixelBatchOperations';
 import {
   executePixelDrawerFromSite,
   fetchPixelBmListFromSite,

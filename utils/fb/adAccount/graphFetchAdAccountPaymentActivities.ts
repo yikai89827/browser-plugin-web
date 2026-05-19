@@ -1,6 +1,6 @@
-import { describeToken, redactUrlForLog } from './tokenDebugLog';
-import { graphFetch } from './graphExternalFetch';
-import type { FbAdAccountPaymentActivity } from '../../interfaces/fbControl';
+import { describeToken, redactUrlForLog } from '../tokenDebugLog';
+import { graphFetch } from '../graphExternalFetch';
+import type { FbAdAccountPaymentActivity } from '../../../interfaces/fbControl';
 
 const GRAPH_VERSION = 'v21.0';
 const MAX_PAGES = 12;

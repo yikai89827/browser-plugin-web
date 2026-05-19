@@ -1,4 +1,4 @@
-import type { FbAdAccountRecord } from '../../interfaces/fbControl';
+import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import {
   formatAccountStatusZh,
   formatDisableReasonZh,

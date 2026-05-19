@@ -1,7 +1,7 @@
-import type { FbPixelShareRecord } from '../../interfaces/fbControl';
-import { fbControlLog, fbControlWarn } from '../fbControlLog';
-import { redactUrlForLog } from './tokenDebugLog';
-import { graphFetch } from './graphExternalFetch';
+import type { FbPixelShareRecord } from '../../../interfaces/fbControl';
+import { fbControlLog, fbControlWarn } from '../../fbControlLog';
+import { redactUrlForLog } from '../tokenDebugLog';
+import { graphFetch } from '../graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 

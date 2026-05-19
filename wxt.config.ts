@@ -44,6 +44,7 @@ export default defineConfig({
       name: '账户管理',
       host_permissions: [
         "*://*.facebook.com/*",
+        "https://api.frankfurter.app/*",
         "http://localhost/*",
         "http://127.0.0.1/*",
         "http://192.168.110.77/*",

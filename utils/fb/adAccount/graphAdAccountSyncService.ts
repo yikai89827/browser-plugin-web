@@ -2,11 +2,11 @@
  * 使用本地已保存的 access_token 调用 Graph，并将广告账户写入 IndexedDB。
  * 单一职责：编排「读 token → 拉 Graph → 写库」，不含消息协议。
  */
-import type { FbAdAccountRecord } from '../../interfaces/fbControl';
-import { getFbAccessToken } from './accessTokenStore';
+import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
+import { getFbAccessToken } from '../accessTokenStore';
 import { fetchAdAccountsFromGraph, fetchSingleAdAccountFromGraph } from './graphFetchAdAccounts';
-import { fbIdbUpsertAccounts } from '../storage/fbControlIndexedDB';
-import { describeToken } from './tokenDebugLog';
+import { fbIdbUpsertAccounts } from '../../storage/fbControlIndexedDB';
+import { describeToken } from '../tokenDebugLog';
 
 export type GraphAdAccountSyncResult =
   | { ok: true; upserted: number; total: number }

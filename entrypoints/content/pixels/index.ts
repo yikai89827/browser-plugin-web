@@ -5,12 +5,12 @@ import {
   fetchPixelsAcrossMeBusinesses,
   mergeFbPixelShareIntoMap,
   parseMetaBusinessIdFromPageUrl,
-} from '../../../utils/fb/graphFetchBusinessPixels';
+} from '../../../utils/fb/pixel/graphFetchBusinessPixels';
 import { fbControlError, fbControlLog, fbControlWarn } from '../../../utils/fbControlLog';
 
 export type { FbPixelShareRecord };
 
-/** ç”Ÿæˆåƒç´ åˆ†äº«è¡Œçš„ç¨³å®šä¸»é”®ï¼ˆåƒç´  + BMï¼‰ */
+/** ç??æ?å?ç´ å??äº«è¡?ç??ç¨³å®?ä¸»é?®ï¼?å?ç´  + BMï¼? */
 function stablePixelShareId(pixelId: string, bmId: string): string {
   const p = pixelId || 'unknown_pixel';
   const b = bmId || 'no_bm';
@@ -26,12 +26,12 @@ async function getAccessTokenFromExtension(): Promise<string | null> {
       return res.payload.token;
     }
   } catch (e) {
-    fbControlWarn('content:pixels', 'è¯»å– access_token å¤±è´¥', e);
+    fbControlWarn('content:pixels', 'è¯»å? access_token å¤±è´¥', e);
   }
   return null;
 }
 
-/** å°†åƒç´ é‡‡é›†ç»“æœå†™å…¥æ‰©å±• IndexedDB */
+/** å°?å?ç´ é??é??ç»?æ??å??å?¥æ?©å±? IndexedDB */
 async function persistPixelShares(rows: FbPixelShareRecord[]) {
   if (!rows.length) return;
   try {
@@ -47,7 +47,7 @@ async function persistPixelShares(rows: FbPixelShareRecord[]) {
 
 function collectPixelsFromDom(url: string, now: number): FbPixelShareRecord[] {
   const pixels: FbPixelShareRecord[] = [];
-  fbControlLog('content:pixels', 'å¼€å§‹ DOM æ‰«æåƒç´ è¡Œ', { url });
+  fbControlLog('content:pixels', 'å¼?å§? DOM æ?«æå?ç´ è¡?', { url });
   const pixelRows = document.querySelectorAll(
     '[data-testid*="pixel-row"], [data-testid*="event-pixel"], [role="row"]'
   );
@@ -77,12 +77,12 @@ function collectPixelsFromDom(url: string, now: number): FbPixelShareRecord[] {
         });
       }
     } catch (err) {
-      fbControlError('content:pixels', 'è§£æå•è¡Œ DOM å¤±è´¥', err);
+      fbControlError('content:pixels', 'è§£æ?å?è¡? DOM å¤±è´¥', err);
     }
   });
 
   if (pixels.length === 0) {
-    fbControlLog('content:pixels', 'DOM æ— è¡Œï¼Œå°è¯•é¡µé¢å†…åµŒ pixelsData');
+    fbControlLog('content:pixels', 'DOM æ? è¡?ï¼?å°è¯?é¡µé¢å??åµ? pixelsData');
     const pageData = extractPageData();
     if (pageData?.pixels?.length) {
       for (let i = 0; i < pageData.pixels.length; i++) {
@@ -108,8 +108,8 @@ function collectPixelsFromDom(url: string, now: number): FbPixelShareRecord[] {
 }
 
 /**
- * åœ¨ BMã€Œæ•°æ®é›† / äº‹ä»¶ç®¡ç†ã€ç­‰é¡µï¼šä¼˜å…ˆç”¨ Graph `owned_pixels` / `client_pixels` / `adspixels`ï¼ˆä¸ fbspider å¸¸ç”¨æ–¹å¼ä¸€è‡´ï¼‰ï¼Œ
- * `all_pixels` æ¨¡å¼ä¼šéå† `me/businesses` æ‹‰é½å¤š BM åƒç´ ï¼›å¤±è´¥æˆ–æ—  token æ—¶å›é€€ DOM / å†…åµŒ JSONã€‚
+ * å?¨ BMã??æ?°æ®é?? / äº?ä»¶ç®¡ç?ã?ç­?é¡µï¼?ä¼?å??ç?¨ Graph `owned_pixels` / `client_pixels` / `adspixels`ï¼?ä¸? fbspider å¸¸ç?¨æ?¹å¼ä¸?è?´ï¼?ï¼?
+ * `all_pixels` æ¨¡å¼ä¼?éå?? `me/businesses` æ??é½å¤? BM å?ç´ ï¼?å¤±è´¥æ??æ?  token æ?¶å??é?? DOM / å??åµ? JSONã??
  */
 export async function fetchPixels(opts?: FbPixelCollectPayload): Promise<FbPixelShareRecord[]> {
   const now = Date.now();
@@ -126,7 +126,7 @@ export async function fetchPixels(opts?: FbPixelCollectPayload): Promise<FbPixel
       if (mode === 'bm_id' && !bmIdFromUrl) {
         fbControlWarn(
           'content:pixels',
-          'æœç´¢ BM ID æ¨¡å¼ä½†å½“å‰é¡µ URL æ—  business_idï¼Œå·²å›é€€ä¸ºéå† me/businesses',
+          'æ?ç´¢ BM ID æ¨¡å¼ä½?å½?å?é¡µ URL æ?  business_idï¼?å·²å??é??ä¸ºéå?? me/businesses',
           { href: url.slice(0, 120) }
         );
       }
@@ -136,23 +136,23 @@ export async function fetchPixels(opts?: FbPixelCollectPayload): Promise<FbPixel
           for (const r of graphRows) {
             mergeFbPixelShareIntoMap(merged, r);
           }
-          fbControlLog('content:pixels', 'Graph åƒç´ ï¼ˆå¤š BMï¼‰å·²åˆå¹¶', { count: graphRows.length });
+          fbControlLog('content:pixels', 'Graph å?ç´ ï¼?å¤? BMï¼?å·²å?å¹¶', { count: graphRows.length });
         } else if (bmIdFromUrl) {
           const graphRows = await fetchBusinessPixelsFromGraph(token, bmIdFromUrl, now, url);
           for (const r of graphRows) {
             mergeFbPixelShareIntoMap(merged, r);
           }
-          fbControlLog('content:pixels', 'Graph åƒç´ åˆ—è¡¨å·²åˆå¹¶', { bmId: bmIdFromUrl, count: graphRows.length });
+          fbControlLog('content:pixels', 'Graph å?ç´ å??è¡¨å·²å?å¹¶', { bmId: bmIdFromUrl, count: graphRows.length });
         }
       } catch (e: unknown) {
         fbControlWarn(
           'content:pixels',
-          'Graph æ‹‰å–åƒç´ å¤±è´¥ï¼ˆæ£€æŸ¥ token æ˜¯å¦å« business_management / ads_readï¼‰',
+          'Graph æ??å?å?ç´ å¤±è´¥ï¼?æ£?æ?¥ token æ?¯å¦å« business_management / ads_readï¼?',
           e instanceof Error ? e.message : e
         );
       }
     } else {
-      fbControlLog('content:pixels', 'è·³è¿‡ Graphï¼šæœªä¿å­˜ token', { mode, hasBmId: Boolean(bmIdFromUrl) });
+      fbControlLog('content:pixels', 'è·³è¿? Graphï¼?æ?ªä¿å­? token', { mode, hasBmId: Boolean(bmIdFromUrl) });
     }
 
     const domRelevant =
@@ -167,11 +167,11 @@ export async function fetchPixels(opts?: FbPixelCollectPayload): Promise<FbPixel
       for (const r of domRows) {
         mergeFbPixelShareIntoMap(merged, r);
       }
-      fbControlLog('content:pixels', 'DOM/å†…åµŒ JSON å›é€€å®Œæˆ', { count: domRows.length });
+      fbControlLog('content:pixels', 'DOM/å??åµ? JSON å??é??å®?æ?', { count: domRows.length });
     }
 
     const pixels = [...merged.values()].sort((a, b) => (b.capturedAt || 0) - (a.capturedAt || 0));
-    fbControlLog('content:pixels', 'é‡‡é›†å®Œæˆ', { count: pixels.length });
+    fbControlLog('content:pixels', 'é??é??å®?æ?', { count: pixels.length });
     await persistPixelShares(pixels);
     return pixels;
   } catch (error) {
@@ -180,7 +180,7 @@ export async function fetchPixels(opts?: FbPixelCollectPayload): Promise<FbPixel
   }
 }
 
-/** ä» script æ ‡ç­¾è§£æ pixelsData / eventsManagerData */
+/** ä»? script æ ?ç­¾è§£æ? pixelsData / eventsManagerData */
 function extractPageData(): { pixels?: any[] } | null {
   try {
     const scripts: NodeListOf<HTMLScriptElement> = document.querySelectorAll('script');
@@ -200,7 +200,7 @@ function extractPageData(): { pixels?: any[] } | null {
   return null;
 }
 
-/** å½“å‰ URL æ˜¯å¦åº”è§¦å‘åƒç´ é‡‡é›†ï¼ˆå« Graph æ‰€éœ€çš„ business_id é¡µï¼‰ */
+/** å½?å? URL æ?¯å¦åº?è§¦å?å?ç´ é??é??ï¼?å« Graph æ??é??ç?? business_id é¡µï¼? */
 export function isPixelPage(): boolean {
   const u = window.location.href;
   const h = window.location.hostname || '';
