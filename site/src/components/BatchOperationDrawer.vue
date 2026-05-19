@@ -183,10 +183,22 @@ const limitPreviewText = computed(() => {
   if (m == null) {
     return `${base}\n请在「操作类型」中填写金额后查看效果说明。`;
   }
-  if (limitOpKind.value === 'increase') {
-    return `${base}\n将对每个账户在现有 spend_cap 上增加 ${(m / 100).toFixed(2)} USD（不限额时按该金额设为新上限）。`;
+  const deltaUsd = (m / 100).toFixed(2);
+  const curMinor = row?.spendCapMinor;
+  if (curMinor != null && curMinor > 0) {
+    const afterMinor =
+      limitOpKind.value === 'increase' ? curMinor + m : Math.max(0, curMinor - m);
+    const curUsd = (curMinor / 100).toFixed(2);
+    const afterUsd = (afterMinor / 100).toFixed(2);
+    if (limitOpKind.value === 'increase') {
+      return `${base}\n预计：${curUsd} USD + ${deltaUsd} USD = ${afterUsd} USD（按列表当前额度估算）`;
+    }
+    return `${base}\n预计：${curUsd} USD − ${deltaUsd} USD = ${afterUsd} USD`;
   }
-  return `${base}\n将对每个账户在现有 spend_cap 上减少 ${(m / 100).toFixed(2)} USD（已不限额则无法减少）。`;
+  if (limitOpKind.value === 'increase') {
+    return `${base}\n将对每个账户在现有 spend_cap 上增加 ${deltaUsd} USD（不限额时按该金额设为新上限）。`;
+  }
+  return `${base}\n将对每个账户在现有 spend_cap 上减少 ${deltaUsd} USD（已不限额则无法减少）。`;
 });
 
 const limitConfirmOk = computed(() => {
@@ -220,6 +232,11 @@ const friendVerifyRunning = ref(false);
 const friendAuthorizeSnapshot = ref<BatchAuthorizedUser[]>([]);
 
 const resultRows = computed(() => props.batchResults ?? []);
+
+/** 结果页已展示 Graph 批量结果（非仅好友预检卡） */
+const hasGraphBatchResults = computed(() =>
+  resultRows.value.some((r) => r.resultKind !== 'friend_uid')
+);
 
 watch(
   () => [props.open, props.batchResults?.length, props.batchRunning] as const,
@@ -380,6 +397,17 @@ const footPrimaryLabel = computed(() => {
   }
   if (friendAuthorizeAction.value) return '确定';
   return '确定';
+});
+
+/** 结果页批量已结束：隐藏底部「确定」，避免重复执行（仍可用右上角关闭） */
+const showFootExecuteButton = computed(() => {
+  if (drawerTab.value !== 'result') return true;
+  if (props.batchRunning || friendVerifyRunning.value) return true;
+  if (!resultRows.value.length) return true;
+  /** 授权/增权等：好友预检通过后已执行 Graph，单户或多户均不再显示底部确定 */
+  if (hasGraphBatchResults.value) return false;
+  if (isFriendGate.value && (friendRunAction.value || friendAuthorizeAction.value)) return true;
+  return false;
 });
 
 /** 说明文案中不展示中括号及其中的内容（【】、半角 []、全角［］） */
@@ -680,7 +708,7 @@ function onBackdropClick() {
 }
 
 async function onConfirm() {
-  if (!props.preset || confirmDisabled.value) return;
+  if (!props.preset || confirmDisabled.value || props.batchRunning) return;
 
   if (isFriendGate.value && friendRunAction.value) {
     if (!uidsText.value.trim()) return;
@@ -761,6 +789,21 @@ async function onConfirm() {
       kind: limitOpKind.value,
       amountMinor: minor,
     };
+    const capHints: Record<
+      string,
+      { spendCapMinor?: number; amountSpentMinor?: number; currency?: string }
+    > = {};
+    for (const row of props.selectedAccountRows ?? []) {
+      if (!row.accountId) continue;
+      capHints[row.accountId] = {
+        spendCapMinor: row.spendCapMinor,
+        amountSpentMinor: row.totalSpentMinor,
+        currency: row.currency,
+      };
+    }
+    if (Object.keys(capHints).length) {
+      payload.accountSpendCapHints = capHints;
+    }
     payload.uidsText = '';
   } else if (props.preset.entryKey === 'resetLimit') {
     const mode = resetMode.value;
@@ -1445,7 +1488,7 @@ async function onConfirm() {
           </template>
         </div>
 
-        <div class="bod-batch-foot">
+        <div v-if="showFootExecuteButton" class="bod-batch-foot">
           <button
             type="button"
             class="bod-btn-confirm"

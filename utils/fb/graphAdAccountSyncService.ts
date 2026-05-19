@@ -31,7 +31,7 @@ export async function syncAdAccountsFromGraphToIndexedDb(): Promise<GraphAdAccou
 
   console.info('[fbControl:graph] Graph 数据已映射，开始写入 IndexedDB', { rowCount: rows.length });
 
-  const upserted = await fbIdbUpsertAccounts(rows);
+  const upserted = await fbIdbUpsertAccounts(rows, { resetHiddenAdminCount: true });
 
   console.info('[fbControl:graph] IndexedDB 合并写入完成', { upserted, total: rows.length });
 

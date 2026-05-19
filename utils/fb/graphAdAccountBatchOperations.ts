@@ -1,5 +1,22 @@
 import type { BatchDrawerSubmitPayload } from '../../site/src/lib/batchOperationTypes';
 import { getConfiguredGraphBatchStepDelayMs } from './batchStepDelayMs';
+import {
+  currencyOffset,
+  detectSpendCapUnit,
+  formatSpendCapMajorLabel,
+  spendCapRawToMinor,
+  type SpendCapNormalizeHints,
+} from './spendCapCurrency';
+
+/** Marketing API 写 spend_cap 用主单位（美元）；删限额用 spend_cap_action */
+type SpendCapPostAction = 'set' | 'delete_cap' | 'reset_spent';
+
+function formatSpendCapMajorForPost(minor: number, currency?: string | null): string {
+  const offset = currencyOffset(currency);
+  const major = Math.max(0, minor) / offset;
+  if (Math.abs(major - Math.round(major)) < 1e-6) return String(Math.round(major));
+  return major.toFixed(2);
+}
 import { fbControlLog } from '../fbControlLog';
 import { fetchFacebookMeNumericId } from './graphFetchMe';
 import { graphFetch } from './graphExternalFetch';
@@ -7,6 +24,7 @@ import { redactUrlForLog } from './tokenDebugLog';
 import {
   assignBusinessUserToAdAccount,
   buildAdAccountAssignedUsersReadUrl,
+  fetchAdAccountOwnerBusinessId,
   formatNotBusinessScopedUserHint,
   inviteBusinessUserByEmail,
   parsePrimaryBmIdFromText,
@@ -827,18 +845,164 @@ export async function renameAdAccountOnFacebook(
   await renameAdAccountViaAdsManagerGraph(accessToken, accountId, trimmed);
 }
 
-async function fetchAdAccountSpendCapMinor(accessToken: string, accountId: string): Promise<number | null> {
+type AdAccountSpendCapContext = {
+  raw: number;
+  minor: number;
+  unit: ReturnType<typeof detectSpendCapUnit>;
+  currency: string;
+  amountSpentMinor: number;
+};
+
+function spendCapHintsFromPayload(
+  payload: BatchDrawerSubmitPayload,
+  accountId: string
+): SpendCapNormalizeHints {
+  const h = payload.accountSpendCapHints?.[accountId];
+  return {
+    spendCapMinor: h?.spendCapMinor,
+    amountSpentMinor: h?.amountSpentMinor,
+    currency: h?.currency,
+  };
+}
+
+export type SpendCapRecordPatch = {
+  accountId: string;
+  spendCapMinor: number;
+  paymentThresholdMinor: number;
+  spendingLimit?: string;
+  currency?: string;
+};
+
+export function spendCapRecordPatchFromMinor(
+  accountId: string,
+  minor: number,
+  currency?: string
+): SpendCapRecordPatch {
+  const m = Math.max(0, Math.round(minor));
+  return {
+    accountId,
+    spendCapMinor: m,
+    paymentThresholdMinor: m,
+    spendingLimit: m > 0 ? String(m) : undefined,
+    currency,
+  };
+}
+
+/** 从 Graph 读取 spend_cap 并转为列表展示字段 */
+export async function fetchSpendCapRecordPatch(
+  accessToken: string,
+  accountId: string,
+  hints?: SpendCapNormalizeHints
+): Promise<SpendCapRecordPatch> {
+  const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+  const minor = ctx?.minor ?? 0;
+  return spendCapRecordPatchFromMinor(accountId, minor, ctx?.currency);
+}
+
+async function postSpendCapMinor(
+  accessToken: string,
+  accountId: string,
+  targetMinor: number,
+  hints?: SpendCapNormalizeHints,
+  action: SpendCapPostAction = 'set'
+): Promise<{ beforeMinor: number; afterMinor: number; currency: string }> {
+  const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+  if (!ctx) throw new Error('无法读取当前 spend_cap');
+  const beforeMinor = ctx.minor;
+  const beforeSpent = ctx.amountSpentMinor;
+
+  if (action === 'delete_cap') {
+    await postAdAccountField(accessToken, accountId, { spend_cap_action: 'delete' });
+  } else if (action === 'reset_spent') {
+    await postAdAccountField(accessToken, accountId, { spend_cap_action: 'reset' });
+  } else {
+    await postAdAccountField(accessToken, accountId, {
+      spend_cap: formatSpendCapMajorForPost(targetMinor, ctx.currency),
+    });
+  }
+
+  const afterCtx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+  if (!afterCtx) {
+    throw new Error('写入后无法读取 spend_cap，请稍后在 Meta 广告管理工具中核对');
+  }
+  const tol = currencyOffset(ctx.currency);
+
+  if (action === 'delete_cap') {
+    if (afterCtx.raw > 0 || afterCtx.minor > tol * 2) {
+      throw new Error(
+        `删除花费上限未生效（Graph 仍返回 spend_cap=${afterCtx.raw}，约 ${formatSpendCapMajorLabel(afterCtx.minor, ctx.currency)}）。` +
+          '请在广告管理工具中手动删除，或确认 token 有 ads_management 权限。'
+      );
+    }
+  } else if (action === 'reset_spent') {
+    if (afterCtx.amountSpentMinor > tol * 2 && afterCtx.amountSpentMinor >= beforeSpent) {
+      throw new Error(
+        `账户已花费清零可能未生效（amount_spent 仍为 ${formatSpendCapMajorLabel(afterCtx.amountSpentMinor, ctx.currency)}）`
+      );
+    }
+  } else if (Math.abs(afterCtx.minor - targetMinor) > tol * 2) {
+    throw new Error(
+      `限额可能未生效（期望 ${formatSpendCapMajorLabel(targetMinor, ctx.currency)}，读取为 ${formatSpendCapMajorLabel(afterCtx.minor, ctx.currency)}）`
+    );
+  }
+  return { beforeMinor, afterMinor: afterCtx.minor, currency: ctx.currency };
+}
+
+async function fetchAdAccountSpendCapContext(
+  accessToken: string,
+  accountId: string,
+  hints?: SpendCapNormalizeHints
+): Promise<AdAccountSpendCapContext | null> {
   const act = actPath(accountId);
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}?fields=spend_cap&access_token=${encodeURIComponent(accessToken)}`;
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}?fields=spend_cap,currency,amount_spent&access_token=${encodeURIComponent(accessToken)}`;
   fbControlLog('fb:graph-batch', 'GET spend_cap', { url: redactUrlForLog(url) });
   const res = await graphFetch(url);
-  const json = (await res.json()) as { spend_cap?: string | number; error?: { message?: string } };
+  const json = (await res.json()) as {
+    spend_cap?: string | number;
+    currency?: string;
+    amount_spent?: string | number;
+    error?: { message?: string };
+  };
   if (!res.ok || json.error?.message) return null;
-  const raw = json.spend_cap;
-  if (raw === undefined || raw === null || raw === '') return 0;
-  const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace(/[^\d-]/g, ''), 10);
-  if (!Number.isFinite(n)) return null;
-  return n;
+  const rawVal = json.spend_cap;
+  const amountSpentRaw = json.amount_spent;
+  const amountSpentMinor =
+    amountSpentRaw != null && amountSpentRaw !== ''
+      ? parseInt(String(amountSpentRaw).replace(/[^\d-]/g, ''), 10)
+      : 0;
+
+  if (rawVal === undefined || rawVal === null || rawVal === '') {
+    return {
+      raw: 0,
+      minor: 0,
+      unit: 'minor',
+      currency: String(json.currency ?? 'USD'),
+      amountSpentMinor: Number.isFinite(amountSpentMinor) ? amountSpentMinor : 0,
+    };
+  }
+  const raw =
+    typeof rawVal === 'number'
+      ? rawVal
+      : parseInt(String(rawVal).replace(/[^\d-]/g, ''), 10);
+  if (!Number.isFinite(raw)) return null;
+  const currency = String(json.currency ?? hints?.currency ?? 'USD');
+  const mergedHints: SpendCapNormalizeHints = {
+    ...hints,
+    currency,
+    amountSpentMinor:
+      Number.isFinite(amountSpentMinor) && amountSpentMinor > 0
+        ? amountSpentMinor
+        : hints?.amountSpentMinor,
+  };
+  const unit = detectSpendCapUnit(raw, mergedHints);
+  const minor = spendCapRawToMinor(raw, mergedHints);
+  return {
+    raw,
+    minor,
+    unit,
+    currency,
+    amountSpentMinor: Number.isFinite(amountSpentMinor) ? amountSpentMinor : 0,
+  };
 }
 
 function parseSpendCapMinors(text: string, accountCount: number): number[] | null {
@@ -1128,32 +1292,43 @@ export async function executeAdAccountBatchOperation(
     case 'set_limit': {
       const form = payload.spendLimitForm;
       if (form) {
-        const delta = form.amountMinor ?? null;
-        if (delta == null || delta <= 0) {
+        const deltaMinor = form.amountMinor ?? null;
+        if (deltaMinor == null || deltaMinor <= 0) {
           throw new Error('请填写有效的额度金额');
         }
         for (const accountId of accounts) {
           try {
+            const hints = spendCapHintsFromPayload(payload, accountId);
+            const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+            if (!ctx) {
+              throw new Error('无法读取当前 spend_cap');
+            }
+            const curMinor = ctx.minor;
             let targetMinor: number;
             if (form.kind === 'increase') {
-              const cur = await fetchAdAccountSpendCapMinor(accessToken, accountId);
-              if (cur === null) {
-                throw new Error('无法读取当前 spend_cap');
-              }
-              targetMinor = cur <= 0 ? delta : cur + delta;
+              targetMinor = curMinor <= 0 ? deltaMinor : curMinor + deltaMinor;
             } else {
-              const cur = await fetchAdAccountSpendCapMinor(accessToken, accountId);
-              if (cur === null) {
-                throw new Error('无法读取当前 spend_cap');
-              }
-              if (cur <= 0) {
+              if (curMinor <= 0) {
                 throw new Error('当前为不限额（spend_cap=0），无法减少额度');
               }
-              targetMinor = Math.max(0, cur - delta);
+              targetMinor = Math.max(0, curMinor - deltaMinor);
             }
-            await postAdAccountField(accessToken, accountId, { spend_cap: String(targetMinor) });
+            const { afterMinor } = await postSpendCapMinor(
+              accessToken,
+              accountId,
+              targetMinor,
+              hints
+            );
             if (delayMs) await sleep(delayMs);
-            pushResult(accountId, '成功', `spend_cap 已设为 ${targetMinor}（最小货币单位）`);
+            const beforeLabel = formatSpendCapMajorLabel(curMinor, ctx.currency);
+            const afterLabel = formatSpendCapMajorLabel(afterMinor, ctx.currency);
+            const deltaLabel = formatSpendCapMajorLabel(deltaMinor, ctx.currency);
+            const verb = form.kind === 'increase' ? '增加' : '减少';
+            pushResult(
+              accountId,
+              '成功',
+              `花费上限：${beforeLabel} → ${afterLabel}（${verb} ${deltaLabel}）`
+            );
           } catch (e: unknown) {
             pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
           }
@@ -1167,9 +1342,18 @@ export async function executeAdAccountBatchOperation(
       for (let i = 0; i < accounts.length; i++) {
         const accountId = accounts[i];
         try {
-          await postAdAccountField(accessToken, accountId, { spend_cap: String(caps[i]) });
+          const hints = spendCapHintsFromPayload(payload, accountId);
+          const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+          const currency = ctx?.currency ?? 'USD';
+          await postAdAccountField(accessToken, accountId, {
+            spend_cap: formatSpendCapMajorForPost(caps[i], currency),
+          });
           if (delayMs) await sleep(delayMs);
-          pushResult(accountId, '成功', `spend_cap 已设为 ${caps[i]}`);
+          pushResult(
+            accountId,
+            '成功',
+            `spend_cap 已设为 ${formatSpendCapMajorLabel(caps[i], currency)}`
+          );
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
         }
@@ -1186,24 +1370,48 @@ export async function executeAdAccountBatchOperation(
         }
         for (const accountId of accounts) {
           try {
-            await postAdAccountField(accessToken, accountId, { spend_cap: String(cap) });
+            const hints = spendCapHintsFromPayload(payload, accountId);
+            const { afterMinor, currency } = await postSpendCapMinor(
+              accessToken,
+              accountId,
+              cap,
+              hints
+            );
             if (delayMs) await sleep(delayMs);
-            pushResult(accountId, '成功', `spend_cap 已设为 ${cap}`);
+            pushResult(
+              accountId,
+              '成功',
+              `花费上限已设为 ${formatSpendCapMajorLabel(afterMinor, currency)}`
+            );
           } catch (e: unknown) {
             pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
           }
         }
         break;
       }
-      const detailMsg =
-        rf?.mode === 'delete_restriction'
-          ? '已请求解除 spend_cap 限制（spend_cap=0，与账户清零相同接口）'
-          : '已请求将 spend_cap 置为 0（若账户策略不允许可能需在 BM 内核对）';
+      const zeroLabel = '不限额';
       for (const accountId of accounts) {
         try {
-          await postAdAccountField(accessToken, accountId, { spend_cap: '0' });
+          const hints = spendCapHintsFromPayload(payload, accountId);
+          const capAction: SpendCapPostAction =
+            rf?.mode === 'delete_restriction' ? 'delete_cap' : 'reset_spent';
+          const { beforeMinor, afterMinor, currency } = await postSpendCapMinor(
+            accessToken,
+            accountId,
+            0,
+            hints,
+            capAction
+          );
           if (delayMs) await sleep(delayMs);
-          pushResult(accountId, '成功', detailMsg);
+          const beforeLabel =
+            beforeMinor <= 0 ? zeroLabel : formatSpendCapMajorLabel(beforeMinor, currency);
+          const afterLabel =
+            afterMinor <= 0 ? zeroLabel : formatSpendCapMajorLabel(afterMinor, currency);
+          const modeNote =
+            rf?.mode === 'delete_restriction'
+              ? '已删除花费上限（spend_cap_action=delete）'
+              : '已重置账户已花费（spend_cap_action=reset）';
+          pushResult(accountId, '成功', `${modeNote}：${beforeLabel} → ${afterLabel}`);
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
         }

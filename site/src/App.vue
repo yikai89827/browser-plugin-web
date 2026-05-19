@@ -211,6 +211,10 @@ function navItemActive(item: { path: string }) {
   --fb-btn-pay-err-text: #f87171;
   --fb-btn-pay-err-border: #7f1d1d;
   --fb-btn-pay-spin-dim: rgba(147, 197, 253, 0.35);
+  --fb-count-badge-bg: #1e3a5f;
+  --fb-count-badge-text: #93c5fd;
+  --fb-count-badge-border: #3b82f6;
+  --fb-count-badge-hover-bg: #254a73;
   --fb-dash-card-bg: #111827;
   --fb-dash-card-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
   --fb-dash-stat-value: #f1f5f9;
@@ -277,6 +281,10 @@ function navItemActive(item: { path: string }) {
   --fb-btn-pay-err-text: #dc2626;
   --fb-btn-pay-err-border: #fecaca;
   --fb-btn-pay-spin-dim: rgba(29, 78, 216, 0.28);
+  --fb-count-badge-bg: #eff6ff;
+  --fb-count-badge-text: #1d4ed8;
+  --fb-count-badge-border: #bfdbfe;
+  --fb-count-badge-hover-bg: #dbeafe;
   --fb-dash-card-bg: #ffffff;
   --fb-dash-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   --fb-dash-stat-value: #1a1a2e;

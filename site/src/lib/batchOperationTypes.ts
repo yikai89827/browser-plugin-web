@@ -73,6 +73,7 @@ export type BatchAccountPreviewRow = {
   belongsToBmId?: string;
   spendCapMinor?: number;
   balanceMinor?: number;
+  totalSpentMinor?: number;
   spendingLimit?: string;
   balance?: string;
 };
@@ -154,4 +155,9 @@ export interface BatchDrawerSubmitPayload {
   };
   /** 推送/合作伙伴：账户列表已知的所属 BM ID（减少 Graph 探测） */
   accountBmHintIds?: string[];
+  /** 设置/增减限额：各账户列表中的 spend_cap / 花费，用于 Graph 单位换算 */
+  accountSpendCapHints?: Record<
+    string,
+    { spendCapMinor?: number; amountSpentMinor?: number; currency?: string }
+  >;
 }

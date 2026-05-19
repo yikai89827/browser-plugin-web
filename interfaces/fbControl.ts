@@ -69,7 +69,7 @@ export interface FbAdAccountRecord {
   billingAmountMinor?: number;
   /** 支付/花费门槛（如 spend_cap，单位：币种最小单位；0 常表示不限） */
   paymentThresholdMinor?: number;
-  /** 隐藏管理员：assigned_users 数量（点击「加载」后写入） */
+  /** 隐藏管理员：无 MANAGE 的协作者人数（与「管理员」列不重复；点击「加载」后写入） */
   hiddenAdminCount?: number;
 
   /** Graph amount_spent 原始最小单位（便于展示时与余额口径一致） */

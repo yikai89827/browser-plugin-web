@@ -13,7 +13,12 @@ import type {
 } from '../../../interfaces/fbControl';
 import type { FbTokenMeta } from '../../../utils/fb/accessTokenStore';
 import { fetchAdAccountPaymentActivities } from '../../../utils/fb/graphFetchAdAccountPaymentActivities';
-import { fetchAdAccountAssignedUserCount } from '../../../utils/fb/graphFetchAdAccountAssignedUsers';
+import {
+  fetchAdAccountHiddenAdminDetails,
+  fetchAdAccountManageAdminDetails,
+  type AdAccountAssignedUserDetail,
+} from '../../../utils/fb/graphFetchAdAccountAssignedUsers';
+import { fetchFacebookSelfUserIdsForExclude } from '../../../utils/fb/graphFetchMe';
 import {
   adAccountTasksForSubId,
   executeAdAccountBatchOperation,
@@ -25,14 +30,18 @@ import {
   parseFacebookUserRefsWithLinesFromText,
   mapUidVerifyRowsToFriendBatchResultRows,
   mapFriendCheckRowsWithPending,
+  fetchSpendCapRecordPatch,
   type AdAccountBatchResultRow,
+  type SpendCapRecordPatch,
   type VerifyFacebookUserIdsForBatchResult,
   type UidGraphVerifyDetailRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
+import type { SpendCapNormalizeHints } from '../../../utils/fb/spendCapCurrency';
 import { inviteToBusinessAndPollMembership } from '../../../utils/fb/graphBmInvitePoll';
 import { assignBusinessUserToAdAccount } from '../../../utils/fb/graphBusinessManagement';
 export type {
   AdAccountBatchResultRow,
+  SpendCapRecordPatch,
   VerifyFacebookUserIdsForBatchResult,
   UidGraphVerifyDetailRow,
 } from '../../../utils/fb/graphAdAccountBatchOperations';
@@ -210,6 +219,29 @@ export async function mergeAccountInExtension(patch: Partial<FbAdAccountRecord> 
   });
 }
 
+/** 限额操作成功后：从 Graph 回读 spend_cap 并写入扩展缓存 + 返回补丁供表格即时更新 */
+export async function syncSpendCapPatchesFromGraph(
+  accountIds: string[],
+  hintsByAccount?: Record<string, SpendCapNormalizeHints>
+): Promise<SpendCapRecordPatch[]> {
+  const tokenRes = await getFbAccessTokenFromExtension();
+  if (!tokenRes.success) {
+    throw new Error(tokenRes.error || '读取 token 失败');
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    throw new Error('未保存 access_token，无法回读 spend_cap');
+  }
+  const patches: SpendCapRecordPatch[] = [];
+  for (const accountId of accountIds) {
+    const hints = hintsByAccount?.[accountId];
+    const patch = await fetchSpendCapRecordPatch(token, accountId, hints);
+    await mergeAccountInExtension(patch);
+    patches.push(patch);
+  }
+  return patches;
+}
+
 /** 在扩展后台用已保存 token 调 Graph 同步像素（不依赖 Facebook 活动标签页类型） */
 export async function syncPixelSharesFromGraphViaExtension(opts?: FbPixelCollectPayload & { sourceUrl?: string }) {
   return sendToExtension<{ upserted: number; total: number }>({
@@ -294,12 +326,15 @@ export async function fetchAdAccountPaymentActivitiesFromExtension(
   }
 }
 
+export type { AdAccountAssignedUserDetail };
+
 /**
- * 统计广告账户 assigned_users（隐藏管理员人数），页面内 Graph 请求。
+ * 拉取广告账户 assigned_users 详情（隐藏管理员列/抽屉）。
  */
 export async function fetchAdAccountAssignedUsersFromExtension(
-  accountId: string
-): Promise<ExtensionResponse<{ count: number }>> {
+  accountId: string,
+  hintBmIds: string[] = []
+): Promise<ExtensionResponse<{ count: number; items: AdAccountAssignedUserDetail[] }>> {
   let tokenRes: ExtensionResponse<{ token: string | null }>;
   try {
     tokenRes = await getFbAccessTokenFromExtension();
@@ -315,8 +350,46 @@ export async function fetchAdAccountAssignedUsersFromExtension(
     return { success: false, error: '未保存 access_token，无法查询管理员' };
   }
   try {
-    const count = await fetchAdAccountAssignedUserCount(token, accountId);
-    return { success: true, payload: { count } };
+    const selfIds = await fetchFacebookSelfUserIdsForExclude(token);
+    const items = await fetchAdAccountHiddenAdminDetails(token, accountId, {
+      hintBmIds,
+      excludeFacebookUserIds: selfIds,
+    });
+    return { success: true, payload: { count: items.length, items } };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * 拉取带 MANAGE 的其他管理员详情（管理员列抽屉）。
+ */
+export async function fetchAdAccountManageAdminsFromExtension(
+  accountId: string,
+  hintBmIds: string[] = []
+): Promise<ExtensionResponse<{ items: AdAccountAssignedUserDetail[] }>> {
+  let tokenRes: ExtensionResponse<{ token: string | null }>;
+  try {
+    tokenRes = await getFbAccessTokenFromExtension();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { success: false, error: msg };
+  }
+  if (!tokenRes.success) {
+    return { success: false, error: tokenRes.error || '读取 token 失败' };
+  }
+  const token = tokenRes.payload?.token;
+  if (!token) {
+    return { success: false, error: '未保存 access_token，无法查询管理员' };
+  }
+  try {
+    const selfIds = await fetchFacebookSelfUserIdsForExclude(token);
+    const items = await fetchAdAccountManageAdminDetails(token, accountId, {
+      hintBmIds,
+      excludeFacebookUserIds: selfIds,
+    });
+    return { success: true, payload: { items } };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return { success: false, error: msg };

@@ -8,13 +8,18 @@ import {
   fetchAccountsFromExtension,
   fetchAdAccountPaymentActivitiesFromExtension,
   fetchAdAccountAssignedUsersFromExtension,
+  fetchAdAccountManageAdminsFromExtension,
+  type AdAccountAssignedUserDetail,
   mergeAccountInExtension,
+  syncSpendCapPatchesFromGraph,
+  type SpendCapRecordPatch,
   renameAdAccountFromSite,
   syncAdAccountsFromGraphViaExtension,
   type AdAccountBatchResultRow,
   type FriendVerifyResultPayload,
 } from '../lib/extensionBridge';
 import {
+  accountsGraphSyncRunning,
   markAccountsListFetched,
   registerAccountsGraphSync,
   unregisterAccountsGraphSync,
@@ -53,6 +58,17 @@ const paymentUi = reactive<Record<string, 'idle' | 'loading' | 'empty' | 'error'
 
 /** 隐藏管理员「加载」请求中 */
 const hiddenAdminUi = reactive<Record<string, 'loading' | 'error'>>({});
+/** 隐藏管理员详情缓存（加载成功后供点击人数打开抽屉） */
+const hiddenAdminDetailsCache = reactive<Record<string, AdAccountAssignedUserDetail[]>>({});
+
+/** 管理员 / 隐藏管理员详情抽屉 */
+const adminDrawerOpen = ref(false);
+const adminDrawerKind = ref<'manage' | 'hidden'>('manage');
+const adminDrawerTitle = ref('');
+const adminDrawerSubtitle = ref('');
+const adminDrawerRows = ref<AdAccountAssignedUserDetail[]>([]);
+const adminDrawerLoading = ref(false);
+const adminDrawerError = ref('');
 
 /** 行备注编辑 */
 const remarkModalRow = ref<FbAdAccountRecord | null>(null);
@@ -229,7 +245,7 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'adminCount':
       return coalesceNum(row.adminCount);
     case 'hiddenAdminCount':
-      return coalesceNum(row.hiddenAdminCount, -1e18);
+      return coalesceNum(hiddenAdminCountEffective(row), -1e18);
     case 'accountKindLabel':
       return coalesceStr(formatAccountKindLabelZh(row.accountKindLabel));
     case 'billingMinor':
@@ -359,6 +375,7 @@ const batchDrawerAccountRows = computed((): BatchAccountPreviewRow[] => {
       belongsToBmId: r.belongsToBmId,
       spendCapMinor: r.spendCapMinor,
       balanceMinor: r.balanceMinor,
+      totalSpentMinor: r.totalSpentMinor,
       spendingLimit: r.spendingLimit,
       balance: r.balance,
     }));
@@ -421,13 +438,23 @@ function tipPushStatusCell(row: FbAdAccountRecord): string {
 }
 
 function tipAdminCell(row: FbAdAccountRecord): string {
-  return `管理员：Graph 同步时统计 assigned_users 中含 MANAGE 任务的人数；无权限或未同步时显示 —。\n当前值：${adminBadgeText(row)}`;
+  const clickHint = adminCountNumber(row) > 0 ? '；点击数字可查看详情' : '';
+  return [
+    '管理员：广告账户协作者中，除您以外具备 MANAGE（管理）权限的人数。',
+    '与「隐藏管理员」不重复：有 MANAGE 的他人只计入本列。',
+    clickHint,
+    `当前值：${adminBadgeText(row)}`,
+  ].join('\n');
 }
 
 function tipHiddenAdminCell(row: FbAdAccountRecord): string {
-  const n = row.hiddenAdminCount != null ? `${row.hiddenAdminCount} 人` : '未加载';
+  const eff = hiddenAdminCountEffective(row);
+  const n = eff != null ? String(eff) : '未加载';
+  const clickHint = eff != null && eff > 0 ? '；点击人数可查看详情' : '';
   return [
-    '隐藏管理员：通过 Graph 查询 assigned_users 等估算的隐藏管理员人数；「加载」会请求扩展并写回本地。',
+    '隐藏管理员：已分配协作者中无 MANAGE 权限的人员（不含您本人）；有 MANAGE 的他人只计入「管理员」列。',
+    '「加载」后写入计数；若管理员≥1 且无仅投广协作者，本列应为 0。',
+    clickHint,
     `当前计数：${n}`,
   ].join('\n');
 }
@@ -583,6 +610,37 @@ function onPayCellClick(row: FbAdAccountRecord) {
   void onLoadPaymentRecords(row);
 }
 
+/** 表格展示用：优先用本次会话内最新查询结果，避免 IndexedDB 旧值仍为 1 */
+function hiddenAdminCountEffective(row: FbAdAccountRecord): number | null {
+  if (row.hiddenAdminCount == null) return null;
+  if (Object.prototype.hasOwnProperty.call(hiddenAdminDetailsCache, row.accountId)) {
+    return hiddenAdminDetailsCache[row.accountId].length;
+  }
+  return row.hiddenAdminCount;
+}
+
+async function applyHiddenAdminQueryResult(
+  row: FbAdAccountRecord,
+  items: AdAccountAssignedUserDetail[]
+) {
+  hiddenAdminDetailsCache[row.accountId] = items;
+  row.hiddenAdminCount = items.length;
+  try {
+    await mergeAccountInExtension({ accountId: row.accountId, hiddenAdminCount: items.length });
+  } catch {
+    /* 展示以行内与缓存为准 */
+  }
+}
+
+function clearHiddenAdminSessionState() {
+  for (const k of Object.keys(hiddenAdminDetailsCache)) {
+    delete hiddenAdminDetailsCache[k];
+  }
+  for (const k of Object.keys(hiddenAdminUi)) {
+    delete hiddenAdminUi[k];
+  }
+}
+
 async function onLoadHiddenAdmins(row: FbAdAccountRecord) {
   if (!extensionConfigured()) {
     errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
@@ -590,14 +648,12 @@ async function onLoadHiddenAdmins(row: FbAdAccountRecord) {
   }
   hiddenAdminUi[row.accountId] = 'loading';
   try {
-    const res = await fetchAdAccountAssignedUsersFromExtension(row.accountId);
+    const res = await fetchAdAccountAssignedUsersFromExtension(row.accountId, hintBmIdsForRow(row));
     if (!res.success) {
       hiddenAdminUi[row.accountId] = 'error';
       return;
     }
-    const count = res.payload?.count ?? 0;
-    await mergeAccountInExtension({ accountId: row.accountId, hiddenAdminCount: count });
-    row.hiddenAdminCount = count;
+    await applyHiddenAdminQueryResult(row, res.payload?.items ?? []);
     delete hiddenAdminUi[row.accountId];
   } catch {
     hiddenAdminUi[row.accountId] = 'error';
@@ -624,6 +680,21 @@ function onHiddenAdminClick(row: FbAdAccountRecord) {
   void onLoadHiddenAdmins(row);
 }
 
+function applySpendCapPatchesToAccounts(patches: SpendCapRecordPatch[]) {
+  for (const p of patches) {
+    const i = accounts.value.findIndex((a) => a.accountId === p.accountId);
+    if (i < 0) continue;
+    const row = accounts.value[i];
+    accounts.value[i] = {
+      ...row,
+      spendCapMinor: p.spendCapMinor,
+      paymentThresholdMinor: p.paymentThresholdMinor,
+      spendingLimit: p.spendingLimit,
+      ...(p.currency ? { currency: p.currency } : {}),
+    };
+  }
+}
+
 async function refreshFromExtension() {
   errorMsg.value = '';
   loading.value = true;
@@ -639,6 +710,7 @@ async function refreshFromExtension() {
     );
     markAccountsListFetched();
     fbControlLog('site:account-page', '账户列表已更新', { count: accounts.value.length });
+    clearHiddenAdminSessionState();
   } catch (e: any) {
     errorMsg.value = e?.message || String(e);
   } finally {
@@ -782,6 +854,133 @@ function adminBadgeText(row: FbAdAccountRecord) {
   return String(Math.max(0, Math.floor(Number(n))));
 }
 
+function hiddenAdminBadgeText(row: FbAdAccountRecord): string {
+  const eff = hiddenAdminCountEffective(row);
+  if (eff == null) return '0';
+  return String(Math.max(0, Math.floor(eff)));
+}
+
+function adminCountNumber(row: FbAdAccountRecord): number {
+  const n = row.adminCount;
+  if (n == null || Number.isNaN(Number(n))) return 0;
+  return Math.max(0, Math.floor(Number(n)));
+}
+
+function hintBmIdsForRow(row: FbAdAccountRecord): string[] {
+  return [row.belongsToBmId, row.createdFromBmId].filter(
+    (id): id is string => typeof id === 'string' && /^\d{5,}$/.test(id.trim())
+  );
+}
+
+function formatAssignedUserTasks(tasks: string[]): string {
+  if (!tasks.length) return '—';
+  return tasks.join(', ');
+}
+
+type AdminDrawerField = {
+  label: string;
+  value: string;
+  mono?: boolean;
+  full?: boolean;
+};
+
+function adminDrawerCardTitle(ar: AdAccountAssignedUserDetail, index: number): string {
+  const name = ar.name?.trim();
+  if (name) return name;
+  return `协作者 ${index + 1}`;
+}
+
+function adminDrawerFields(ar: AdAccountAssignedUserDetail): AdminDrawerField[] {
+  return [
+    { label: '名称', value: dash(ar.name) },
+    { label: '商务用户 ID', value: dash(ar.assignedUserId), mono: true },
+    { label: 'Facebook UID', value: dash(ar.facebookUserId), mono: true },
+    { label: '邮箱', value: dash(ar.email) },
+    { label: '权限', value: formatAssignedUserTasks(ar.tasks), full: true },
+  ];
+}
+
+function closeAdminDrawer() {
+  adminDrawerOpen.value = false;
+  adminDrawerKind.value = 'manage';
+  adminDrawerTitle.value = '';
+  adminDrawerSubtitle.value = '';
+  adminDrawerRows.value = [];
+  adminDrawerLoading.value = false;
+  adminDrawerError.value = '';
+}
+
+function openAdminDrawerShell(kind: 'manage' | 'hidden', title: string, subtitle: string) {
+  adminDrawerKind.value = kind;
+  adminDrawerTitle.value = title;
+  adminDrawerSubtitle.value = subtitle;
+  adminDrawerRows.value = [];
+  adminDrawerError.value = '';
+  adminDrawerLoading.value = true;
+  adminDrawerOpen.value = true;
+}
+
+function adminDrawerEmptyText(): string {
+  if (adminDrawerKind.value === 'hidden') {
+    return '暂无隐藏管理员（无 MANAGE 的协作者），或当前 token 无读取权限。';
+  }
+  return '暂无其他 MANAGE 管理员，或当前 token 无读取权限。';
+}
+
+async function onAdminCountClick(row: FbAdAccountRecord) {
+  const n = adminCountNumber(row);
+  if (n <= 0) return;
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    return;
+  }
+  openAdminDrawerShell(
+    'manage',
+    '管理员详情',
+    `${row.name}（${row.accountId}） · 其他具备 MANAGE 的协作者`
+  );
+  try {
+    const res = await fetchAdAccountManageAdminsFromExtension(row.accountId, hintBmIdsForRow(row));
+    if (!res.success) {
+      adminDrawerError.value = res.error || '查询失败';
+      return;
+    }
+    adminDrawerRows.value = res.payload?.items ?? [];
+  } catch (e: unknown) {
+    adminDrawerError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    adminDrawerLoading.value = false;
+  }
+}
+
+async function onHiddenAdminCountClick(row: FbAdAccountRecord) {
+  const n = hiddenAdminCountEffective(row);
+  if (n == null || n <= 0) return;
+  if (!extensionConfigured()) {
+    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    return;
+  }
+  openAdminDrawerShell(
+    'hidden',
+    '隐藏管理员详情',
+    `${row.name}（${row.accountId}） · 无 MANAGE 的协作者（不含您本人）`
+  );
+  try {
+    const res = await fetchAdAccountAssignedUsersFromExtension(row.accountId, hintBmIdsForRow(row));
+    if (!res.success) {
+      adminDrawerError.value = res.error || '查询失败';
+      return;
+    }
+    const items = res.payload?.items ?? [];
+    await applyHiddenAdminQueryResult(row, items);
+    adminDrawerRows.value = items;
+  } catch (e: unknown) {
+    adminDrawerError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    adminDrawerLoading.value = false;
+  }
+}
+
 async function syncFromGraph() {
   errorMsg.value = '';
   loading.value = true;
@@ -794,6 +993,7 @@ async function syncFromGraph() {
     if (!res.success) throw new Error(res.error || 'Graph 同步失败');
     fbControlLog('site:account-page', 'Graph 同步成功，刷新列表');
     /** 扩展侧 IndexedDB 写入完成后，再拉全量列表，避免表格仍显示同步前缓存 */
+    clearHiddenAdminSessionState();
     await refreshFromExtension();
   } catch (e: any) {
     errorMsg.value = e?.message || String(e);
@@ -1116,6 +1316,22 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
         await refreshFromExtension();
       }
     }
+    if (payload.operationId === 'set_limit' || payload.operationId === 'reset_limit') {
+      const okRows = rows.filter((r) => r.status === '成功');
+      if (okRows.length) {
+        try {
+          const patches = await syncSpendCapPatchesFromGraph(
+            okRows.map((r) => r.accountId),
+            payload.accountSpendCapHints
+          );
+          applySpendCapPatchesToAccounts(patches);
+        } catch (syncErr: unknown) {
+          const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+          fbControlLog('site:account-page', '限额操作后回读 spend_cap 失败', { msg });
+          showToastError(`操作已提交，但列表额度刷新失败：${msg}。可点击「Graph 同步」重试。`);
+        }
+      }
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     errorMsg.value = msg;
@@ -1264,7 +1480,18 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="table-wrap">
+    <div class="accounts-table-area">
+      <div
+        v-if="accountsGraphSyncRunning"
+        class="table-loading-mask"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <span class="table-loading-spin" aria-hidden="true"></span>
+        <span class="table-loading-text">正在通过 Graph 更新账户列表…</span>
+      </div>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -1448,11 +1675,24 @@ onUnmounted(() => {
               <div class="mono sub">{{ dash(row.accountId) }}</div>
             </td>
             <td :title="tipPushStatusCell(row)">{{ dash(row.pushStatus) }}</td>
-            <td :title="tipAdminCell(row)">
-              <span class="admin-badge">{{ adminBadgeText(row) }}</span>
-            </td>
-            <td class="hidden-admin-cell" :title="tipHiddenAdminCell(row)">
+            <td class="count-badge-cell" :title="tipAdminCell(row)">
               <button
+                v-if="adminCountNumber(row) > 0"
+                type="button"
+                class="count-badge count-badge--link"
+                @click="onAdminCountClick(row)"
+              >
+                {{ adminBadgeText(row) }}
+              </button>
+              <span v-else class="count-badge">{{ adminBadgeText(row) }}</span>
+            </td>
+            <td class="count-badge-cell hidden-admin-cell" :title="tipHiddenAdminCell(row)">
+              <button
+                v-if="
+                  row.hiddenAdminCount == null ||
+                  hiddenAdminState(row.accountId) === 'loading' ||
+                  hiddenAdminState(row.accountId) === 'error'
+                "
                 type="button"
                 class="btn-pay btn-pay--sm"
                 :class="{ 'btn-pay--err': hiddenAdminState(row.accountId) === 'error' }"
@@ -1466,8 +1706,19 @@ onUnmounted(() => {
                 <template v-else-if="hiddenAdminState(row.accountId) === 'error'">重试</template>
                 <template v-else>加载</template>
               </button>
-              <span v-if="row.hiddenAdminCount != null" class="muted small hidden-admin-count">
-                {{ row.hiddenAdminCount }} 人
+              <button
+                v-if="hiddenAdminCountEffective(row) != null && hiddenAdminCountEffective(row)! > 0"
+                type="button"
+                class="count-badge count-badge--link"
+                @click="onHiddenAdminCountClick(row)"
+              >
+                {{ hiddenAdminBadgeText(row) }}
+              </button>
+              <span
+                v-else-if="hiddenAdminCountEffective(row) != null"
+                class="count-badge"
+              >
+                {{ hiddenAdminBadgeText(row) }}
               </span>
             </td>
             <td :title="tipAccountKindCell(row)">{{ dash(formatAccountKindLabelZh(row.accountKindLabel)) }}</td>
@@ -1532,7 +1783,7 @@ onUnmounted(() => {
           </tr>
         </tbody>
       </table>
-    </div>
+      </div>
 
     <div v-if="sortedFiltered.length" class="pager">
       <div class="pager-info">
@@ -1579,6 +1830,59 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+    </div>
+
+    <Teleport to="body">
+      <Transition name="admin-drawer">
+        <div
+          v-if="adminDrawerOpen"
+          class="admin-drawer-overlay"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeAdminDrawer"
+        >
+          <aside class="admin-drawer-panel">
+            <div class="admin-drawer-head">
+              <h3>{{ adminDrawerTitle }}</h3>
+              <button type="button" class="admin-drawer-close" aria-label="关闭" @click="closeAdminDrawer">
+                ×
+              </button>
+            </div>
+            <p v-if="adminDrawerSubtitle" class="muted small admin-drawer-sub">{{ adminDrawerSubtitle }}</p>
+            <p v-if="adminDrawerLoading" class="muted small admin-drawer-status">加载中…</p>
+            <p v-else-if="adminDrawerError" class="admin-drawer-error">{{ adminDrawerError }}</p>
+            <div v-else class="admin-drawer-scroll">
+              <p v-if="!adminDrawerRows.length" class="admin-drawer-empty">
+                {{ adminDrawerEmptyText() }}
+              </p>
+              <article
+                v-for="(ar, ai) in adminDrawerRows"
+                :key="ar.assignedUserId || ai"
+                class="admin-user-card"
+              >
+                <h4 class="admin-user-card-title">{{ adminDrawerCardTitle(ar, ai) }}</h4>
+                <div class="admin-user-card-grid">
+                  <div
+                    v-for="(field, fi) in adminDrawerFields(ar)"
+                    :key="fi"
+                    class="admin-user-field"
+                    :class="{ 'admin-user-field--full': field.full }"
+                  >
+                    <div class="admin-user-field-label">{{ field.label }}</div>
+                    <div class="admin-user-field-value" :class="{ mono: field.mono }">
+                      {{ field.value }}
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div class="admin-drawer-foot">
+              <button type="button" class="btn primary" @click="closeAdminDrawer">关闭</button>
+            </div>
+          </aside>
+        </div>
+      </Transition>
+    </Teleport>
 
     <div
       v-if="paymentModalOpen"
@@ -1838,6 +2142,41 @@ onUnmounted(() => {
   color: var(--fb-input-text, #e5e7eb);
   margin-bottom: 12px;
 }
+.accounts-table-area {
+  position: relative;
+  margin-bottom: 12px;
+}
+.table-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fb-surface-a, #111827) 82%, transparent);
+  backdrop-filter: blur(2px);
+  pointer-events: all;
+}
+.table-loading-spin {
+  width: 32px;
+  height: 32px;
+  border: 3px solid color-mix(in srgb, var(--fb-link, #93c5fd) 35%, transparent);
+  border-top-color: var(--fb-link, #93c5fd);
+  border-radius: 50%;
+  animation: table-loading-spin 0.7s linear infinite;
+}
+.table-loading-text {
+  font-size: 13px;
+  color: var(--fb-page-text, #e5e7eb);
+}
+@keyframes table-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .table-wrap {
   width: 100%;
   max-width: 100%;
@@ -1940,22 +2279,38 @@ tbody td.sticky-col {
   max-width: 380px;
   box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.55);
 }
-.admin-badge {
+.count-badge-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+.count-badge {
   display: inline-flex;
-  min-width: 28px;
-  padding: 2px 8px;
+  align-items: center;
   justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  box-sizing: border-box;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  background: var(--fb-ghost-bg, #374151);
-  color: var(--fb-ghost-text, #e5e7eb);
+  line-height: 1;
+  background: var(--fb-count-badge-bg, #eff6ff);
+  color: var(--fb-count-badge-text, #1d4ed8);
+  border: 1px solid var(--fb-count-badge-border, #bfdbfe);
+}
+.count-badge--link {
+  cursor: pointer;
+  font-family: inherit;
+}
+.count-badge--link:hover {
+  background: var(--fb-count-badge-hover-bg, #dbeafe);
 }
 .hidden-admin-cell {
   white-space: nowrap;
 }
-.hidden-admin-count {
-  margin-left: 8px;
+.hidden-admin-cell .btn-pay--sm {
+  vertical-align: middle;
 }
 .btn-pay--sm {
   min-width: 64px;
@@ -2017,6 +2372,150 @@ tbody td.sticky-col {
 .btn.sm { padding: 6px 12px; font-size: 12px; }
 .btn.danger { background: #7f1d1d; color: #fecaca; }
 .btn.danger:hover { background: #991b1b; }
+.admin-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  background: rgba(0, 0, 0, 0.45);
+}
+.admin-drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(560px, 96vw);
+  height: 100vh;
+  z-index: 2600;
+  display: flex;
+  flex-direction: column;
+  background: var(--fb-modal-bg, #1f2937);
+  color: var(--fb-modal-text, #e5e7eb);
+  border-left: 1px solid var(--fb-modal-border, #374151);
+  box-shadow: -12px 0 36px rgba(0, 0, 0, 0.45);
+}
+.admin-drawer-enter-active .admin-drawer-panel,
+.admin-drawer-leave-active .admin-drawer-panel {
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.admin-drawer-enter-active,
+.admin-drawer-leave-active {
+  transition: opacity 0.28s ease;
+}
+.admin-drawer-enter-from,
+.admin-drawer-leave-to {
+  opacity: 0;
+}
+.admin-drawer-enter-from .admin-drawer-panel,
+.admin-drawer-leave-to .admin-drawer-panel {
+  transform: translateX(100%);
+}
+.admin-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid var(--fb-modal-border, #374151);
+}
+.admin-drawer-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.admin-drawer-close {
+  border: none;
+  background: none;
+  color: var(--fb-muted, #9ca3af);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.admin-drawer-close:hover {
+  color: #e5e7eb;
+}
+.admin-drawer-sub {
+  margin: 10px 18px 0;
+}
+.admin-drawer-status,
+.admin-drawer-error {
+  margin: 16px 18px;
+}
+.admin-drawer-error {
+  color: #f87171;
+}
+.admin-drawer-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 12px 18px;
+  padding-right: 6px;
+}
+.admin-drawer-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.admin-drawer-scroll::-webkit-scrollbar-track {
+  background: var(--fb-scrollbar-track, #0c1220);
+  border-radius: 4px;
+}
+.admin-drawer-scroll::-webkit-scrollbar-thumb {
+  background: var(--fb-scrollbar-thumb, #475569);
+  border-radius: 4px;
+}
+.admin-drawer-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--fb-scrollbar-thumb-hover, #64748b);
+}
+.admin-drawer-empty {
+  text-align: center;
+  color: var(--fb-muted, #6b7280);
+  padding: 28px 12px;
+  margin: 0;
+}
+.admin-user-card {
+  background: var(--fb-surface-a, #111827);
+  border: 1px solid var(--fb-modal-border, #374151);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.admin-user-card:last-child {
+  margin-bottom: 0;
+}
+.admin-user-card-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fb-modal-text, #e5e7eb);
+}
+.admin-user-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+.admin-user-field-label {
+  font-size: 11px;
+  color: var(--fb-muted, #9ca3af);
+  margin-bottom: 4px;
+}
+.admin-user-field-value {
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+  color: var(--fb-modal-text, #e5e7eb);
+}
+.admin-user-field-value.mono {
+  font-family: ui-monospace, monospace;
+  color: var(--fb-mono, #d1d5db);
+  word-break: break-all;
+}
+.admin-user-field--full {
+  grid-column: 1 / -1;
+}
+.admin-drawer-foot {
+  margin-top: auto;
+  padding: 12px 18px 18px;
+  border-top: 1px solid var(--fb-modal-border, #374151);
+  display: flex;
+  justify-content: flex-end;
+}
 .modal-overlay {
   position: fixed;
   inset: 0;

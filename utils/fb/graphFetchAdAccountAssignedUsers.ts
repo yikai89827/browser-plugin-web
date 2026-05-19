@@ -1,7 +1,10 @@
 import {
   buildAdAccountAssignedUsersReadUrl,
+  fetchBusinessUserProfile,
+  fetchBusinessUsersIndex,
   resolveBusinessIdForAdAccount,
 } from './graphBusinessManagement';
+import { fetchFacebookSelfUserIdsForExclude } from './graphFetchMe';
 import { describeToken, redactUrlForLog } from './tokenDebugLog';
 import { graphFetch } from './graphExternalFetch';
 
@@ -45,25 +48,71 @@ export type AdAccountAssignedUsersQueryOptions = {
   hintBmIds?: string[];
 };
 
+/** assigned_users 详情行（表格管理员/隐藏管理员抽屉） */
+export type AdAccountAssignedUserDetail = {
+  assignedUserId: string;
+  facebookUserId?: string;
+  name?: string;
+  email?: string;
+  tasks: string[];
+};
+
+type GraphAssignedUserRow = {
+  id?: string;
+  tasks?: unknown;
+  user?: { id?: string; name?: string; email?: string };
+};
+
+function parseAssignedUserDetail(row: GraphAssignedUserRow): AdAccountAssignedUserDetail | null {
+  const assignedUserId = row.id != null ? String(row.id).trim() : '';
+  if (!assignedUserId) return null;
+  const facebookUserId =
+    row.user?.id != null && /^\d{5,}$/.test(String(row.user.id).trim())
+      ? String(row.user.id).trim()
+      : undefined;
+  const name =
+    row.user?.name != null && String(row.user.name).trim()
+      ? String(row.user.name).trim()
+      : undefined;
+  const email =
+    row.user?.email != null && String(row.user.email).includes('@')
+      ? String(row.user.email).trim()
+      : undefined;
+  return {
+    assignedUserId,
+    facebookUserId,
+    name,
+    email,
+    tasks: normalizeAssignedUserTasks(row.tasks),
+  };
+}
+
+function detailRowExcluded(row: AdAccountAssignedUserDetail, excludeSet: Set<string>): boolean {
+  if (excludeSet.has(row.assignedUserId)) return true;
+  if (row.facebookUserId && excludeSet.has(row.facebookUserId)) return true;
+  return false;
+}
+
 /**
- * 分页统计 `act_{id}/assigned_users` 人数（用于「隐藏管理员」列）。
- * 需 token 具备相应广告账户权限。
+ * 分页拉取 `act_{id}/assigned_users` 详情（用于「隐藏管理员」列与抽屉）。
  */
-export async function fetchAdAccountAssignedUserCount(
+export async function fetchAdAccountAssignedUserDetails(
   accessToken: string,
   accountId: string,
   options?: AdAccountAssignedUsersQueryOptions
-): Promise<number> {
+): Promise<AdAccountAssignedUserDetail[]> {
   const path = actPath(accountId);
   const businessId = await resolveBusinessIdForAdAccount(
     accessToken,
     accountId,
     options?.hintBmIds ?? []
   );
-  let url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, 'id', accessToken);
-  let total = 0;
+  let fields = 'id,tasks,user{id,name,email}';
+  let url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, fields, accessToken);
+  const out: AdAccountAssignedUserDetail[] = [];
+  const seen = new Set<string>();
   let pages = 0;
-  console.info('[fbControl:graph] 拉取 assigned_users', {
+  console.info('[fbControl:graph] 拉取 assigned_users 详情', {
     graphVersion: GRAPH_VERSION,
     path,
     businessId,
@@ -71,27 +120,118 @@ export async function fetchAdAccountAssignedUserCount(
   });
   while (url && pages < MAX_PAGES) {
     pages += 1;
-    console.info(`[fbControl:graph] assigned_users 第 ${pages} 页`, { url: redactUrlForLog(url) });
+    console.info(`[fbControl:graph] assigned_users 详情第 ${pages} 页`, { url: redactUrlForLog(url) });
     const res = await graphFetch(url);
     const json = (await res.json()) as {
-      data?: { id?: string }[];
+      data?: GraphAssignedUserRow[];
       paging?: { next?: string };
       error?: unknown;
     };
     if (!res.ok || json.error) {
+      if (pages === 1 && fields.includes('user{')) {
+        fields = 'id,tasks';
+        url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, fields, accessToken);
+        continue;
+      }
       const msg = graphErrorToString(json, res.status);
-      console.error(
-        `[fbControl:graph] assigned_users 错误 http=${res.status} msg=${msg}`
-      );
+      console.error(`[fbControl:graph] assigned_users 详情错误 http=${res.status} msg=${msg}`);
       throw new Error(msg);
     }
     const batch = Array.isArray(json.data) ? json.data : [];
-    total += batch.length;
+    for (const row of batch) {
+      const detail = parseAssignedUserDetail(row);
+      if (!detail || seen.has(detail.assignedUserId)) continue;
+      seen.add(detail.assignedUserId);
+      out.push(detail);
+    }
     const next = json.paging?.next;
     url = typeof next === 'string' && next.length ? next : '';
   }
-  console.info('[fbControl:graph] assigned_users 计数完成', { accountId, total, pages });
-  return total;
+  const enriched = await enrichAssignedUserDetails(accessToken, businessId, out);
+  console.info('[fbControl:graph] assigned_users 详情完成', { accountId, total: enriched.length, pages });
+  return enriched;
+}
+
+const ENRICH_CONCURRENCY = 6;
+
+async function enrichAssignedUserDetails(
+  accessToken: string,
+  businessId: string,
+  rows: AdAccountAssignedUserDetail[]
+): Promise<AdAccountAssignedUserDetail[]> {
+  if (!rows.length) return rows;
+  const index = await fetchBusinessUsersIndex(accessToken, businessId);
+  const out: AdAccountAssignedUserDetail[] = [];
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= rows.length) return;
+      out[i] = await enrichOneAssignedUserDetail(accessToken, rows[i], index);
+    }
+  }
+  const n = Math.min(ENRICH_CONCURRENCY, rows.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return out;
+}
+
+async function enrichOneAssignedUserDetail(
+  accessToken: string,
+  row: AdAccountAssignedUserDetail,
+  businessIndex: Map<string, { name?: string; email?: string; facebookUserId?: string }>
+): Promise<AdAccountAssignedUserDetail> {
+  const hit = businessIndex.get(row.assignedUserId);
+  let name = row.name ?? hit?.name;
+  let email = row.email ?? hit?.email;
+  let facebookUserId = row.facebookUserId ?? hit?.facebookUserId;
+  if (name && email && facebookUserId) {
+    return { ...row, name, email, facebookUserId };
+  }
+  const profile = await fetchBusinessUserProfile(accessToken, row.assignedUserId);
+  if (profile) {
+    name = name ?? profile.name;
+    email = email ?? profile.email;
+    facebookUserId = facebookUserId ?? profile.facebookUserId;
+  }
+  return { ...row, name, email, facebookUserId };
+}
+
+/**
+ * 「隐藏管理员」：已分配协作者中**无 MANAGE** 的人员（多为仅投广/分析），且不含当前登录用户。
+ * 与「管理员」列互补：有 MANAGE 的他人只出现在管理员列，此处应为 0。
+ */
+export async function fetchAdAccountHiddenAdminDetails(
+  accessToken: string,
+  accountId: string,
+  options?: ManageAdminCountOptions
+): Promise<AdAccountAssignedUserDetail[]> {
+  const excludeSet = await resolveManageAdminExcludeSet(accessToken, options);
+  const all = await fetchAdAccountAssignedUserDetails(accessToken, accountId, options);
+  return all.filter((row) => {
+    if (detailRowExcluded(row, excludeSet)) return false;
+    return !row.tasks.includes('MANAGE');
+  });
+}
+
+/**
+ * 分页统计「隐藏管理员」人数（与 `fetchAdAccountHiddenAdminDetails` 一致）。
+ */
+export async function fetchAdAccountHiddenAdminCount(
+  accessToken: string,
+  accountId: string,
+  options?: ManageAdminCountOptions
+): Promise<number> {
+  const rows = await fetchAdAccountHiddenAdminDetails(accessToken, accountId, options);
+  return rows.length;
+}
+
+/** @deprecated 使用 fetchAdAccountHiddenAdminCount；保留别名避免外部误用「全部协作者」口径 */
+export async function fetchAdAccountAssignedUserCount(
+  accessToken: string,
+  accountId: string,
+  options?: AdAccountAssignedUsersQueryOptions
+): Promise<number> {
+  return fetchAdAccountHiddenAdminCount(accessToken, accountId, options);
 }
 
 function normalizeAssignedUserTasks(tasks: unknown): string[] {
@@ -119,10 +259,6 @@ function normalizeAssignedUserTasks(tasks: unknown): string[] {
   return [];
 }
 
-function rowHasManageTask(tasks: unknown): boolean {
-  return normalizeAssignedUserTasks(tasks).includes('MANAGE');
-}
-
 export type ManageAdminCountOptions = AdAccountAssignedUsersQueryOptions & {
   /** 排除当前登录用户（单 id，兼容旧调用） */
   excludeFacebookUserId?: string | null;
@@ -134,19 +270,7 @@ export type ManageAdminCountOptions = AdAccountAssignedUsersQueryOptions & {
  * 统计 `assigned_users` 中带 `MANAGE` 任务的人数（与表格「管理员」列一致，非全部协作者数）。
  * 默认排除当前 token 对应用户，只统计**其他**具备 MANAGE 的人数。
  */
-export async function fetchAdAccountManageAdminCount(
-  accessToken: string,
-  accountId: string,
-  options?: ManageAdminCountOptions
-): Promise<number> {
-  const businessId = await resolveBusinessIdForAdAccount(
-    accessToken,
-    accountId,
-    options?.hintBmIds ?? []
-  );
-  let url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, 'id,tasks', accessToken);
-  let total = 0;
-  let pages = 0;
+function buildManageAdminExcludeSet(options?: ManageAdminCountOptions): Set<string> {
   const excludeSet = new Set<string>();
   if (options?.excludeFacebookUserIds?.length) {
     for (const x of options.excludeFacebookUserIds) {
@@ -157,29 +281,45 @@ export async function fetchAdAccountManageAdminCount(
   if (options?.excludeFacebookUserId?.trim()) {
     excludeSet.add(options.excludeFacebookUserId.trim());
   }
-  while (url && pages < MAX_PAGES) {
-    pages += 1;
-    const res = await graphFetch(url);
-    const json = (await res.json()) as {
-      data?: { id?: string; tasks?: unknown }[];
-      paging?: { next?: string };
-      error?: unknown;
-    };
-    if (!res.ok || json.error) {
-      const msg = graphErrorToString(json, res.status);
-      console.error(
-        `[fbControl:graph] assigned_users(tasks) 错误 accountId=${accountId} http=${res.status} msg=${msg}`
-      );
-      throw new Error(msg);
+  return excludeSet;
+}
+
+async function resolveManageAdminExcludeSet(
+  accessToken: string,
+  options?: ManageAdminCountOptions
+): Promise<Set<string>> {
+  const excludeSet = buildManageAdminExcludeSet(options);
+  if (!excludeSet.size) {
+    for (const id of await fetchFacebookSelfUserIdsForExclude(accessToken)) {
+      excludeSet.add(id);
     }
-    const batch = Array.isArray(json.data) ? json.data : [];
-    for (const row of batch) {
-      const uid = row.id != null ? String(row.id).trim() : '';
-      if (uid && excludeSet.has(uid)) continue;
-      if (rowHasManageTask(row.tasks)) total += 1;
-    }
-    const next = json.paging?.next;
-    url = typeof next === 'string' && next.length ? next : '';
   }
-  return total;
+  return excludeSet;
+}
+
+function isManageAdminDetail(row: AdAccountAssignedUserDetail, excludeSet: Set<string>): boolean {
+  if (detailRowExcluded(row, excludeSet)) return false;
+  return row.tasks.includes('MANAGE');
+}
+
+/**
+ * 拉取带 MANAGE 的其他管理员详情（与「管理员」列计数口径一致）。
+ */
+export async function fetchAdAccountManageAdminDetails(
+  accessToken: string,
+  accountId: string,
+  options?: ManageAdminCountOptions
+): Promise<AdAccountAssignedUserDetail[]> {
+  const excludeSet = await resolveManageAdminExcludeSet(accessToken, options);
+  const all = await fetchAdAccountAssignedUserDetails(accessToken, accountId, options);
+  return all.filter((row) => isManageAdminDetail(row, excludeSet));
+}
+
+export async function fetchAdAccountManageAdminCount(
+  accessToken: string,
+  accountId: string,
+  options?: ManageAdminCountOptions
+): Promise<number> {
+  const rows = await fetchAdAccountManageAdminDetails(accessToken, accountId, options);
+  return rows.length;
 }

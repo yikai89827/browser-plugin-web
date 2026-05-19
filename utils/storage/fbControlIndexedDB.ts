@@ -6,10 +6,16 @@ const DB_VERSION = 1;
 const STORE_ACCOUNTS = 'ad_accounts';
 const STORE_PIXELS = 'pixel_shares';
 
+export type MergeAdAccountOptions = {
+  /** Graph 全量同步：清除「隐藏管理员」本地计数，表格恢复「加载」按钮 */
+  resetHiddenAdminCount?: boolean;
+};
+
 /** 写入时合并，保留本地已改的收藏、备注等 */
 function mergeAdAccount(
   prev: FbAdAccountRecord | undefined,
-  incoming: FbAdAccountRecord
+  incoming: FbAdAccountRecord,
+  options?: MergeAdAccountOptions
 ): FbAdAccountRecord {
   const p = prev;
   const out: FbAdAccountRecord = {
@@ -28,7 +34,9 @@ function mergeAdAccount(
   ) {
     out.remark = p.remark;
   }
-  if (incoming.hiddenAdminCount === undefined && p?.hiddenAdminCount !== undefined) {
+  if (options?.resetHiddenAdminCount) {
+    delete out.hiddenAdminCount;
+  } else if (incoming.hiddenAdminCount === undefined && p?.hiddenAdminCount !== undefined) {
     out.hiddenAdminCount = p.hiddenAdminCount;
   }
   if (incoming.userRoleRaw === undefined && p?.userRoleRaw !== undefined) {
@@ -123,15 +131,23 @@ export async function fbIdbGetAccount(accountId: string): Promise<FbAdAccountRec
  * 批量合并写入广告账户；与已有行按 `accountId` 合并，保留收藏/备注等本地字段。
  * @returns 本次参与合并的传入行数（非库内总行数）
  */
-export async function fbIdbUpsertAccounts(rows: FbAdAccountRecord[]): Promise<number> {
+export async function fbIdbUpsertAccounts(
+  rows: FbAdAccountRecord[],
+  options?: MergeAdAccountOptions
+): Promise<number> {
   if (!rows.length) return 0;
   const existing = await fbIdbGetAllAccounts();
   const map = new Map(existing.map((r) => [r.accountId, r]));
   let count = 0;
   for (const row of rows) {
     if (!row.accountId) continue;
-    map.set(row.accountId, mergeAdAccount(map.get(row.accountId), row));
+    map.set(row.accountId, mergeAdAccount(map.get(row.accountId), row, options));
     count++;
+  }
+  if (options?.resetHiddenAdminCount) {
+    for (const r of map.values()) {
+      delete r.hiddenAdminCount;
+    }
   }
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
