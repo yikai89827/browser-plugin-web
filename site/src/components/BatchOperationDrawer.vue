@@ -876,7 +876,7 @@ async function onConfirm() {
         <div class="bod-batch-body">
           <template v-if="drawerTab === 'op'">
             <div class="bod-batch-body-scroll bod-drawer-scroll">
-            <p v-if="batchRunning" class="bod-batch-running muted">正在通过 Graph 执行批量操作…</p>
+            <p v-if="batchRunning" class="bod-batch-running muted">正在执行批量操作…</p>
 
             <!-- 设置账号限额（设计稿分步） -->
             <div v-if="isLimitSpecial" class="bod-batch-op-root bod-limit-root">

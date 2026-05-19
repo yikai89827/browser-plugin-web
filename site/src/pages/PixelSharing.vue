@@ -791,7 +791,7 @@ onUnmounted(() => {
             </tr>
             <tr v-if="!pagedRows.length">
               <td :colspan="COL_COUNT" class="empty">
-                暂无数据。请点击顶栏「更新」从 Graph 同步，或确认扩展已加载且已保存 access_token。
+                暂无数据。请点击顶栏「更新」账户信息，或确认扩展已加载且已保存 access_token。
               </td>
             </tr>
           </tbody>

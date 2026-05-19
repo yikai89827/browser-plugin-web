@@ -232,9 +232,9 @@ export function formatUsdConversionPreview(
   usdToAccountRate: number
 ): string {
   const ccy = accountCurrencyCode.trim().toUpperCase();
-  if (ccy === 'USD') return formatMajorAmount(usdAmount, 'USD');
-  const converted = usdAmount * usdToAccountRate;
-  return formatMajorAmount(converted, ccy);
+  const n = ccy === 'USD' ? usdAmount : usdAmount * usdToAccountRate;
+  const text = n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${text} ${ccy}`;
 }
 
 export function formatPanelField(
@@ -355,9 +355,11 @@ export type AdsPanelDisplayRow = {
 /** 将账户记录格式化为悬浮窗展示行 */
 export function buildAdsPanelDisplayRows(
   row: FbAdAccountRecord,
-  opts?: AdsPanelDisplayOptions
+  opts?: AdsPanelDisplayOptions,
+  options?: { omitKeys?: PanelFieldKey[] }
 ): AdsPanelDisplayRow[] {
-  return PANEL_FIELD_DEFS.map((def) => {
+  const omit = new Set(options?.omitKeys ?? []);
+  return PANEL_FIELD_DEFS.filter((def) => !omit.has(def.key)).map((def) => {
     const formatted = formatPanelField(def.key, row, opts);
     return {
       label: def.label,

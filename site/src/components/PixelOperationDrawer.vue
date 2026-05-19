@@ -232,7 +232,7 @@ async function onConfirm() {
 
           <div class="pod-body pod-drawer-scroll">
             <template v-if="drawerTab === 'op'">
-              <p v-if="running" class="pod-running muted">正在通过 Graph 执行…</p>
+              <p v-if="running" class="pod-running muted">正在执行…</p>
               <p v-if="step2Error" class="pod-error">{{ step2Error }}</p>
 
               <div class="pod-steps">

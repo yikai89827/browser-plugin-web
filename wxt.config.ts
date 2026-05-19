@@ -45,6 +45,7 @@ export default defineConfig({
       host_permissions: [
         "*://*.facebook.com/*",
         "https://api.frankfurter.app/*",
+        "https://open.er-api.com/*",
         "http://localhost/*",
         "http://127.0.0.1/*",
         "http://192.168.110.77/*",
@@ -82,6 +83,8 @@ export default defineConfig({
       web_accessible_resources: [{
         resources: [
           'fb-control-token-probe.js',
+          'icon/*.png',
+          'icon/*.svg',
           '*.js',
           '*.csv',
           '*.xlsx',

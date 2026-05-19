@@ -1509,7 +1509,7 @@ onUnmounted(() => {
         aria-busy="true"
       >
         <span class="table-loading-spin" aria-hidden="true"></span>
-        <span class="table-loading-text">正在通过 Graph 更新账户列表…</span>
+        <span class="table-loading-text">正在更新账户列表…</span>
       </div>
       <div class="table-wrap">
       <table>

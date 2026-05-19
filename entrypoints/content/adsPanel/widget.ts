@@ -2,17 +2,21 @@ import { browser } from 'wxt/browser';
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import {
   buildAdsPanelDisplayRows,
+  buildDisplayOptions,
   formatAccountLocalTime,
-  type AdsPanelDisplayOptions,
+  formatUsdConversionPreview,
   type AdsPanelDisplayRow,
 } from '../../../utils/fb/adsPanel/adAccountPanelDisplay';
 import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 import { detectSelectedAccountId, watchSelectedAccount } from './detectSelectedAccount';
+import { fetchUsdToAccountRate } from './panelFieldLoaders';
 
 const ROOT_ID = 'fb-control-ads-panel-root';
 const PANEL_W = 340;
-const PANEL_GAP = 12;
 const FAB_SIZE = 52;
+/** 弹窗默认贴在主内容区右上（日期/列配置行一带），避开 FB 顶栏与右侧竖条 */
+const PANEL_DEFAULT_TOP = 108;
+const PANEL_RIGHT_GUTTER = 56;
 
 function escapeHtml(s: string): string {
   return s
@@ -118,6 +122,35 @@ const PANEL_CSS = `
   cursor: pointer;
 }
 .rename-btn:hover { background: #f0f2f5; }
+.ccy-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #1c1e21;
+}
+.ccy-bar[hidden] { display: none !important; }
+.ccy-dollar { color: #1877f2; font-weight: 600; }
+.ccy-usd-input {
+  width: 52px;
+  border: 1px solid #ccd0d5;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: right;
+}
+.ccy-converted {
+  margin-left: 4px;
+  background: #e7f3ff;
+  color: #1877f2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ccy-converted.loading { color: transparent; min-width: 48px; min-height: 18px; }
 .acc-toolbar {
   display: flex;
   align-items: center;
@@ -226,6 +259,10 @@ export class AdsPanelWidget {
   private renameInput: HTMLInputElement | null = null;
   private renameSaveBtn: HTMLButtonElement | null = null;
   private ccySelect: HTMLSelectElement | null = null;
+  private ccyBar: HTMLElement | null = null;
+  private ccyUsdInput: HTMLInputElement | null = null;
+  private ccyConvertedEl: HTMLElement | null = null;
+  private usdToAccountRate: number | null = null;
   private open = false;
   private syncing = false;
   private renaming = false;
@@ -277,6 +314,12 @@ export class AdsPanelWidget {
           <button type="button" class="rename-save" data-rename-save>保存</button>
         </div>
       </div>
+      <div class="ccy-bar" data-ccy-bar hidden>
+        <span class="ccy-dollar">$</span>
+        <input class="ccy-usd-input" data-ccy-usd type="number" value="1" min="0" step="0.01" />
+        <span>USD</span>
+        <span class="ccy-converted" data-ccy-converted></span>
+      </div>
       <div class="acc-toolbar">
         <span>美元切换</span>
         <select class="ccy-select" data-ccy-select title="仅切换金额展示单位">
@@ -302,6 +345,9 @@ export class AdsPanelWidget {
     this.renameInput = shadow.querySelector('[data-rename-input]');
     this.renameSaveBtn = shadow.querySelector('[data-rename-save]');
     this.ccySelect = shadow.querySelector('[data-ccy-select]');
+    this.ccyBar = shadow.querySelector('[data-ccy-bar]');
+    this.ccyUsdInput = shadow.querySelector('[data-ccy-usd]');
+    this.ccyConvertedEl = shadow.querySelector('[data-ccy-converted]');
 
     shadow.querySelector('[data-fab]')?.addEventListener('click', () => this.togglePanel());
     shadow.querySelector('[data-close]')?.addEventListener('click', () => this.closePanel());
@@ -309,7 +355,8 @@ export class AdsPanelWidget {
     shadow.querySelector('[data-rename-open]')?.addEventListener('click', () => this.openRenameBar());
     shadow.querySelector('[data-rename-cancel]')?.addEventListener('click', () => this.closeRenameBar());
     this.renameSaveBtn?.addEventListener('click', () => void this.saveRename());
-    this.ccySelect?.addEventListener('change', () => this.onCurrencyChange());
+    this.ccySelect?.addEventListener('change', () => void this.onCurrencyChange());
+    this.ccyUsdInput?.addEventListener('input', () => this.updateConversionPreview());
 
     const dragHdr = shadow.querySelector('[data-drag]');
     if (dragHdr && this.panelEl) this.bindDrag(dragHdr as HTMLElement);
@@ -326,14 +373,63 @@ export class AdsPanelWidget {
     fbControlLog('content:ads-panel', '悬浮窗已挂载');
   }
 
-  private displayOptions(): AdsPanelDisplayOptions {
-    if (!this.displayAsUsd || !this.record) return {};
-    return { displayCurrency: 'USD' };
+  private buildOpts() {
+    if (!this.record) return {};
+    return buildDisplayOptions(this.record, this.displayAsUsd, this.usdToAccountRate);
   }
 
-  private onCurrencyChange(): void {
+  private updateConversionPreview(): void {
+    if (!this.ccyConvertedEl || !this.record) return;
+    const usd = parseFloat(this.ccyUsdInput?.value || '1');
+    if (!Number.isFinite(usd) || usd < 0) {
+      this.ccyConvertedEl.textContent = '—';
+      return;
+    }
+    const acct = (this.record.currency || 'USD').trim().toUpperCase();
+    if (acct === 'USD') {
+      this.ccyConvertedEl.textContent = formatUsdConversionPreview(usd, 'USD', 1);
+      return;
+    }
+    if (this.usdToAccountRate == null) {
+      this.ccyConvertedEl.classList.add('loading');
+      this.ccyConvertedEl.textContent = '';
+      return;
+    }
+    this.ccyConvertedEl.classList.remove('loading');
+    this.ccyConvertedEl.textContent = formatUsdConversionPreview(usd, acct, this.usdToAccountRate);
+  }
+
+  private async loadExchangeRate(): Promise<void> {
+    const acct = this.record?.currency?.trim().toUpperCase() || 'USD';
+    if (acct === 'USD') {
+      this.usdToAccountRate = 1;
+      if (this.ccyBar) this.ccyBar.hidden = true;
+      return;
+    }
+    if (this.ccyBar) this.ccyBar.hidden = false;
+    if (this.ccyConvertedEl) {
+      this.ccyConvertedEl.classList.add('loading');
+      this.ccyConvertedEl.textContent = '';
+    }
+    try {
+      this.usdToAccountRate = await fetchUsdToAccountRate(acct);
+      this.updateConversionPreview();
+    } catch {
+      this.usdToAccountRate = null;
+      if (this.ccyConvertedEl) {
+        this.ccyConvertedEl.classList.remove('loading');
+        this.ccyConvertedEl.textContent = '汇率不可用';
+      }
+    }
+  }
+
+  private async onCurrencyChange(): Promise<void> {
     this.displayAsUsd = this.ccySelect?.value === 'USD';
-    if (this.record) this.renderAccount(this.record);
+    if (!this.record) return;
+    if (this.usdToAccountRate == null && (this.record.currency || 'USD').toUpperCase() !== 'USD') {
+      await this.loadExchangeRate();
+    }
+    void this.renderAccount(this.record);
   }
 
   private openRenameBar(): void {
@@ -402,13 +498,8 @@ export class AdsPanelWidget {
   }
 
   private placePanelDefault(): void {
-    const fabRight = 20;
-    const fabBottom = 20;
-    const left = Math.max(8, window.innerWidth - fabRight - FAB_SIZE - PANEL_GAP - PANEL_W);
-    const top = Math.max(
-      8,
-      window.innerHeight - fabBottom - FAB_SIZE - PANEL_GAP - Math.min(520, window.innerHeight * 0.78)
-    );
+    const left = Math.max(8, window.innerWidth - PANEL_RIGHT_GUTTER - PANEL_W);
+    const top = Math.max(8, PANEL_DEFAULT_TOP);
     this.panelPos = { left, top };
     this.applyPanelPos();
   }
@@ -468,7 +559,7 @@ export class AdsPanelWidget {
   private async onRefresh(): Promise<void> {
     if (this.syncing) return;
     this.setSyncing(true);
-    this.renderBodyMessage('正在从 Graph 同步账户…', false);
+    this.renderBodyMessage('正在同步账户…', false);
     try {
       const res = (await browser.runtime.sendMessage({
         action: 'FB_CONTROL_SYNC_AD_ACCOUNTS_FROM_GRAPH',
@@ -509,13 +600,21 @@ export class AdsPanelWidget {
     const id = this.accountId;
     if (!id) {
       this.record = null;
+      this.usdToAccountRate = null;
+      if (this.ccyBar) this.ccyBar.hidden = true;
       if (this.nameEl) this.nameEl.textContent = '—';
-      if (this.subEl) this.subEl.textContent = '请在页面顶部选择广告账户';
+      if (this.subEl) {
+        this.subEl.hidden = false;
+        this.subEl.textContent = '请在页面顶部选择广告账户';
+      }
       this.renderBodyMessage('未检测到当前广告账户 ID', false);
       return;
     }
 
-    if (this.subEl) this.subEl.textContent = `账户 ID：${id}`;
+    if (this.subEl) {
+      this.subEl.hidden = false;
+      this.subEl.textContent = '';
+    }
 
     try {
       let account: FbAdAccountRecord | null = null;
@@ -545,21 +644,27 @@ export class AdsPanelWidget {
         return;
       }
 
-      this.renderAccount(account);
+      await this.renderAccount(account);
     } catch (e) {
       fbControlError('content:ads-panel', 'loadAccount', e);
       this.renderBodyMessage(e instanceof Error ? e.message : String(e), true);
     }
   }
 
-  private renderAccount(account: FbAdAccountRecord): void {
+  private async renderAccount(account: FbAdAccountRecord): Promise<void> {
     if (this.nameEl) this.nameEl.textContent = account.name || account.accountId;
+    if (this.subEl) {
+      this.subEl.textContent = '';
+      this.subEl.hidden = true;
+    }
     if (this.ccySelect) {
       const native = (account.currency || 'USD').trim().toUpperCase();
       const nativeOpt = this.ccySelect.querySelector('option[value="native"]');
       if (nativeOpt) nativeOpt.textContent = native === 'USD' ? '原币种 (USD)' : `原币种 (${native})`;
     }
-    this.displayRows = buildAdsPanelDisplayRows(account, this.displayOptions());
+    await this.loadExchangeRate();
+    if (this.record?.accountId !== account.accountId) return;
+    this.displayRows = buildAdsPanelDisplayRows(account, this.buildOpts());
     this.renderRows(this.displayRows);
   }
 
