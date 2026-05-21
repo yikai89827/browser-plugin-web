@@ -1,5 +1,7 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
+import { resolveDailySpendLimitMinor } from '../adAccount/accountSpendLimits';
 import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../adAccount/adAccountDisplayMaps';
+import { formatMoneyDualFromMinor } from '../adAccount/moneyDisplay';
 import { currencyOffset } from '../adAccount/spendCapCurrency';
 
 export type PanelFieldKey =
@@ -65,8 +67,27 @@ export type AdsPanelDisplayOptions = {
 
 export type FormattedPanelField = {
   value: string;
+  /** 非 USD 账户金额副行（USD 折算） */
+  secondaryValue?: string;
   valueKind?: 'status-active' | 'status-inactive' | 'badge' | 'mono';
 };
+
+function formatMoneyField(
+  minor: number,
+  row: FbAdAccountRecord,
+  opts?: AdsPanelDisplayOptions,
+  fieldOpts?: { unlimitedZero?: boolean }
+): FormattedPanelField {
+  if (fieldOpts?.unlimitedZero && minor === 0) {
+    return { value: '不限额' };
+  }
+  const disp = opts?.displayCurrency?.trim().toUpperCase();
+  if (disp === 'USD') {
+    return { value: formatMinorWithFx(minor, row, opts) };
+  }
+  const dual = formatMoneyDualFromMinor(minor, row, opts?.usdToAccountRate, fieldOpts);
+  return { value: dual.primary, secondaryValue: dual.secondary };
+}
 
 const CURRENCY_SYMBOL: Record<string, string> = {
   USD: '$',
@@ -251,29 +272,29 @@ export function formatPanelField(
         value: dash(row.status),
         valueKind: active ? 'status-active' : 'status-inactive',
       };
-    case 'dailyLimit':
-      if (row.minDailyBudgetMinor != null && row.minDailyBudgetMinor > 0) {
-        return { value: formatMinorWithFx(row.minDailyBudgetMinor, row, opts) };
-      }
-      return { value: formatMoneyishRawWithFx(row.dailyLimit, row, opts) };
+    case 'dailyLimit': {
+      const m = resolveDailySpendLimitMinor(row, opts?.usdToAccountRate);
+      if (m != null && m > 0) return formatMoneyField(m, row, opts);
+      return { value: '—' };
+    }
     case 'spendingLimit':
       if (row.spendCapMinor === 0) return { value: '不限额' };
-      if (row.spendCapMinor != null) return { value: formatMinorWithFx(row.spendCapMinor, row, opts) };
+      if (row.spendCapMinor != null) return formatMoneyField(row.spendCapMinor, row, opts);
       return { value: formatMoneyishRawWithFx(row.spendingLimit, row, opts) };
     case 'threshold': {
-      const m = row.paymentThresholdMinor ?? row.spendCapMinor;
+      const m = row.paymentThresholdMinor;
       if (m === 0) return { value: '不限额' };
-      if (m != null) return { value: formatMinorWithFx(m, row, opts) };
-      return { value: formatMoneyishRawWithFx(row.spendingLimit, row, opts) };
+      if (m != null) return formatMoneyField(m, row, opts);
+      return { value: '—' };
     }
     case 'billingAmount': {
       const m = row.billingAmountMinor ?? row.balanceMinor;
-      if (m != null) return { value: formatMinorWithFx(m, row, opts) };
+      if (m != null) return formatMoneyField(m, row, opts);
       return { value: formatMoneyishRawWithFx(row.balance, row, opts) };
     }
     case 'totalSpent':
       if (row.totalSpentMinor != null) {
-        return { value: formatMinorWithFx(row.totalSpentMinor, row, opts) };
+        return formatMoneyField(row.totalSpentMinor, row, opts);
       }
       if (row.totalSpent !== undefined && row.totalSpent !== '') {
         if (typeof row.totalSpent === 'number') {
@@ -288,7 +309,7 @@ export function formatPanelField(
       }
       return { value: '—' };
     case 'balance':
-      if (row.balanceMinor != null) return { value: formatMinorWithFx(row.balanceMinor, row, opts) };
+      if (row.balanceMinor != null) return formatMoneyField(row.balanceMinor, row, opts);
       return { value: formatMoneyishRawWithFx(row.balance, row, opts) };
     case 'createdDate':
       return { value: dash(row.createdDate) };
@@ -349,6 +370,7 @@ export function buildDisplayOptions(
 export type AdsPanelDisplayRow = {
   label: string;
   value: string;
+  secondaryValue?: string;
   valueKind?: FormattedPanelField['valueKind'];
 };
 
@@ -364,6 +386,7 @@ export function buildAdsPanelDisplayRows(
     return {
       label: def.label,
       value: formatted.value,
+      secondaryValue: formatted.secondaryValue,
       valueKind: formatted.valueKind,
     };
   });

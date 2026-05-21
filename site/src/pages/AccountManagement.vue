@@ -14,6 +14,7 @@ import {
   syncSpendCapPatchesFromGraph,
   type SpendCapRecordPatch,
   renameAdAccountFromSite,
+  fetchUsdExchangeRateFromExtension,
   syncAdAccountsFromGraphViaExtension,
   type AdAccountBatchResultRow,
   type FriendVerifyResultPayload,
@@ -26,7 +27,15 @@ import {
 } from '../lib/accountListSyncHub';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
+import { resolveDailySpendLimitMinor } from '../../../utils/fb/adAccount/accountSpendLimits';
+import {
+  formatMajorAmount,
+  formatMinorAmount,
+  formatMoneyDualFromMinor,
+  type MoneyDisplay,
+} from '../../../utils/fb/adAccount/moneyDisplay';
 import BatchOperationDrawer from '../components/BatchOperationDrawer.vue';
+import MoneyCellDisplay from '../components/MoneyCellDisplay.vue';
 import { getBatchDrawerPreset } from '../lib/batchOperationPresets';
 import type { BatchAccountPreviewRow, BatchDrawerSubmitPayload } from '../lib/batchOperationTypes';
 import { showToastError } from '../lib/globalToast';
@@ -58,8 +67,12 @@ const paymentUi = reactive<Record<string, 'idle' | 'loading' | 'empty' | 'error'
 
 /** 隐藏管理员「加载」请求中 */
 const hiddenAdminUi = reactive<Record<string, 'loading' | 'error'>>({});
+/** 隐藏管理员加载失败原因（供 tooltip / 重试提示） */
+const hiddenAdminErrors = reactive<Record<string, string>>({});
 /** 隐藏管理员详情缓存（加载成功后供点击人数打开抽屉） */
 const hiddenAdminDetailsCache = reactive<Record<string, AdAccountAssignedUserDetail[]>>({});
+/** 1 USD = ? 账户币种（表格双行金额折算） */
+const fxUsdToAccount = reactive<Record<string, number>>({});
 
 /** 管理员 / 隐藏管理员详情抽屉 */
 const adminDrawerOpen = ref(false);
@@ -227,6 +240,19 @@ function parseMoneyishForSort(raw: unknown, alt = -1e18): number {
   return Number.isFinite(n) ? n : alt;
 }
 
+function formatMoneyDisplayText(d: MoneyDisplay): string {
+  return d.secondary ? `${d.primary} (${d.secondary})` : d.primary;
+}
+
+function moneySortValue(
+  minor: number | null | undefined,
+  d: MoneyDisplay
+): number {
+  if (typeof minor === 'number' && !Number.isNaN(minor)) return minor;
+  if (d.primary === '不限额') return 1e18;
+  return parseMoneyishForSort(d.primary);
+}
+
 function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number {
   switch (key) {
     case 'accountId': {
@@ -249,19 +275,22 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'accountKindLabel':
       return coalesceStr(formatAccountKindLabelZh(row.accountKindLabel));
     case 'billingMinor':
-      return parseMoneyishForSort(billingAmountCell(row), -1e18);
+      return moneySortValue(row.billingAmountMinor ?? row.balanceMinor, billingAmountCell(row));
     case 'threshold':
-      return parseMoneyishForSort(thresholdCell(row), -1e18);
+      return moneySortValue(row.paymentThresholdMinor, thresholdCell(row));
     case 'dailyLimit':
-      return parseMoneyishForSort(dailyLimitCell(row), -1e18);
+      return moneySortValue(
+        resolveDailySpendLimitMinor(row, fxRateForRow(row)),
+        dailyLimitCell(row)
+      );
     case 'totalSpent':
-      return parseMoneyishForSort(totalSpentCell(row), -1e18);
+      return moneySortValue(row.totalSpentMinor, totalSpentCell(row));
     case 'spendingLimit':
-      return parseMoneyishForSort(spendingLimitCell(row), -1e18);
+      return moneySortValue(row.spendCapMinor, spendingLimitCell(row));
     case 'periodSpent':
-      return parseMoneyishForSort(periodSpentCell(row), -1e18);
+      return parseMoneyishForSort(periodSpentCell(row).primary, -1e18);
     case 'balance':
-      return parseMoneyishForSort(balanceCell(row), -1e18);
+      return moneySortValue(row.balanceMinor, balanceCell(row));
     case 'remark':
       return coalesceStr(row.remark);
     case 'currency':
@@ -447,16 +476,38 @@ function tipAdminCell(row: FbAdAccountRecord): string {
   ].join('\n');
 }
 
+function hiddenAdminAccountLabel(row: FbAdAccountRecord): string {
+  const name = (row.name || '').trim();
+  return name ? `${name}（${row.accountId}）` : row.accountId;
+}
+
+function formatHiddenAdminFailureToast(
+  failures: { row: FbAdAccountRecord; error: string }[]
+): string {
+  if (!failures.length) return '隐藏管理员加载失败';
+  if (failures.length === 1) {
+    const f = failures[0];
+    return `隐藏管理员加载失败：${hiddenAdminAccountLabel(f.row)}\n${f.error}`;
+  }
+  const lines = failures.map((f) => `· ${hiddenAdminAccountLabel(f.row)}：${f.error}`);
+  return `隐藏管理员加载失败（${failures.length} 个账户）：\n${lines.join('\n')}`;
+}
+
 function tipHiddenAdminCell(row: FbAdAccountRecord): string {
   const eff = hiddenAdminCountEffective(row);
   const n = eff != null ? String(eff) : '未加载';
   const clickHint = eff != null && eff > 0 ? '；点击人数可查看详情' : '';
+  const err = hiddenAdminErrors[row.accountId];
+  const errLine = err ? `上次失败：${err}` : '';
   return [
     '隐藏管理员：已分配协作者中无 MANAGE 权限的人员（不含您本人）；有 MANAGE 的他人只计入「管理员」列。',
     '「加载」后写入计数；若管理员≥1 且无仅投广协作者，本列应为 0。',
     clickHint,
     `当前计数：${n}`,
-  ].join('\n');
+    errLine,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function tipAccountKindCell(row: FbAdAccountRecord): string {
@@ -464,31 +515,31 @@ function tipAccountKindCell(row: FbAdAccountRecord): string {
 }
 
 function tipBillingCell(row: FbAdAccountRecord): string {
-  return `账单金额：与账单/余额相关的展示金额（可能为最小货币单位换算，与币种列一致）。\n当前值：${billingAmountCell(row)}`;
+  return `账单金额：与账单/余额相关的展示金额（可能为最小货币单位换算，与币种列一致）。\n当前值：${formatMoneyDisplayText(billingAmountCell(row))}`;
 }
 
 function tipThresholdCell(row: FbAdAccountRecord): string {
-  return `门槛：支付/扣费门槛或 spend_cap 相关阈值（「不限额」表示未设或为 0）。\n当前值：${thresholdCell(row)}`;
+  return `门槛：Graph min_campaign_group_spend_cap（「不限额」表示为 0）。\n当前值：${formatMoneyDisplayText(thresholdCell(row))}`;
 }
 
 function tipDailyLimitCell(row: FbAdAccountRecord): string {
-  return `日限额：账户单日花费上限或最低日预算相关展示。\n当前值：${dailyLimitCell(row)}`;
+  return `日限额：Graph min_daily_budget；非 USD 且低于约 $50 时按 Meta 默认日花费上限 $50 等值展示。\n当前值：${formatMoneyDisplayText(dailyLimitCell(row))}`;
 }
 
 function tipTotalSpentCell(row: FbAdAccountRecord): string {
-  return `总花费：账户历史或汇总维度的花费展示（与 Graph 字段映射有关）。\n当前值：${totalSpentCell(row)}`;
+  return `总花费：账户历史或汇总维度的花费展示（与 Graph 字段映射有关）。\n当前值：${formatMoneyDisplayText(totalSpentCell(row))}`;
 }
 
 function tipSpendingLimitCell(row: FbAdAccountRecord): string {
-  return `花费限额：账户花费上限 / spend_cap（「不限额」表示未限制）。\n当前值：${spendingLimitCell(row)}`;
+  return `花费限额：账户 spend_cap（「不限额」表示未限制）。\n当前值：${formatMoneyDisplayText(spendingLimitCell(row))}`;
 }
 
 function tipPeriodSpentCell(row: FbAdAccountRecord): string {
-  return `已花费：当前账单周期或统计周期内已产生花费。\n当前值：${periodSpentCell(row)}`;
+  return `已花费：当前账单周期或统计周期内已产生花费。\n当前值：${formatMoneyDisplayText(periodSpentCell(row))}`;
 }
 
 function tipBalanceCell(row: FbAdAccountRecord): string {
-  return `余额：账户可用余额或预付余额类展示（含币种）。\n当前值：${balanceCell(row)}`;
+  return `余额：账户可用余额或预付余额类展示（含币种）。\n当前值：${formatMoneyDisplayText(balanceCell(row))}`;
 }
 
 function tipRemarkCell(row: FbAdAccountRecord): string {
@@ -639,43 +690,78 @@ function clearHiddenAdminSessionState() {
   for (const k of Object.keys(hiddenAdminUi)) {
     delete hiddenAdminUi[k];
   }
+  for (const k of Object.keys(hiddenAdminErrors)) {
+    delete hiddenAdminErrors[k];
+  }
 }
 
-async function onLoadHiddenAdmins(row: FbAdAccountRecord) {
+async function onLoadHiddenAdmins(
+  row: FbAdAccountRecord,
+  opts?: { suppressToast?: boolean }
+): Promise<{ ok: boolean; error?: string }> {
   if (!extensionConfigured()) {
-    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
-    return;
+    const err = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    errorMsg.value = err;
+    if (!opts?.suppressToast) {
+      showToastError(formatHiddenAdminFailureToast([{ row, error: err }]));
+    }
+    return { ok: false, error: err };
   }
   hiddenAdminUi[row.accountId] = 'loading';
+  delete hiddenAdminErrors[row.accountId];
   try {
     const res = await fetchAdAccountAssignedUsersFromExtension(row.accountId, hintBmIdsForRow(row));
     if (!res.success) {
+      const msg = res.error || '未知错误';
       hiddenAdminUi[row.accountId] = 'error';
-      return;
+      hiddenAdminErrors[row.accountId] = msg;
+      if (!opts?.suppressToast) {
+        showToastError(formatHiddenAdminFailureToast([{ row, error: msg }]));
+      }
+      return { ok: false, error: msg };
     }
     await applyHiddenAdminQueryResult(row, res.payload?.items ?? []);
     delete hiddenAdminUi[row.accountId];
-  } catch {
+    return { ok: true };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     hiddenAdminUi[row.accountId] = 'error';
+    hiddenAdminErrors[row.accountId] = msg;
+    if (!opts?.suppressToast) {
+      showToastError(formatHiddenAdminFailureToast([{ row, error: msg }]));
+    }
+    return { ok: false, error: msg };
   }
 }
 
 /** 工具栏「隐藏管理员」：对勾选账户直接拉取隐藏管理员人数，不打开批量抽屉 */
 async function batchLoadHiddenAdminsForSelection() {
   if (!extensionConfigured()) {
-    errorMsg.value = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    const err = '请在 site/.env.development 中配置 VITE_EXTENSION_ID';
+    errorMsg.value = err;
+    showToastError(err);
     return;
   }
   const rows = sortedFiltered.value.filter((r) => selectedIds.value[r.accountId]);
   if (!rows.length) return;
   errorMsg.value = '';
-  await Promise.all(rows.map((row) => onLoadHiddenAdmins(row)));
+  const failures: { row: FbAdAccountRecord; error: string }[] = [];
+  await Promise.all(
+    rows.map(async (row) => {
+      const r = await onLoadHiddenAdmins(row, { suppressToast: true });
+      if (!r.ok && r.error) failures.push({ row, error: r.error });
+    })
+  );
+  if (failures.length) {
+    showToastError(formatHiddenAdminFailureToast(failures));
+  }
 }
 
 function onHiddenAdminClick(row: FbAdAccountRecord) {
   if (hiddenAdminState(row.accountId) === 'loading') return;
   if (hiddenAdminState(row.accountId) === 'error') {
     delete hiddenAdminUi[row.accountId];
+    delete hiddenAdminErrors[row.accountId];
   }
   void onLoadHiddenAdmins(row);
 }
@@ -711,6 +797,7 @@ async function refreshFromExtension() {
     markAccountsListFetched();
     fbControlLog('site:account-page', '账户列表已更新', { count: accounts.value.length });
     clearHiddenAdminSessionState();
+    void prefetchFxRates(accounts.value);
   } catch (e: any) {
     errorMsg.value = e?.message || String(e);
   } finally {
@@ -723,68 +810,12 @@ function dash(v: unknown) {
   return String(v);
 }
 
-const CURRENCY_SYMBOL: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  CNY: '¥',
-  JPY: '¥',
-  HKD: 'HK$',
-  TWD: 'NT$',
-  AUD: 'A$',
-  CAD: 'C$',
-  SGD: 'S$',
-  NZD: 'NZ$',
-  KRW: '₩',
-  CHF: 'CHF ',
-  MXN: 'MX$',
-  BRL: 'R$',
-  INR: '₹',
-  THB: '฿',
-  MYR: 'RM',
-  PHP: '₱',
-  VND: '₫',
-  TRY: '₺',
-  ILS: '₪',
-  PLN: 'zł',
-  SEK: 'kr',
-  NOK: 'kr',
-  DKK: 'kr',
-  ZAR: 'R',
-  AED: 'AED ',
-  SAR: 'SAR ',
-};
-
-function currencySymbol(code?: string): string {
-  const c = (code || 'USD').trim().toUpperCase();
-  return CURRENCY_SYMBOL[c] || `${c} `;
-}
-
-/** Graph 金额常为「最小货币单位」（如美分） */
-function formatMinorAmount(minor: number | undefined | null, currency?: string): string {
-  if (minor == null || Number.isNaN(minor)) return '—';
-  const sym = currencySymbol(currency);
-  const major = minor / 100;
-  return (
-    sym +
-    major.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  );
-}
-
-/** 已为主单位的小数金额 */
-function formatMajorAmount(n: number, currency?: string): string {
-  if (n == null || Number.isNaN(n)) return '—';
-  const sym = currencySymbol(currency);
-  return sym + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 /** 纯数字字符串按「最小单位」解析；否则原样加符号（若能识别为数字） */
 function formatMoneyishRaw(raw: string | undefined, currency?: string): string {
   if (raw == null || raw === '') return '—';
   const s = String(raw).trim();
   if (!s || s === '—') return '—';
   if (s.includes('不限')) return s;
-  const sym = currencySymbol(currency);
   if (/^-?\d+$/.test(s)) {
     const minor = parseInt(s, 10);
     if (!Number.isNaN(minor)) return formatMinorAmount(minor, currency);
@@ -792,60 +823,116 @@ function formatMoneyishRaw(raw: string | undefined, currency?: string): string {
   const cleaned = s.replace(/,/g, '');
   const n = parseFloat(cleaned);
   if (!Number.isNaN(n) && /^-?[\d.]+$/.test(cleaned)) {
-    return sym + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatMajorAmount(n, currency);
   }
   return s;
 }
 
-function totalSpentCell(row: FbAdAccountRecord) {
-  if (row.totalSpentMinor != null) return formatMinorAmount(row.totalSpentMinor, row.currency);
+function fxRateForRow(row: FbAdAccountRecord): number | null {
+  const ccy = (row.currency || 'USD').trim().toUpperCase();
+  if (ccy === 'USD') return 1;
+  const r = fxUsdToAccount[ccy];
+  return r != null && r > 0 ? r : null;
+}
+
+async function ensureFxRate(currency?: string): Promise<number | null> {
+  const ccy = (currency || 'USD').trim().toUpperCase();
+  if (ccy === 'USD') return 1;
+  if (fxUsdToAccount[ccy] != null) return fxUsdToAccount[ccy];
+  if (!extensionConfigured()) return null;
+  try {
+    const res = await fetchUsdExchangeRateFromExtension(ccy);
+    if (res.success && res.payload?.rate != null && res.payload.rate > 0) {
+      const rounded = Math.round(res.payload.rate * 100) / 100;
+      fxUsdToAccount[ccy] = rounded;
+      return rounded;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+async function prefetchFxRates(rows: FbAdAccountRecord[]) {
+  const ccys = [
+    ...new Set(
+      rows
+        .map((r) => (r.currency || '').trim().toUpperCase())
+        .filter((c) => c && c !== 'USD')
+    ),
+  ];
+  await Promise.all(ccys.map((c) => ensureFxRate(c)));
+}
+
+function legacyMoneyDisplay(row: FbAdAccountRecord, text: string): MoneyDisplay {
+  if (!text || text === '—' || text.includes('不限')) return { primary: text || '—' };
+  const ccy = (row.currency || 'USD').trim().toUpperCase();
+  if (ccy === 'USD') return { primary: text };
+  const rate = fxRateForRow(row);
+  if (rate == null || rate <= 0) return { primary: text };
+  const cleaned = text.replace(/,/g, '').replace(/[^\d.-]/g, '');
+  const major = parseFloat(cleaned);
+  if (!Number.isFinite(major)) return { primary: text };
+  const usdMajor = major / rate;
+  return { primary: text, secondary: formatMajorAmount(usdMajor, 'USD') };
+}
+
+function totalSpentCell(row: FbAdAccountRecord): MoneyDisplay {
+  if (row.totalSpentMinor != null) return moneyCell(row, row.totalSpentMinor);
   if (row.totalSpent !== undefined && row.totalSpent !== '') {
-    return typeof row.totalSpent === 'number'
-      ? formatMajorAmount(row.totalSpent, row.currency)
-      : formatMoneyishRaw(String(row.totalSpent), row.currency);
+    const text =
+      typeof row.totalSpent === 'number'
+        ? formatMajorAmount(row.totalSpent, row.currency)
+        : formatMoneyishRaw(String(row.totalSpent), row.currency);
+    return legacyMoneyDisplay(row, text);
   }
-  if (row.paymentAmount) return formatMoneyishRaw(String(row.paymentAmount), row.currency);
-  if (row.spend != null) return formatMajorAmount(row.spend, row.currency);
-  return '—';
+  if (row.paymentAmount) {
+    return legacyMoneyDisplay(row, formatMoneyishRaw(String(row.paymentAmount), row.currency));
+  }
+  if (row.spend != null) {
+    return legacyMoneyDisplay(row, formatMajorAmount(row.spend, row.currency));
+  }
+  return { primary: '—' };
 }
 
-function balanceCell(row: FbAdAccountRecord) {
-  if (row.balanceMinor != null) return formatMinorAmount(row.balanceMinor, row.currency);
-  return formatMoneyishRaw(row.balance, row.currency);
+function balanceCell(row: FbAdAccountRecord): MoneyDisplay {
+  if (row.balanceMinor != null) return moneyCell(row, row.balanceMinor);
+  return legacyMoneyDisplay(row, formatMoneyishRaw(row.balance, row.currency));
 }
 
-function billingAmountCell(row: FbAdAccountRecord) {
+function billingAmountCell(row: FbAdAccountRecord): MoneyDisplay {
   const m = row.billingAmountMinor ?? row.balanceMinor;
-  if (m != null) return formatMinorAmount(m, row.currency);
-  return formatMoneyishRaw(row.balance, row.currency);
+  if (m != null) return moneyCell(row, m);
+  return legacyMoneyDisplay(row, formatMoneyishRaw(row.balance, row.currency));
 }
 
-function thresholdCell(row: FbAdAccountRecord) {
-  const m = row.paymentThresholdMinor ?? row.spendCapMinor;
-  if (m === 0) return '不限额';
-  if (m != null) return formatMinorAmount(m, row.currency);
-  return formatMoneyishRaw(row.spendingLimit, row.currency);
+function moneyCell(row: FbAdAccountRecord, minor: number | null | undefined, opts?: { unlimitedZero?: boolean }): MoneyDisplay {
+  return formatMoneyDualFromMinor(minor, row, fxRateForRow(row), opts);
 }
 
-function dailyLimitCell(row: FbAdAccountRecord) {
-  if (row.minDailyBudgetMinor != null && row.minDailyBudgetMinor > 0) {
-    return formatMinorAmount(row.minDailyBudgetMinor, row.currency);
-  }
-  const s = row.dailyLimit;
-  if (!s) return '—';
-  return formatMoneyishRaw(String(s), row.currency);
+function thresholdCell(row: FbAdAccountRecord): MoneyDisplay {
+  const m = row.paymentThresholdMinor;
+  if (m === 0) return { primary: '不限额' };
+  if (m != null) return moneyCell(row, m);
+  return { primary: '—' };
 }
 
-function spendingLimitCell(row: FbAdAccountRecord) {
-  if (row.spendCapMinor === 0) return '不限额';
-  if (row.spendCapMinor != null) return formatMinorAmount(row.spendCapMinor, row.currency);
-  return formatMoneyishRaw(row.spendingLimit, row.currency);
+function dailyLimitCell(row: FbAdAccountRecord): MoneyDisplay {
+  const m = resolveDailySpendLimitMinor(row, fxRateForRow(row));
+  if (m != null && m > 0) return moneyCell(row, m);
+  return { primary: '—' };
 }
 
-function periodSpentCell(row: FbAdAccountRecord) {
+function spendingLimitCell(row: FbAdAccountRecord): MoneyDisplay {
+  if (row.spendCapMinor === 0) return { primary: '不限额' };
+  if (row.spendCapMinor != null) return moneyCell(row, row.spendCapMinor, { unlimitedZero: true });
+  return { primary: '—' };
+}
+
+function periodSpentCell(row: FbAdAccountRecord): MoneyDisplay {
   const s = row.periodSpent;
-  if (!s) return '—';
-  return formatMoneyishRaw(String(s), row.currency);
+  if (!s) return { primary: '—' };
+  return legacyMoneyDisplay(row, formatMoneyishRaw(String(s), row.currency));
 }
 
 function adminBadgeText(row: FbAdAccountRecord) {
@@ -1214,13 +1301,13 @@ function exportAccountsToExcel() {
     管理员: row.adminCount ?? 0,
     隐藏管理员人数: row.hiddenAdminCount ?? '',
     账号类型: formatAccountKindLabelZh(row.accountKindLabel) || row.accountKindLabel || '',
-    账单金额: billingAmountCell(row),
-    门槛: thresholdCell(row),
-    日限额: dailyLimitCell(row),
-    总花费: totalSpentCell(row),
-    花费限额: spendingLimitCell(row),
-    已花费: periodSpentCell(row),
-    余额: balanceCell(row),
+    账单金额: formatMoneyDisplayText(billingAmountCell(row)),
+    门槛: formatMoneyDisplayText(thresholdCell(row)),
+    日限额: formatMoneyDisplayText(dailyLimitCell(row)),
+    总花费: formatMoneyDisplayText(totalSpentCell(row)),
+    花费限额: formatMoneyDisplayText(spendingLimitCell(row)),
+    已花费: formatMoneyDisplayText(periodSpentCell(row)),
+    余额: formatMoneyDisplayText(balanceCell(row)),
     备注: row.remark ?? '',
     币种: row.currency ?? '',
     账户类型: row.accountType ?? '',
@@ -1742,13 +1829,13 @@ onUnmounted(() => {
               </span>
             </td>
             <td :title="tipAccountKindCell(row)">{{ dash(formatAccountKindLabelZh(row.accountKindLabel)) }}</td>
-            <td :title="tipBillingCell(row)">{{ billingAmountCell(row) }}</td>
-            <td :title="tipThresholdCell(row)">{{ thresholdCell(row) }}</td>
-            <td :title="tipDailyLimitCell(row)">{{ dailyLimitCell(row) }}</td>
-            <td :title="tipTotalSpentCell(row)">{{ totalSpentCell(row) }}</td>
-            <td :title="tipSpendingLimitCell(row)">{{ spendingLimitCell(row) }}</td>
-            <td :title="tipPeriodSpentCell(row)">{{ periodSpentCell(row) }}</td>
-            <td :title="tipBalanceCell(row)">{{ balanceCell(row) }}</td>
+            <td :title="tipBillingCell(row)"><MoneyCellDisplay :display="billingAmountCell(row)" /></td>
+            <td :title="tipThresholdCell(row)"><MoneyCellDisplay :display="thresholdCell(row)" /></td>
+            <td :title="tipDailyLimitCell(row)"><MoneyCellDisplay :display="dailyLimitCell(row)" /></td>
+            <td :title="tipTotalSpentCell(row)"><MoneyCellDisplay :display="totalSpentCell(row)" /></td>
+            <td :title="tipSpendingLimitCell(row)"><MoneyCellDisplay :display="spendingLimitCell(row)" /></td>
+            <td :title="tipPeriodSpentCell(row)"><MoneyCellDisplay :display="periodSpentCell(row)" /></td>
+            <td :title="tipBalanceCell(row)"><MoneyCellDisplay :display="balanceCell(row)" /></td>
             <td class="remark-cell" :title="tipRemarkCell(row)">
               <div class="remark-cell-inner">
                 <span class="remark-text">{{ dash(row.remark) }}</span>

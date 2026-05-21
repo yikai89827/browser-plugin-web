@@ -362,6 +362,20 @@ export async function fetchAdAccountAssignedUsersFromExtension(
   }
 }
 
+/** 1 USD = ? ?????????? Frankfurter / ER API? */
+export async function fetchUsdExchangeRateFromExtension(
+  currency: string
+): Promise<ExtensionResponse<{ rate: number }>> {
+  const ccy = currency.trim().toUpperCase();
+  if (!ccy) {
+    return { success: false, error: 'currency required' };
+  }
+  return sendToExtension<{ rate: number }>({
+    action: 'FB_CONTROL_GET_USD_EXCHANGE_RATE',
+    data: { currency: ccy },
+  });
+}
+
 /**
  * ?????? MANAGE ???????????????????????????????????????
  */

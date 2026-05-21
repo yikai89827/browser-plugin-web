@@ -6,6 +6,15 @@ import {
   formatUserRoleZh,
   readFundingSourceDisplay,
 } from './adAccountDisplayMaps';
+import { spendCapRawToMinor, type SpendCapNormalizeHints } from './spendCapCurrency';
+
+function graphMoneyToMinor(raw: unknown, hints: SpendCapNormalizeHints): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+  if (!Number.isFinite(n)) return undefined;
+  if (n === 0) return 0;
+  return spendCapRawToMinor(n, hints);
+}
 
 /**
  * 从任意字符串中提取连续 10 位以上的数字，视为可能的广告账户 ID 片段。
@@ -142,8 +151,21 @@ export function mapGraphApiAdAccountToRecord(
   const amountSpentMajor =
     amountSpentMinor != null ? amountSpentMinor / 100 : parseAmountSpent(a.amount_spent ?? a.amount_spent_string ?? a.spend);
   const balanceMinor = parseMinorInt(balanceRaw);
-  const spendCapMinor = parseMinorInt(spendCapRaw);
+
+  const baseHints: SpendCapNormalizeHints = {
+    currency: currency || undefined,
+    amountSpentMinor,
+  };
+  const spendCapMinor = graphMoneyToMinor(spendCapRaw, {
+    ...baseHints,
+    spendCapMinor: undefined,
+  });
+  /** min_daily_budget：Graph 为 int，固定按账户币种最小单位解析（勿走 spend_cap 主/分单位推断） */
   const minDailyBudgetMinor = parseMinorInt(minDailyRaw);
+  const paymentThresholdMinor = graphMoneyToMinor(a.min_campaign_group_spend_cap, {
+    ...baseHints,
+    spendCapMinor: spendCapMinor ?? undefined,
+  });
   const prepay = a.is_prepay_account;
   let accountType: string | undefined;
   if (prepay === true || prepay === 1) accountType = '预付';
@@ -186,16 +208,14 @@ export function mapGraphApiAdAccountToRecord(
     balance: balanceStr || undefined,
     balanceMinor,
     billingAmountMinor: balanceMinor,
-    paymentThresholdMinor: spendCapMinor,
+    paymentThresholdMinor,
     spendCapMinor,
     minDailyBudgetMinor,
     totalSpentMinor: amountSpentMinor,
     dailyLimit:
-      a.min_daily_budget != null
-        ? String(a.min_daily_budget)
-        : spendCap
-          ? spendCap
-          : undefined,
+      minDailyBudgetMinor != null && minDailyBudgetMinor > 0
+        ? String(minDailyBudgetMinor)
+        : undefined,
     spendingLimit: spendCap || undefined,
     totalSpent: amountSpentMajor,
     periodSpent:

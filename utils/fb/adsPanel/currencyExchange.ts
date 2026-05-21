@@ -71,8 +71,15 @@ export async function fetchExchangeRate(from: string, to: string): Promise<numbe
     fbControlLog('fb:fx', 'er-api fallback', { from: f, to: t, rate });
   }
 
-  rateCache.set(key, { rate, at: Date.now() });
-  return rate;
+  const rounded = roundFxRate(rate);
+  rateCache.set(key, { rate: rounded, at: Date.now() });
+  return rounded;
+}
+
+/** 汇率展示与折算统一保留两位小数 */
+export function roundFxRate(rate: number): number {
+  if (!Number.isFinite(rate)) return rate;
+  return Math.round(rate * 100) / 100;
 }
 
 /** 1 USD = ? 目标币种 */

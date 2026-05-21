@@ -889,7 +889,6 @@ async function onConfirm() {
                 <div class="bod-step">
                   <span class="bod-step-badge">1</span>
                   <div class="bod-step-body">
-                    <div class="bod-step-label">当前账号</div>
                     <p class="bod-limit-line">
                       当前账号:
                       {{ primaryPreviewAccount?.accountId || selectedAccountIds[0] || '—' }}

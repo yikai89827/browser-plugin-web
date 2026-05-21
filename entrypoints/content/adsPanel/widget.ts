@@ -9,7 +9,11 @@ import {
 } from '../../../utils/fb/adsPanel/adAccountPanelDisplay';
 import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 import { detectSelectedAccountId, watchSelectedAccount } from './detectSelectedAccount';
-import { fetchUsdToAccountRate } from './panelFieldLoaders';
+import {
+  fetchHiddenAdminCount,
+  fetchManageAdminCount,
+  fetchUsdToAccountRate,
+} from './panelFieldLoaders';
 
 const ROOT_ID = 'fb-control-ads-panel-root';
 const PANEL_W = 340;
@@ -235,6 +239,13 @@ const PANEL_CSS = `
   color: #1877f2;
   padding: 2px 8px;
   border-radius: 999px;
+  font-weight: 500;
+}
+.row-value .money-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #1877f2;
   font-weight: 500;
 }
 .hint, .err {
@@ -664,8 +675,29 @@ export class AdsPanelWidget {
     }
     await this.loadExchangeRate();
     if (this.record?.accountId !== account.accountId) return;
+    this.refreshAccountRows(account);
+    void this.loadAsyncCounts(account);
+  }
+
+  private refreshAccountRows(account: FbAdAccountRecord): void {
     this.displayRows = buildAdsPanelDisplayRows(account, this.buildOpts());
     this.renderRows(this.displayRows);
+  }
+
+  private async loadAsyncCounts(account: FbAdAccountRecord): Promise<void> {
+    const id = account.accountId;
+    try {
+      const [admin, hidden] = await Promise.all([
+        fetchManageAdminCount(id, account),
+        fetchHiddenAdminCount(id, account),
+      ]);
+      if (this.record?.accountId !== id) return;
+      account.adminCount = admin;
+      account.hiddenAdminCount = hidden;
+      this.refreshAccountRows(account);
+    } catch (e) {
+      fbControlError('content:ads-panel', 'loadAsyncCounts', e);
+    }
   }
 
   private renderBodyMessage(msg: string, isError: boolean): void {
@@ -680,10 +712,14 @@ export class AdsPanelWidget {
       .map((r, i) => {
         const kind = r.valueKind || '';
         const cls = ['row-value', kind].filter(Boolean).join(' ');
+        const sub =
+          r.secondaryValue != null && r.secondaryValue !== ''
+            ? `<span class="money-sub">${escapeHtml(r.secondaryValue)}</span>`
+            : '';
         const valInner =
           kind === 'badge'
-            ? `<span class="badge">${escapeHtml(r.value)}</span>`
-            : escapeHtml(r.value);
+            ? `<span class="badge">${escapeHtml(r.value)}</span>${sub}`
+            : `${escapeHtml(r.value)}${sub}`;
         return `<div class="row" data-label="${escapeHtml(r.label)}">
           <span class="row-icon">${icons[i % icons.length]}</span>
           <span class="row-label">${escapeHtml(r.label)}</span>

@@ -1,6 +1,9 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import { describeToken, redactUrlForLog } from '../tokenDebugLog';
-import { fetchAdAccountManageAdminCount } from './graphFetchAdAccountAssignedUsers';
+import {
+  fetchAdAccountHiddenAdminCount,
+  fetchAdAccountManageAdminCount,
+} from './graphFetchAdAccountAssignedUsers';
 import { fetchFacebookSelfUserIdsForExclude } from '../graphFetchMe';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
 import { graphFetch } from '../graphExternalFetch';
@@ -66,6 +69,7 @@ const AD_ACCOUNT_FIELDS = [
   'balance',
   'spend_cap',
   'min_daily_budget',
+  'min_campaign_group_spend_cap',
   /** BM 与地址：须展开子字段，否则常只有 id；国家用 business_country_code */
   'business{id,name}',
   'owner_business{id,name}',
@@ -185,15 +189,26 @@ export async function fetchSingleAdAccountFromGraph(
     `graph:${GRAPH_VERSION}/act_${id}`
   );
 
+  const hintBmIds = [record.belongsToBmId, record.createdFromBmId].filter(
+    (bid): bid is string => typeof bid === 'string' && /^\d{5,}$/.test(bid.trim())
+  );
+  const countOpts = {
+    hintBmIds,
+    excludeFacebookUserIds: await fetchFacebookSelfUserIdsForExclude(accessToken),
+  };
   try {
-    const hintBmIds = [record.belongsToBmId, record.createdFromBmId].filter(
-      (bid): bid is string => typeof bid === 'string' && /^\d{5,}$/.test(bid.trim())
-    );
-    record.adminCount = await fetchAdAccountManageAdminCount(accessToken, record.accountId, {
-      hintBmIds,
-    });
+    record.adminCount = await fetchAdAccountManageAdminCount(accessToken, record.accountId, countOpts);
   } catch {
     record.adminCount = 0;
+  }
+  try {
+    record.hiddenAdminCount = await fetchAdAccountHiddenAdminCount(
+      accessToken,
+      record.accountId,
+      countOpts
+    );
+  } catch {
+    record.hiddenAdminCount = undefined;
   }
 
   return record;
