@@ -61,7 +61,7 @@ import { registerGraphExternalFetch } from '../../../utils/fb/graphExternalFetch
 import { fbControlLog } from '../../../utils/fbControlLog';
 import {
   resolveBusinessIdsForAccounts,
-  searchBusinessUserByEmailInBusinesses,
+  searchAllBusinessUsersByEmailInBusinesses,
 } from '../../../utils/fb/adAccount/graphBusinessManagement';
 import type { BatchDrawerSubmitPayload } from './batchOperationTypes';
 
@@ -362,15 +362,22 @@ export async function fetchAdAccountAssignedUsersFromExtension(
   }
 }
 
-/** 1 USD = ? ?????????? Frankfurter / ER API? */
+export type UsdExchangeRatePayload = {
+  rate: number;
+  /** meta-page | meta-graph | er-api | frankfurter | cache */
+  source?: string;
+  effectiveRate?: number;
+};
+
+/** 1 USD = ? 目标币种（优先 Meta Graph currency，否则 ER API / Frankfurter） */
 export async function fetchUsdExchangeRateFromExtension(
   currency: string
-): Promise<ExtensionResponse<{ rate: number }>> {
+): Promise<ExtensionResponse<UsdExchangeRatePayload>> {
   const ccy = currency.trim().toUpperCase();
   if (!ccy) {
     return { success: false, error: 'currency required' };
   }
-  return sendToExtension<{ rate: number }>({
+  return sendToExtension<UsdExchangeRatePayload>({
     action: 'FB_CONTROL_GET_USD_EXCHANGE_RATE',
     data: { currency: ccy },
   });
@@ -554,16 +561,21 @@ export async function renameAdAccountFromSite(accountId: string, newName: string
 /**
  * ??????????????????????? token ??????????????????? Graph ???????????? / ???? / ??? BM ???????
  */
+export type PushRecipientHit = {
+  email: string;
+  recipientUserId: string;
+  displayName: string;
+  businessId?: string;
+};
+
 export type PushRecipientSearchResult = {
   found: boolean;
   email: string;
-  recipientUserId?: string;
-  displayName?: string;
-  businessId?: string;
+  recipients: PushRecipientHit[];
   message?: string;
 };
 
-/** ???????????????? BM business_users ???????????????????? */
+/** 在所选广告账户关联的 BM 中按邮箱搜索可推送的 business user */
 export async function searchPushRecipientByEmailFromSite(
   email: string,
   accountIds: string[],
@@ -571,7 +583,7 @@ export async function searchPushRecipientByEmailFromSite(
 ): Promise<PushRecipientSearchResult> {
   const normalized = email.trim();
   if (!normalized) {
-    return { found: false, email: normalized, message: '???????????????????' };
+    return { found: false, email: normalized, recipients: [], message: '请输入接收者邮箱' };
   }
   let tokenRes: ExtensionResponse<{ token: string | null }>;
   try {
@@ -581,7 +593,7 @@ export async function searchPushRecipientByEmailFromSite(
     throw new Error(msg);
   }
   if (!tokenRes.success || !tokenRes.payload?.token) {
-    throw new Error(tokenRes.error || '?????? access_token');
+    throw new Error(tokenRes.error || '未保存 access_token');
   }
   const token = tokenRes.payload.token;
   const businessIds = await resolveBusinessIdsForAccounts(token, accountIds, hintBmIds);
@@ -589,23 +601,29 @@ export async function searchPushRecipientByEmailFromSite(
     return {
       found: false,
       email: normalized,
-      message: '???????? Business Manager????????????????????????????????????',
+      recipients: [],
+      message: '无法确定广告账户所属 Business Manager，请先在广告管理工具中打开对应账户或 BM',
     };
   }
-  const hit = await searchBusinessUserByEmailInBusinesses(token, businessIds, normalized);
-  if (hit) {
+  const hits = await searchAllBusinessUsersByEmailInBusinesses(token, businessIds, normalized);
+  if (hits.length) {
     return {
       found: true,
-      email: hit.email,
-      recipientUserId: hit.businessUserId,
-      displayName: hit.name ?? hit.email,
-      businessId: hit.businessId,
+      email: normalized,
+      recipients: hits.map((hit) => ({
+        email: hit.email,
+        recipientUserId: hit.businessUserId,
+        displayName: hit.name ?? hit.email,
+        businessId: hit.businessId,
+      })),
+      message: `在 ${hits.length} 个 BM 中找到该邮箱用户，请勾选要推送的对象`,
     };
   }
   return {
     found: false,
     email: normalized,
-    message: '???????????????????? BM ????????????????????????????? BM ????',
+    recipients: [],
+    message: '未在所选账户关联的 BM 中找到该邮箱用户，可先邀请对方加入 BM 后再推送',
   };
 }
 

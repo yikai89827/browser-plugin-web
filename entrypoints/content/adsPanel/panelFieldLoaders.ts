@@ -1,6 +1,13 @@
 import { browser } from 'wxt/browser';
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import type { PanelFieldKey } from '../../../utils/fb/adsPanel/adAccountPanelDisplay';
+import {
+  fxRateSourceLabel,
+  roundFxRate,
+  type FxRateSource,
+} from '../../../utils/fb/adsPanel/currencyExchange';
+import { extractUsdToCurrencyRateFromPage } from '../../../utils/fb/adsPanel/metaPageFxRate';
+import { fbControlLog } from '../../../utils/fbControlLog';
 
 const corePromises = new Map<string, Promise<FbAdAccountRecord | null>>();
 
@@ -53,14 +60,36 @@ export async function ensureCoreRecord(
 export async function fetchUsdToAccountRate(currency: string): Promise<number> {
   const ccy = currency.trim().toUpperCase();
   if (ccy === 'USD') return 1;
+  const pageRate = extractUsdToCurrencyRateFromPage(ccy);
+  fbControlLog('content:fx', '页面解析 usd_exchange_inverse', {
+    currency: ccy,
+    pageRate: pageRate ?? null,
+    pageHit: pageRate != null,
+  });
   const res = (await browser.runtime.sendMessage({
     action: 'FB_CONTROL_GET_USD_EXCHANGE_RATE',
-    data: { currency: ccy },
-  })) as { success?: boolean; error?: string; payload?: { rate?: number } };
+    data: {
+      currency: ccy,
+      ...(pageRate != null ? { pageUsdToCurrencyRate: pageRate } : {}),
+    },
+  })) as {
+    success?: boolean;
+    error?: string;
+    payload?: { rate?: number; source?: FxRateSource; effectiveRate?: number };
+  };
   if (!res?.success || res.payload?.rate == null) {
-    throw new Error(res?.error || '??????');
+    throw new Error(res?.error || '汇率获取失败');
   }
-  return res.payload.rate;
+  const source = res.payload.source ?? (pageRate != null ? 'meta-page' : 'er-api');
+  const effective = res.payload.effectiveRate ?? roundFxRate(res.payload.rate);
+  fbControlLog('content:fx', '汇率已就绪（悬浮窗）', {
+    currency: ccy,
+    source,
+    sourceLabel: fxRateSourceLabel(source),
+    rawRate: res.payload.rate,
+    effectiveRate: effective,
+  });
+  return effective;
 }
 
 export async function fetchManageAdminCount(

@@ -1,5 +1,17 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
+import { effectiveUsdToAccountRate } from '../adsPanel/currencyExchange';
 import { currencyOffset } from './spendCapCurrency';
+
+export function isPrepayAccount(row: FbAdAccountRecord): boolean {
+  const t = (row.accountType || '').trim();
+  return t === '预付' || /^prepaid$/i.test(t);
+}
+
+/** 表格「门槛」：预付无付款门槛固定 0；后付费用 Graph 实际值 */
+export function resolvePaymentThresholdMinor(row: FbAdAccountRecord): number | null | undefined {
+  if (isPrepayAccount(row)) return 0;
+  return row.paymentThresholdMinor;
+}
 
 /** Meta 新户常见账户级「每日花费限额」约 $50（USD 美分） */
 export const META_DEFAULT_DAILY_SPEND_LIMIT_USD_MINOR = 5000;
@@ -13,8 +25,8 @@ export function accountMinorToUsdMinor(
   const ccy = currency.trim().toUpperCase();
   const majorAcct = accountMinor / currencyOffset(ccy);
   if (ccy === 'USD') return Math.round(majorAcct * 100);
-  const rate = usdToAccountRate;
-  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  const rate = effectiveUsdToAccountRate(usdToAccountRate);
+  if (rate == null) return 0;
   return Math.round((majorAcct / rate) * 100);
 }
 
@@ -27,8 +39,8 @@ export function usdMinorToAccountMinor(
   const ccy = currency.trim().toUpperCase();
   const majorUsd = usdMinor / 100;
   if (ccy === 'USD') return Math.round(majorUsd * currencyOffset(ccy));
-  const rate = usdToAccountRate;
-  if (!Number.isFinite(rate) || rate <= 0) return Math.round(majorUsd * currencyOffset(ccy));
+  const rate = effectiveUsdToAccountRate(usdToAccountRate);
+  if (rate == null) return Math.round(majorUsd * currencyOffset(ccy));
   return Math.round(majorUsd * rate * currencyOffset(ccy));
 }
 
@@ -46,8 +58,8 @@ export function resolveDailySpendLimitMinor(
   const ccy = (row.currency || 'USD').trim().toUpperCase();
   if (ccy === 'USD') return raw;
 
-  const rate = usdToAccountRate;
-  if (rate == null || !Number.isFinite(rate) || rate <= 0) return raw;
+  const rate = effectiveUsdToAccountRate(usdToAccountRate);
+  if (rate == null) return raw;
 
   const usdMinor = accountMinorToUsdMinor(raw, ccy, rate);
   if (usdMinor > 0 && usdMinor < META_DEFAULT_DAILY_SPEND_LIMIT_USD_MINOR) {

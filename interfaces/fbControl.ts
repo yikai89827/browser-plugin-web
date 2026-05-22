@@ -1,4 +1,12 @@
 /**
+ * Graph / 页面采集写入时不得覆盖的本地字段（见 `mergeAdAccount` / `fbIdbUpsertAccounts`）。
+ * 仅站点操作、`FB_CONTROL_MERGE_ACCOUNT` 或业务批量结果回写可更新这些键。
+ */
+export const FB_AD_ACCOUNT_LOCAL_ONLY_KEYS = ['favorite', 'remark', 'pushStatus'] as const;
+
+export type FbAdAccountLocalOnlyKey = (typeof FB_AD_ACCOUNT_LOCAL_ONLY_KEYS)[number];
+
+/**
  * 广告账户 — 字段与自有平台「广告账号管理」表格列对齐（见产品截图）。
  * 采集不到的字段可省略；展示层以「—」占位。
  */
@@ -10,7 +18,7 @@ export interface FbAdAccountRecord {
   /** 状态（绿点/红点等展示用文案或枚举） */
   status: string;
 
-  /** 收藏 */
+  /** 收藏（仅扩展 IndexedDB 本地，与 Facebook 后台无关） */
   favorite?: boolean;
   /** 日限额 */
   dailyLimit?: string;
@@ -22,7 +30,7 @@ export interface FbAdAccountRecord {
   periodSpent?: string;
   /** 余额 */
   balance?: string;
-  /** 备注 */
+  /** 备注（仅扩展本地） */
   remark?: string;
   /** 币种 */
   currency?: string;
@@ -59,7 +67,7 @@ export interface FbAdAccountRecord {
   secondaryStatus?: string;
   /** 管理员数量（若采集） */
   adminCount?: number;
-  /** 推送状态（自有平台 / 后续对接） */
+  /** 推送状态（站点批量推送后写入，仅本地） */
   pushStatus?: string;
   /**
    * 账号类型展示（Graph `account_type` 经映射的短标签，如 Business / Personal；表格层再转为中文）。

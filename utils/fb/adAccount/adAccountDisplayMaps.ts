@@ -181,6 +181,22 @@ export function formatOwnerRoleForTable(row: { userRoleRaw?: string | number; ow
   return '—';
 }
 
+const FUNDING_DISPLAY_SYMBOLS = ['¥', '$', '€', '£', 'Rs', 'HK$', 'NT$', 'A$', 'C$', 'S$', '₹'];
+
+/**
+ * Meta `display_string` 常在括号金额后重复币种代码（如 `可用余额 (¥ 0.00 CNY)`），去掉冗余后缀。
+ */
+export function normalizeFundingDisplayString(display: string): string {
+  const s = display.trim();
+  if (!s) return s;
+  return s.replace(/\(([^()]+)\)/g, (match, inner: string) => {
+    const hasSym = FUNDING_DISPLAY_SYMBOLS.some((sym) => inner.includes(sym));
+    if (!hasSym) return match;
+    const trimmed = inner.replace(/\s+[A-Z]{3}\s*$/i, '').trimEnd();
+    return `(${trimmed})`;
+  });
+}
+
 /**
  * 从 Graph 返回的 `funding_source_details` 读取人类可读支付文案。
  */
@@ -188,7 +204,7 @@ export function readFundingSourceDisplay(a: Record<string, unknown>): string | u
   const d = a.funding_source_details as Record<string, unknown> | undefined;
   if (d && d.display_string != null) {
     const t = String(d.display_string).trim();
-    if (t) return t;
+    if (t) return normalizeFundingDisplayString(t);
   }
   return undefined;
 }
@@ -204,7 +220,7 @@ export function formatPaymentMethodZh(
   if (fundingSource == null || fundingSource === '') return undefined;
   const s = String(fundingSource).trim();
   if (/^\d{8,}$/.test(s)) return `支付渠道（ID：${s}）`;
-  return s;
+  return normalizeFundingDisplayString(s);
 }
 
 /** Graph `account_type` 枚举键，或与 `mapGraphAdAccount` 一致的英文短标签 */

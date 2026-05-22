@@ -4,19 +4,15 @@ import {
   currencyOffset,
   detectSpendCapUnit,
   formatSpendCapMajorLabel,
+  spendCapMinorToGraphPostValue,
   spendCapRawToMinor,
   type SpendCapNormalizeHints,
 } from './spendCapCurrency';
-
-/** Marketing API 写 spend_cap 用主单位（美元）；删限额用 spend_cap_action */
-type SpendCapPostAction = 'set' | 'delete_cap' | 'reset_spent';
-
-function formatSpendCapMajorForPost(minor: number, currency?: string | null): string {
-  const offset = currencyOffset(currency);
-  const major = Math.max(0, minor) / offset;
-  if (Math.abs(major - Math.round(major)) < 1e-6) return String(Math.round(major));
-  return major.toFixed(2);
-}
+import {
+  effectiveUsdToAccountRate,
+  fetchUsdToCurrencyRate,
+  logFxRateResolved,
+} from '../adsPanel/currencyExchange';
 import { fbControlLog } from '../../fbControlLog';
 import { fetchFacebookMeNumericId } from '../graphFetchMe';
 import { graphFetch } from '../graphExternalFetch';
@@ -26,18 +22,48 @@ import {
   buildAdAccountAssignedUsersReadUrl,
   fetchAdAccountOwnerBusinessId,
   formatNotBusinessScopedUserHint,
-  inviteBusinessUserByEmail,
   parsePrimaryBmIdFromText,
   postBusinessPartnerAgency,
   resolveBusinessIdForAdAccount,
   resolveBusinessIdsForAccounts,
   resolveBusinessUserIdForPersonalInBusinesses,
-  searchBusinessUserByEmailInBusinesses,
   type AssignedUserLookupRow,
-  type GraphBusinessUserMatch,
 } from './graphBusinessManagement';
 
 const GRAPH_VERSION = 'v21.0';
+
+type SpendCapPostAction = 'set' | 'delete_cap' | 'reset_spent';
+
+/** 将抽屉里输入的 USD 最小单位（美分）换算为账户币种最小单位 */
+async function usdMinorToAccountMinor(
+  usdMinor: number,
+  accountCurrency: string,
+  accessToken: string,
+  prefetchedUsdToAccount?: number | null
+): Promise<number> {
+  const ccy = accountCurrency.trim().toUpperCase();
+  const usd = Math.max(0, Math.round(usdMinor));
+  if (ccy === 'USD') return usd;
+  let rate: number;
+  if (prefetchedUsdToAccount != null && prefetchedUsdToAccount > 0) {
+    rate = effectiveUsdToAccountRate(prefetchedUsdToAccount) ?? prefetchedUsdToAccount;
+    fbControlLog('fb:graph-batch', '限额换算用预取汇率', { currency: ccy, rate });
+  } else {
+    const fx = await fetchUsdToCurrencyRate(ccy, { accessToken });
+    logFxRateResolved(ccy, fx, { for: 'spend_cap_usd_to_account' });
+    rate = effectiveUsdToAccountRate(fx.rawRate) ?? fx.rawRate;
+  }
+  const majorAcct = (usd / 100) * rate;
+  return Math.round(majorAcct * currencyOffset(ccy));
+}
+
+function prefetchedFxRate(
+  payload: BatchDrawerSubmitPayload,
+  currency: string
+): number | null | undefined {
+  const ccy = currency.trim().toUpperCase();
+  return payload.fxUsdToAccount?.[ccy]?.rate;
+}
 
 /** 批量结果卡类型：广告账户 Graph 结果 / 检测好友（UID 预检）结果 */
 export type AdAccountBatchResultKind = 'ad_account' | 'friend_uid';
@@ -48,12 +74,16 @@ export type AdAccountBatchResultRow = {
   detail: string;
   /** 默认按广告账户展示；friend_uid 时第二行标题为「检测账号」 */
   resultKind?: AdAccountBatchResultKind;
+  /** 广告账户名称（结果卡「当前账号」展示） */
+  accountName?: string;
   /** 好友预检：展示用户原始输入（主页链接或 UID） */
   displayInput?: string;
   /** 当前登录 Facebook 主页链接（检测好友卡展示） */
   currentFbProfileUrl?: string | null;
   /** 好友预检：尚未请求 Graph，仅用于占位与遮盖层 */
   friendCheckPending?: boolean;
+  /** 限额操作成功后 Graph 侧 spend_cap（最小单位），供列表回写避免单位误判 */
+  spendCapMinorAfter?: number;
 };
 
 /** Graph 单 UID 预检一行 */
@@ -873,30 +903,98 @@ export type SpendCapRecordPatch = {
   currency?: string;
 };
 
+function parseGraphCapRaw(raw: unknown): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace(/[^\d-]/g, ''), 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function capRawToMinor(
+  raw: unknown,
+  hints: SpendCapNormalizeHints
+): number {
+  const n = parseGraphCapRaw(raw);
+  if (n == null) return 0;
+  if (n === 0) return 0;
+  return spendCapRawToMinor(n, hints);
+}
+
+export function spendCapRecordPatchFromFields(
+  accountId: string,
+  spendCapMinor: number,
+  paymentThresholdMinor: number,
+  currency?: string
+): SpendCapRecordPatch {
+  const cap = Math.max(0, Math.round(spendCapMinor));
+  const threshold = Math.max(0, Math.round(paymentThresholdMinor));
+  return {
+    accountId,
+    spendCapMinor: cap,
+    paymentThresholdMinor: threshold,
+    spendingLimit: cap > 0 ? String(cap) : undefined,
+    currency,
+  };
+}
+
+/** @deprecated 仅 spend_cap 时使用；请优先 fetchSpendCapRecordPatch */
 export function spendCapRecordPatchFromMinor(
   accountId: string,
   minor: number,
   currency?: string
 ): SpendCapRecordPatch {
   const m = Math.max(0, Math.round(minor));
-  return {
-    accountId,
-    spendCapMinor: m,
-    paymentThresholdMinor: m,
-    spendingLimit: m > 0 ? String(m) : undefined,
-    currency,
-  };
+  return spendCapRecordPatchFromFields(accountId, m, m, currency);
 }
 
-/** 从 Graph 读取 spend_cap 并转为列表展示字段 */
+/** 从 Graph 读取 spend_cap + min_campaign_group_spend_cap 并转为列表展示字段 */
 export async function fetchSpendCapRecordPatch(
   accessToken: string,
   accountId: string,
   hints?: SpendCapNormalizeHints
 ): Promise<SpendCapRecordPatch> {
-  const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
-  const minor = ctx?.minor ?? 0;
-  return spendCapRecordPatchFromMinor(accountId, minor, ctx?.currency);
+  const act = actPath(accountId);
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${act}?fields=spend_cap,min_campaign_group_spend_cap,currency,amount_spent&access_token=${encodeURIComponent(accessToken)}`;
+  const res = await graphFetch(url);
+  const json = (await res.json()) as {
+    spend_cap?: string | number;
+    min_campaign_group_spend_cap?: string | number;
+    currency?: string;
+    amount_spent?: string | number;
+    error?: { message?: string };
+  };
+  if (!res.ok || json.error?.message) {
+    const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+    const minor = ctx?.minor ?? 0;
+    return spendCapRecordPatchFromMinor(accountId, minor, ctx?.currency);
+  }
+
+  const currency = String(json.currency ?? hints?.currency ?? 'USD');
+  const amountSpentRaw = json.amount_spent;
+  const amountSpentMinor =
+    amountSpentRaw != null && amountSpentRaw !== ''
+      ? parseInt(String(amountSpentRaw).replace(/[^\d-]/g, ''), 10)
+      : 0;
+  const baseHints: SpendCapNormalizeHints = {
+    ...hints,
+    currency,
+    amountSpentMinor: Number.isFinite(amountSpentMinor) ? amountSpentMinor : 0,
+  };
+
+  const spendCapMinor = capRawToMinor(json.spend_cap, {
+    ...baseHints,
+    spendCapMinor: hints?.spendCapMinor ?? undefined,
+  });
+  const paymentThresholdMinor = capRawToMinor(json.min_campaign_group_spend_cap, {
+    ...baseHints,
+    spendCapMinor: spendCapMinor > 0 ? spendCapMinor : undefined,
+  });
+
+  return spendCapRecordPatchFromFields(
+    accountId,
+    spendCapMinor,
+    paymentThresholdMinor,
+    currency
+  );
 }
 
 async function postSpendCapMinor(
@@ -916,12 +1014,25 @@ async function postSpendCapMinor(
   } else if (action === 'reset_spent') {
     await postAdAccountField(accessToken, accountId, { spend_cap_action: 'reset' });
   } else {
+    const postVal = spendCapMinorToGraphPostValue(targetMinor, ctx.currency);
+    fbControlLog('fb:graph-batch', 'POST spend_cap', {
+      accountId,
+      currency: ctx.currency,
+      targetMinor,
+      postVal,
+      readUnit: ctx.unit,
+    });
     await postAdAccountField(accessToken, accountId, {
-      spend_cap: formatSpendCapMajorForPost(targetMinor, ctx.currency),
+      spend_cap: postVal,
     });
   }
 
-  const afterCtx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+  const afterCtx = await fetchAdAccountSpendCapContext(accessToken, accountId, {
+    ...hints,
+    spendCapMinor: targetMinor,
+    currency: ctx.currency,
+    amountSpentMinor: ctx.amountSpentMinor,
+  });
   if (!afterCtx) {
     throw new Error('写入后无法读取 spend_cap，请稍后在 Meta 广告管理工具中核对');
   }
@@ -1034,18 +1145,23 @@ export async function executeAdAccountBatchOperation(
   const delayMs = payload.useDefaultInterval ? getConfiguredGraphBatchStepDelayMs() : 0;
   const accounts = [...payload.selectedAccountIds];
   const results: AdAccountBatchResultRow[] = [];
+  const accountNameById = payload.accountNames ?? {};
 
   const pushResult = (
     accountId: string,
     status: string,
     detail: string,
-    displayInput?: string
+    displayInput?: string,
+    extra?: Pick<AdAccountBatchResultRow, 'spendCapMinorAfter'>
   ) => {
+    const name = accountNameById[accountId]?.trim();
     results.push({
       accountId,
       status,
       detail,
+      ...(name ? { accountName: name } : {}),
       ...(displayInput ? { displayInput } : {}),
+      ...extra,
     });
   };
 
@@ -1292,8 +1408,8 @@ export async function executeAdAccountBatchOperation(
     case 'set_limit': {
       const form = payload.spendLimitForm;
       if (form) {
-        const deltaMinor = form.amountMinor ?? null;
-        if (deltaMinor == null || deltaMinor <= 0) {
+        const deltaUsdMinor = form.amountMinor ?? null;
+        if (deltaUsdMinor == null || deltaUsdMinor <= 0) {
           throw new Error('请填写有效的额度金额');
         }
         for (const accountId of accounts) {
@@ -1304,6 +1420,19 @@ export async function executeAdAccountBatchOperation(
               throw new Error('无法读取当前 spend_cap');
             }
             const curMinor = ctx.minor;
+            const deltaMinor = await usdMinorToAccountMinor(
+              deltaUsdMinor,
+              ctx.currency,
+              accessToken,
+              prefetchedFxRate(payload, ctx.currency)
+            );
+            fbControlLog('fb:graph-batch', 'set_limit 换算', {
+              accountId,
+              currency: ctx.currency,
+              deltaUsdMajor: deltaUsdMinor / 100,
+              deltaUsdMinor,
+              deltaAccountMinor: deltaMinor,
+            });
             let targetMinor: number;
             if (form.kind === 'increase') {
               targetMinor = curMinor <= 0 ? deltaMinor : curMinor + deltaMinor;
@@ -1327,7 +1456,9 @@ export async function executeAdAccountBatchOperation(
             pushResult(
               accountId,
               '成功',
-              `花费上限：${beforeLabel} → ${afterLabel}（${verb} ${deltaLabel}）`
+              `花费上限：${beforeLabel} → ${afterLabel}（${verb} ${deltaLabel}，约 ${(deltaUsdMinor / 100).toFixed(2)} USD）`,
+              undefined,
+              { spendCapMinorAfter: afterMinor }
             );
           } catch (e: unknown) {
             pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
@@ -1344,15 +1475,16 @@ export async function executeAdAccountBatchOperation(
         try {
           const hints = spendCapHintsFromPayload(payload, accountId);
           const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
-          const currency = ctx?.currency ?? 'USD';
+          if (!ctx) throw new Error('无法读取当前 spend_cap');
+          const postVal = spendCapMinorToGraphPostValue(caps[i], ctx.currency);
           await postAdAccountField(accessToken, accountId, {
-            spend_cap: formatSpendCapMajorForPost(caps[i], currency),
+            spend_cap: postVal,
           });
           if (delayMs) await sleep(delayMs);
           pushResult(
             accountId,
             '成功',
-            `spend_cap 已设为 ${formatSpendCapMajorLabel(caps[i], currency)}`
+            `spend_cap 已设为 ${formatSpendCapMajorLabel(caps[i], ctx.currency)}`
           );
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
@@ -1364,17 +1496,28 @@ export async function executeAdAccountBatchOperation(
     case 'reset_limit': {
       const rf = payload.resetLimitForm;
       if (rf?.mode === 'set_absolute') {
-        const cap = rf.amountMinor;
-        if (cap == null || cap < 0) {
-          throw new Error('请填写有效的限额（最小货币单位）');
+        const capUsdMinor = rf.amountMinor;
+        if (capUsdMinor == null || capUsdMinor < 0) {
+          throw new Error('请填写有效的限额');
         }
         for (const accountId of accounts) {
           try {
             const hints = spendCapHintsFromPayload(payload, accountId);
+            const ctx = await fetchAdAccountSpendCapContext(accessToken, accountId, hints);
+            if (!ctx) throw new Error('无法读取当前 spend_cap');
+            const capMinor =
+              capUsdMinor === 0
+                ? 0
+                : await usdMinorToAccountMinor(
+                    capUsdMinor,
+                    ctx.currency,
+                    accessToken,
+                    prefetchedFxRate(payload, ctx.currency)
+                  );
             const { afterMinor, currency } = await postSpendCapMinor(
               accessToken,
               accountId,
-              cap,
+              capMinor,
               hints
             );
             if (delayMs) await sleep(delayMs);
@@ -1614,56 +1757,53 @@ export async function executeAdAccountBatchOperation(
 
     case 'account_push': {
       const push = payload.accountPushForm;
-      const email = push?.recipientEmail?.trim() || payload.uidsText.trim();
-      if (!email) {
-        throw new Error('请先搜索并确认接收者邮箱');
+      const recipients = push?.recipients?.filter((r) => r.recipientUserId?.trim()) ?? [];
+      if (!recipients.length) {
+        throw new Error('请搜索用户并勾选至少一位接收者');
       }
       const hintBms = payload.accountBmHintIds ?? [];
       const businessIds = await resolveBusinessIdsForAccounts(accessToken, accounts, hintBms);
       if (!businessIds.length) {
         throw new Error('无法确定广告账户所属 Business Manager，请在商务管理平台打开对应 BM 后重试');
       }
-      let recipient: GraphBusinessUserMatch | null = null;
-      if (push?.recipientUserId) {
-        recipient = {
-          businessUserId: push.recipientUserId,
-          email,
-          name: push.recipientDisplayName,
-          businessId: businessIds[0],
-        };
-      } else {
-        recipient = await searchBusinessUserByEmailInBusinesses(accessToken, businessIds, email);
-      }
-      if (!recipient) {
-        const inviteBm = businessIds[0];
+      const tasks = ['ADVERTISE', 'ANALYZE'];
+      for (const accountId of accounts) {
         try {
-          await inviteBusinessUserByEmail(accessToken, inviteBm, email, 'EMPLOYEE');
-          for (const accountId of accounts) {
+          const okLabels: string[] = [];
+          const errs: string[] = [];
+          for (const rec of recipients) {
+            const email = rec.recipientEmail.trim();
+            const label = rec.recipientDisplayName?.trim()
+              ? `${rec.recipientDisplayName} (${email})`
+              : email;
+            try {
+              await assignBusinessUserToAdAccount(
+                accessToken,
+                accountId,
+                rec.recipientUserId.trim(),
+                tasks
+              );
+              okLabels.push(label);
+              if (delayMs) await sleep(delayMs);
+            } catch (e: unknown) {
+              errs.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }
+          if (!okLabels.length) {
+            pushResult(accountId, '失败', errs.join('；') || '推送失败');
+          } else if (errs.length) {
             pushResult(
               accountId,
               '部分成功',
-              `已向 BM ${inviteBm} 发送邀请邮件 ${email}；对方接受邀请后请再次执行推送以分配广告权限`
+              `已推送 ${okLabels.join('、')}；失败：${errs.join('；')}`
+            );
+          } else {
+            pushResult(
+              accountId,
+              '成功',
+              `已推送：${okLabels.join('、')} 获得广告权限（${tasks.join(', ')}）`
             );
           }
-        } catch (e: unknown) {
-          throw new Error(
-            `未在 BM 中找到邮箱 ${email}，且邀请失败：${e instanceof Error ? e.message : String(e)}`
-          );
-        }
-        break;
-      }
-      const tasks = ['ADVERTISE', 'ANALYZE'];
-      const label = recipient.name ? `${recipient.name} (${recipient.email})` : recipient.email;
-      for (const accountId of accounts) {
-        try {
-          await assignBusinessUserToAdAccount(
-            accessToken,
-            accountId,
-            recipient.businessUserId,
-            tasks
-          );
-          if (delayMs) await sleep(delayMs);
-          pushResult(accountId, '成功', `已推送：${label} 获得广告权限（${tasks.join(', ')}）`);
         } catch (e: unknown) {
           pushResult(accountId, '失败', e instanceof Error ? e.message : String(e));
         }

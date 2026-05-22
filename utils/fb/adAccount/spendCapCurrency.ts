@@ -30,8 +30,31 @@ export function detectSpendCapUnit(raw: number, hints?: SpendCapNormalizeHints):
     if (Math.abs(raw - hint) <= rel) return 'minor';
     if (Math.abs(raw * offset - hint) <= rel) return 'major';
   }
-  const spent = hints?.amountSpentMinor;
-  if (spent != null && spent > offset * 10 && raw > 0) {
+  /** 个位数多为最小单位（如 USD spend_cap=1 → $0.01） */
+  if (raw < 10) return 'minor';
+
+  const spent = hints?.amountSpentMinor ?? 0;
+  const spentLow = spent <= offset * 50;
+
+  /**
+   * Graph 对 spend_cap 常返回主单位整数（如 USD 返回 100 表示 $100）。
+   * PKR/CNY 等则常返回最小单位（如 27903 表示 279.03 PKR），勿按主单位再 ×100。
+   */
+  if (spentLow && raw >= 10 && raw <= 10_000_000) {
+    const asMinorMajor = raw / offset;
+    const asMajorMinor = raw * offset;
+    if (offset === 100 && raw >= 50 && asMinorMajor < 50) {
+      return 'major';
+    }
+    if (asMinorMajor >= 0.01 && asMinorMajor < 500_000 && asMajorMinor > asMinorMajor * offset) {
+      return 'minor';
+    }
+    if (asMajorMinor >= offset) {
+      return 'major';
+    }
+  }
+
+  if (spent > offset * 10 && raw > 0) {
     const asMinor = raw;
     const asMajorToMinor = raw * offset;
     if (asMinor < spent * 0.2 && asMajorToMinor >= spent * 0.5) return 'major';
@@ -47,13 +70,54 @@ export function spendCapRawToMinor(raw: number, hints?: SpendCapNormalizeHints):
   return unit === 'major' ? Math.round(raw * offset) : Math.round(raw);
 }
 
-/** 将最小单位写回 Graph（与 detect 到的单位一致） */
+/** 将最小单位写回 Graph（与 detect 到的单位一致；仅用于与读回单位对齐的旧逻辑） */
 export function spendCapMinorToApiValue(minor: number, unit: SpendCapUnit, currency?: string | null): number {
   const m = Math.max(0, Math.round(minor));
   if (unit === 'major') {
     return Math.round(m / currencyOffset(currency));
   }
   return m;
+}
+
+/**
+ * Marketing API 写入 spend_cap：始终用账户币种「主单位」字符串（如 100.00 PKR、100 USD）。
+ * 切勿把最小单位（如 10000 分）直接 POST，否则 Meta 会按主单位理解成巨额限额。
+ */
+export function spendCapMinorToGraphPostValue(minor: number, currency?: string | null): string {
+  const offset = currencyOffset(currency);
+  const major = Math.max(0, Math.round(minor)) / offset;
+  if (Math.abs(major - Math.round(major)) < 1e-6) return String(Math.round(major));
+  return major.toFixed(2);
+}
+
+type SpendCapRecordLike = {
+  spendCapMinor?: number | null;
+  spendingLimit?: string | null;
+  currency?: string | null;
+  totalSpentMinor?: number | null;
+  amountSpentMinor?: number | null;
+};
+
+/**
+ * 统一解析账户花费上限（最小单位）。
+ * 列表可能仅有 Graph 原始 spendingLimit 字符串（如 "27903"），需与 spend_cap 读回规则一致。
+ */
+export function resolveSpendCapMinorForRecord(row: SpendCapRecordLike): number | null | undefined {
+  if (row.spendCapMinor === 0) return 0;
+  if (row.spendCapMinor != null && Number.isFinite(row.spendCapMinor) && row.spendCapMinor > 0) {
+    return Math.round(row.spendCapMinor);
+  }
+  const rawStr = row.spendingLimit?.trim();
+  if (!rawStr || /不限/.test(rawStr)) return row.spendCapMinor ?? undefined;
+  const digits = rawStr.replace(/[^\d]/g, '');
+  if (!digits) return undefined;
+  const raw = parseInt(digits, 10);
+  if (!Number.isFinite(raw) || raw <= 0) return undefined;
+  return spendCapRawToMinor(raw, {
+    currency: row.currency,
+    amountSpentMinor: row.totalSpentMinor ?? row.amountSpentMinor ?? undefined,
+    spendCapMinor: row.spendCapMinor ?? undefined,
+  });
 }
 
 export function formatSpendCapMajorLabel(minor: number, currency?: string | null): string {

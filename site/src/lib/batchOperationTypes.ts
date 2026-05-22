@@ -81,7 +81,7 @@ export type BatchAccountPreviewRow = {
 /** 设置限额抽屉提交（与 `uidsText` 二选一：有此则走结构化逻辑） */
 export interface SpendLimitFormPayload {
   kind: 'increase' | 'decrease';
-  /** 增加/减少时的金额（币种最小单位，如 USD 美分） */
+  /** 增加/减少时的金额（USD 最小单位，即美分） */
   amountMinor?: number;
 }
 
@@ -147,11 +147,14 @@ export interface BatchDrawerSubmitPayload {
   resetLimitForm?: ResetLimitFormPayload;
   removeAuthForm?: RemoveAuthFormPayload;
   updateBusinessForm?: UpdateBusinessFormPayload;
-  /** 推送数据：接收方邮箱与搜索命中用户 */
+  /** 推送数据：勾选的接收方（BM 商务用户） */
   accountPushForm?: {
-    recipientEmail: string;
-    recipientUserId?: string;
-    recipientDisplayName?: string;
+    recipients: {
+      recipientEmail: string;
+      recipientUserId: string;
+      recipientDisplayName?: string;
+      businessId?: string;
+    }[];
   };
   /** 推送/合作伙伴：账户列表已知的所属 BM ID（减少 Graph 探测） */
   accountBmHintIds?: string[];
@@ -160,4 +163,8 @@ export interface BatchDrawerSubmitPayload {
     string,
     { spendCapMinor?: number; amountSpentMinor?: number; currency?: string }
   >;
+  /** 主站预取的 1 USD = ? 币种（与限额 USD→账户币种换算一致） */
+  fxUsdToAccount?: Record<string, { rate: number; source?: string }>;
+  /** 结果卡展示：accountId → 广告账户名称 */
+  accountNames?: Record<string, string>;
 }

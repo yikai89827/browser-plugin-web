@@ -415,21 +415,37 @@ export async function assignBusinessUserToAdAccount(
   }
 }
 
-/** 在多个 BM 中查找邮箱对应的 business user */
+/** 在多个 BM 中查找邮箱对应的 business user（返回首个命中） */
 export async function searchBusinessUserByEmailInBusinesses(
   accessToken: string,
   businessIds: string[],
   email: string
 ): Promise<GraphBusinessUserMatch | null> {
-  const seen = new Set<string>();
+  const all = await searchAllBusinessUsersByEmailInBusinesses(accessToken, businessIds, email);
+  return all[0] ?? null;
+}
+
+/** 在多个 BM 中查找邮箱对应的全部 business user（每个 BM 至多一条） */
+export async function searchAllBusinessUsersByEmailInBusinesses(
+  accessToken: string,
+  businessIds: string[],
+  email: string
+): Promise<GraphBusinessUserMatch[]> {
+  const out: GraphBusinessUserMatch[] = [];
+  const seenBm = new Set<string>();
+  const seenUser = new Set<string>();
   for (const bmId of businessIds) {
     const id = bmId.trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
+    if (!id || seenBm.has(id)) continue;
+    seenBm.add(id);
     const hit = await findBusinessUserByEmail(accessToken, id, email);
-    if (hit) return hit;
+    if (!hit?.businessUserId) continue;
+    const key = `${hit.businessUserId}:${hit.businessId ?? id}`;
+    if (seenUser.has(key)) continue;
+    seenUser.add(key);
+    out.push({ ...hit, businessId: hit.businessId ?? id });
   }
-  return null;
+  return out;
 }
 
 /** 当前 token 可管理的 BM 列表（用于扩大邮箱搜索范围） */

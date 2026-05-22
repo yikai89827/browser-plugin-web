@@ -1,5 +1,10 @@
 import type { FbAdAccountRecord, FbPixelShareRecord } from '../../interfaces/fbControl';
+import { normalizeAccountId } from '../fb/adAccount/mapGraphAdAccount';
 import { fbControlError, fbControlLog } from '../fbControlLog';
+import {
+  preserveLocalAdAccountFields,
+  recordHasOwnKey,
+} from './fbAdAccountLocalMerge';
 
 const DB_NAME = 'fb_control_extension';
 const DB_VERSION = 1;
@@ -11,49 +16,70 @@ export type MergeAdAccountOptions = {
   resetHiddenAdminCount?: boolean;
 };
 
-/** 写入时合并，保留本地已改的收藏、备注等 */
+/** 统一主键为纯数字 act id，避免 act_ 前缀与无前缀两条记录导致本地字段丢失 */
+export function canonicalAdAccountId(accountId: string): string {
+  const raw = String(accountId).trim();
+  return normalizeAccountId(raw.replace(/^act_/i, ''), raw);
+}
+
+function accountMapKey(row: FbAdAccountRecord): string {
+  return canonicalAdAccountId(row.accountId);
+}
+
+function buildAdAccountMap(existing: FbAdAccountRecord[]): Map<string, FbAdAccountRecord> {
+  const map = new Map<string, FbAdAccountRecord>();
+  for (const row of existing) {
+    const key = accountMapKey(row);
+    const prev = map.get(key);
+    const normalized: FbAdAccountRecord = { ...row, accountId: key };
+    map.set(key, prev ? mergeAdAccount(prev, normalized) : normalized);
+  }
+  return map;
+}
+
+/** 写入时合并，保留本地已改的收藏、备注、推送状态等 */
 function mergeAdAccount(
   prev: FbAdAccountRecord | undefined,
   incoming: FbAdAccountRecord,
   options?: MergeAdAccountOptions
 ): FbAdAccountRecord {
   const p = prev;
+  const accountId = canonicalAdAccountId(incoming.accountId);
+  const normalizedIncoming: FbAdAccountRecord = { ...incoming, accountId };
   const out: FbAdAccountRecord = {
     ...(p ?? ({} as FbAdAccountRecord)),
-    ...incoming,
-    accountId: incoming.accountId,
-    capturedAt: incoming.capturedAt ?? p?.capturedAt ?? Date.now(),
+    ...normalizedIncoming,
+    accountId,
+    capturedAt: normalizedIncoming.capturedAt ?? p?.capturedAt ?? Date.now(),
   };
-  if (incoming.favorite === undefined && p?.favorite !== undefined) {
-    out.favorite = p.favorite;
-  }
-  if (
-    (incoming.remark === undefined || incoming.remark === '') &&
-    p?.remark != null &&
-    p.remark !== ''
-  ) {
-    out.remark = p.remark;
-  }
+  preserveLocalAdAccountFields(p, out, normalizedIncoming, (key) =>
+    recordHasOwnKey(normalizedIncoming, key)
+  );
   if (options?.resetHiddenAdminCount) {
     delete out.hiddenAdminCount;
-  } else if (incoming.hiddenAdminCount === undefined && p?.hiddenAdminCount !== undefined) {
+  } else if (
+    !recordHasOwnKey(normalizedIncoming, 'hiddenAdminCount') &&
+    p?.hiddenAdminCount !== undefined
+  ) {
     out.hiddenAdminCount = p.hiddenAdminCount;
   }
-  if (incoming.userRoleRaw === undefined && p?.userRoleRaw !== undefined) {
+  if (!recordHasOwnKey(normalizedIncoming, 'userRoleRaw') && p?.userRoleRaw !== undefined) {
     out.userRoleRaw = p.userRoleRaw;
   }
   if (
-    (incoming.ownerRole === undefined || String(incoming.ownerRole).trim() === '') &&
+    (!recordHasOwnKey(normalizedIncoming, 'ownerRole') ||
+      String(normalizedIncoming.ownerRole ?? '').trim() === '') &&
     p?.ownerRole != null &&
     String(p.ownerRole).trim() !== ''
   ) {
     out.ownerRole = p.ownerRole;
   }
-  if (incoming.adminCount === undefined && p?.adminCount !== undefined) {
+  if (!recordHasOwnKey(normalizedIncoming, 'adminCount') && p?.adminCount !== undefined) {
     out.adminCount = p.adminCount;
   }
   if (
-    (incoming.accountKindLabel === undefined || String(incoming.accountKindLabel).trim() === '') &&
+    (!recordHasOwnKey(normalizedIncoming, 'accountKindLabel') ||
+      String(normalizedIncoming.accountKindLabel ?? '').trim() === '') &&
     p?.accountKindLabel != null &&
     String(p.accountKindLabel).trim() !== ''
   ) {
@@ -151,11 +177,12 @@ export async function fbIdbUpsertAccounts(
 ): Promise<number> {
   if (!rows.length) return 0;
   const existing = await fbIdbGetAllAccounts();
-  const map = new Map(existing.map((r) => [r.accountId, r]));
+  const map = buildAdAccountMap(existing);
   let count = 0;
   for (const row of rows) {
     if (!row.accountId) continue;
-    map.set(row.accountId, mergeAdAccount(map.get(row.accountId), row, options));
+    const key = accountMapKey(row);
+    map.set(key, mergeAdAccount(map.get(key), row, options));
     count++;
   }
   if (options?.resetHiddenAdminCount) {
@@ -191,15 +218,16 @@ export async function fbIdbUpsertAccounts(
 export async function fbIdbMergeAccount(
   patch: Partial<FbAdAccountRecord> & { accountId: string }
 ): Promise<void> {
-  const prev = await fbIdbGetAccount(patch.accountId);
+  const key = canonicalAdAccountId(patch.accountId);
+  const prev = await fbIdbGetAccountLoose(key);
   const incoming: FbAdAccountRecord = {
-    accountId: patch.accountId,
-    name: patch.name ?? prev?.name ?? patch.accountId,
+    accountId: key,
+    name: patch.name ?? prev?.name ?? key,
     status: patch.status ?? prev?.status ?? 'unknown',
     capturedAt: prev?.capturedAt ?? Date.now(),
     ...prev,
     ...patch,
-    accountId: patch.accountId,
+    accountId: key,
   };
   await fbIdbUpsertAccounts([incoming]);
 }

@@ -26,8 +26,25 @@ import {
   unregisterAccountsGraphSync,
 } from '../lib/accountListSyncHub';
 import { fbControlLog } from '../../../utils/fbControlLog';
-import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
-import { resolveDailySpendLimitMinor } from '../../../utils/fb/adAccount/accountSpendLimits';
+import {
+  formatAccountKindLabelZh,
+  formatOwnerRoleForTable,
+  normalizeFundingDisplayString,
+} from '../../../utils/fb/adAccount/adAccountDisplayMaps';
+import {
+  isPrepayAccount,
+  resolveDailySpendLimitMinor,
+  resolvePaymentThresholdMinor,
+} from '../../../utils/fb/adAccount/accountSpendLimits';
+import {
+  resolveSpendCapMinorForRecord,
+  type SpendCapNormalizeHints,
+} from '../../../utils/fb/adAccount/spendCapCurrency';
+import {
+  effectiveUsdToAccountRate,
+  fxRateSourceLabel,
+  type FxRateSource,
+} from '../../../utils/fb/adsPanel/currencyExchange';
 import {
   formatMajorAmount,
   formatMinorAmount,
@@ -73,6 +90,8 @@ const hiddenAdminErrors = reactive<Record<string, string>>({});
 const hiddenAdminDetailsCache = reactive<Record<string, AdAccountAssignedUserDetail[]>>({});
 /** 1 USD = ? 账户币种（表格双行金额折算） */
 const fxUsdToAccount = reactive<Record<string, number>>({});
+/** 汇率来源（与 fxUsdToAccount 同键，供批量限额换算日志） */
+const fxUsdToAccountSource = reactive<Record<string, string>>({});
 
 /** 管理员 / 隐藏管理员详情抽屉 */
 const adminDrawerOpen = ref(false);
@@ -173,7 +192,7 @@ const advFilteredList = computed(() => {
   }
   if (f.limitKind === 'unlimited') {
     list = list.filter((r) => {
-      if (r.spendCapMinor === 0 || r.paymentThresholdMinor === 0) return true;
+      if (r.spendCapMinor === 0 || resolvePaymentThresholdMinor(r) === 0) return true;
       const sl = r.spendingLimit;
       if (sl && String(sl).includes('不限')) return true;
       return !(r.spendCapMinor != null && r.spendCapMinor > 0);
@@ -277,7 +296,7 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'billingMinor':
       return moneySortValue(row.billingAmountMinor ?? row.balanceMinor, billingAmountCell(row));
     case 'threshold':
-      return moneySortValue(row.paymentThresholdMinor, thresholdCell(row));
+      return moneySortValue(resolvePaymentThresholdMinor(row), thresholdCell(row));
     case 'dailyLimit':
       return moneySortValue(
         resolveDailySpendLimitMinor(row, fxRateForRow(row)),
@@ -300,7 +319,7 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'ownerRole':
       return formatOwnerRoleForTable(row).toLowerCase();
     case 'paymentMethod':
-      return coalesceStr(row.paymentMethod);
+      return coalesceStr(paymentMethodCell(row));
     case 'billingPeriod': {
       const s = row.billingPeriod;
       if (s == null || s === '') return -1e18;
@@ -402,7 +421,7 @@ const batchDrawerAccountRows = computed((): BatchAccountPreviewRow[] => {
       currency: r.currency,
       timezone: r.timezone,
       belongsToBmId: r.belongsToBmId,
-      spendCapMinor: r.spendCapMinor,
+      spendCapMinor: resolveSpendCapMinorForRecord(r) ?? r.spendCapMinor,
       balanceMinor: r.balanceMinor,
       totalSpentMinor: r.totalSpentMinor,
       spendingLimit: r.spendingLimit,
@@ -519,7 +538,8 @@ function tipBillingCell(row: FbAdAccountRecord): string {
 }
 
 function tipThresholdCell(row: FbAdAccountRecord): string {
-  return `门槛：Graph min_campaign_group_spend_cap（「不限额」表示为 0）。\n当前值：${formatMoneyDisplayText(thresholdCell(row))}`;
+  const kind = isPrepayAccount(row) ? '预付账户无付款门槛，固定显示 0' : '后付费：Graph min_campaign_group_spend_cap；0=不限额';
+  return `门槛：${kind}。\n当前值：${formatMoneyDisplayText(thresholdCell(row))}`;
 }
 
 function tipDailyLimitCell(row: FbAdAccountRecord): string {
@@ -531,7 +551,7 @@ function tipTotalSpentCell(row: FbAdAccountRecord): string {
 }
 
 function tipSpendingLimitCell(row: FbAdAccountRecord): string {
-  return `花费限额：账户 spend_cap（「不限额」表示未限制）。\n当前值：${formatMoneyDisplayText(spendingLimitCell(row))}`;
+  return `花费限额：账户花费上限（0=不限额）。批量「设置限额」会写入 Meta 并更新本列。\n当前值：${formatMoneyDisplayText(spendingLimitCell(row))}`;
 }
 
 function tipPeriodSpentCell(row: FbAdAccountRecord): string {
@@ -562,7 +582,7 @@ function tipOwnerRoleCell(row: FbAdAccountRecord): string {
 }
 
 function tipPaymentMethodCell(row: FbAdAccountRecord): string {
-  return `支付方法：账户绑定的付款方式摘要（卡、PayPal 等，以实际采集为准）。\n当前值：${dash(row.paymentMethod)}`;
+  return `支付方法：账户绑定的付款方式摘要（卡、PayPal 等，以实际采集为准）。\n当前值：${dash(paymentMethodCell(row))}`;
 }
 
 function tipBillingPeriodCell(row: FbAdAccountRecord): string {
@@ -810,6 +830,12 @@ function dash(v: unknown) {
   return String(v);
 }
 
+function paymentMethodCell(row: FbAdAccountRecord): string {
+  const raw = row.paymentMethod;
+  if (raw == null || !String(raw).trim()) return '';
+  return normalizeFundingDisplayString(String(raw));
+}
+
 /** 纯数字字符串按「最小单位」解析；否则原样加符号（若能识别为数字） */
 function formatMoneyishRaw(raw: string | undefined, currency?: string): string {
   if (raw == null || raw === '') return '—';
@@ -832,7 +858,7 @@ function fxRateForRow(row: FbAdAccountRecord): number | null {
   const ccy = (row.currency || 'USD').trim().toUpperCase();
   if (ccy === 'USD') return 1;
   const r = fxUsdToAccount[ccy];
-  return r != null && r > 0 ? r : null;
+  return effectiveUsdToAccountRate(r);
 }
 
 async function ensureFxRate(currency?: string): Promise<number | null> {
@@ -843,9 +869,17 @@ async function ensureFxRate(currency?: string): Promise<number | null> {
   try {
     const res = await fetchUsdExchangeRateFromExtension(ccy);
     if (res.success && res.payload?.rate != null && res.payload.rate > 0) {
-      const rounded = Math.round(res.payload.rate * 100) / 100;
-      fxUsdToAccount[ccy] = rounded;
-      return rounded;
+      fxUsdToAccount[ccy] = res.payload.rate;
+      if (res.payload.source) fxUsdToAccountSource[ccy] = res.payload.source;
+      const src = res.payload.source as FxRateSource | undefined;
+      console.info('[fbControl:site:fx] 汇率已就绪（账户管理页）', {
+        currency: ccy,
+        source: src ?? 'unknown',
+        sourceLabel: src ? fxRateSourceLabel(src) : '未知',
+        rawRate: res.payload.rate,
+        effectiveRate: res.payload.effectiveRate ?? effectiveUsdToAccountRate(res.payload.rate),
+      });
+      return res.payload.rate;
     }
   } catch {
     /* ignore */
@@ -873,7 +907,9 @@ function legacyMoneyDisplay(row: FbAdAccountRecord, text: string): MoneyDisplay 
   const cleaned = text.replace(/,/g, '').replace(/[^\d.-]/g, '');
   const major = parseFloat(cleaned);
   if (!Number.isFinite(major)) return { primary: text };
-  const usdMajor = major / rate;
+  const eff = effectiveUsdToAccountRate(rate);
+  if (eff == null) return { primary: text };
+  const usdMajor = major / eff;
   return { primary: text, secondary: formatMajorAmount(usdMajor, 'USD') };
 }
 
@@ -911,10 +947,13 @@ function moneyCell(row: FbAdAccountRecord, minor: number | null | undefined, opt
 }
 
 function thresholdCell(row: FbAdAccountRecord): MoneyDisplay {
-  const m = row.paymentThresholdMinor;
-  if (m === 0) return { primary: '不限额' };
-  if (m != null) return moneyCell(row, m);
-  return { primary: '—' };
+  const m = resolvePaymentThresholdMinor(row);
+  if (m == null) return { primary: '—' };
+  if (m === 0) {
+    if (isPrepayAccount(row)) return moneyCell(row, 0);
+    return moneyCell(row, 0, { unlimitedZero: true });
+  }
+  return moneyCell(row, m);
 }
 
 function dailyLimitCell(row: FbAdAccountRecord): MoneyDisplay {
@@ -924,8 +963,9 @@ function dailyLimitCell(row: FbAdAccountRecord): MoneyDisplay {
 }
 
 function spendingLimitCell(row: FbAdAccountRecord): MoneyDisplay {
-  if (row.spendCapMinor === 0) return { primary: '不限额' };
-  if (row.spendCapMinor != null) return moneyCell(row, row.spendCapMinor, { unlimitedZero: true });
+  const minor = resolveSpendCapMinorForRecord(row);
+  if (minor === 0) return { primary: '不限额' };
+  if (minor != null && minor > 0) return moneyCell(row, minor, { unlimitedZero: true });
   return { primary: '—' };
 }
 
@@ -1192,6 +1232,10 @@ function openBatchDrawer(key: string) {
   batchDrawerRunning.value = false;
   batchDrawerKey.value = key;
   batchDrawerOpen.value = true;
+  if (key === 'setLimit' || key === 'resetLimit') {
+    const rows = accounts.value.filter((a) => selectedAccountIds.value.includes(a.accountId));
+    void prefetchFxRates(rows);
+  }
 }
 
 function onDocumentClickCloseMore(e: MouseEvent) {
@@ -1312,7 +1356,7 @@ function exportAccountsToExcel() {
     币种: row.currency ?? '',
     账户类型: row.accountType ?? '',
     所有者角色: formatOwnerRoleForTable(row),
-    支付方法: row.paymentMethod ?? '',
+    支付方法: paymentMethodCell(row) || '',
     账单期: formatBillingPeriodDisplay(row.billingPeriod),
     锁定原因: row.lockReason ?? '',
     创建日期: row.createdDate ?? '',
@@ -1346,6 +1390,29 @@ function onFriendVerifyResult(payload: FriendVerifyResultPayload) {
   batchDrawerCurrentFbUrl.value = payload.currentUserProfileUrl;
 }
 
+async function attachFxRatesForLimitOps(payload: BatchDrawerSubmitPayload): Promise<void> {
+  if (payload.operationId !== 'set_limit' && payload.operationId !== 'reset_limit') return;
+  const ccys = [
+    ...new Set(
+      accounts.value
+        .filter((a) => payload.selectedAccountIds.includes(a.accountId))
+        .map((a) => (a.currency || '').trim().toUpperCase())
+        .filter((c) => c && c !== 'USD')
+    ),
+  ];
+  const fxMap: Record<string, { rate: number; source?: string }> = {};
+  for (const ccy of ccys) {
+    await ensureFxRate(ccy);
+    if (fxUsdToAccount[ccy] != null) {
+      fxMap[ccy] = {
+        rate: fxUsdToAccount[ccy],
+        source: fxUsdToAccountSource[ccy],
+      };
+    }
+  }
+  if (Object.keys(fxMap).length) payload.fxUsdToAccount = fxMap;
+}
+
 async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
   errorMsg.value = '';
   if (!extensionConfigured()) {
@@ -1354,11 +1421,13 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
   }
   batchDrawerRunning.value = true;
   batchDrawerResults.value = [];
+  await attachFxRatesForLimitOps(payload);
   fbControlLog('site:account-page', '批量操作 Graph 执行开始', {
     entryKey: payload.entryKey,
     operationId: payload.operationId,
     subId: payload.subId,
     accountCount: payload.selectedAccountIds.length,
+    fxUsdToAccount: payload.fxUsdToAccount,
   });
   try {
     const rows = await executeAdAccountBatchFromSite(payload);
@@ -1396,14 +1465,22 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
       }
     }
     if (payload.operationId === 'account_push') {
-      const email = payload.accountPushForm?.recipientEmail?.trim() || '';
+      const emails = (payload.accountPushForm?.recipients ?? [])
+        .map((x) => x.recipientEmail?.trim())
+        .filter(Boolean);
+      const pushLabel =
+        emails.length > 1
+          ? `已推送至 ${emails.length} 个邮箱`
+          : emails[0]
+            ? `已推送至 ${emails[0]}`
+            : '已推送';
       const okRows = rows.filter((r) => r.status === '成功');
       const partialRows = rows.filter((r) => r.status === '部分成功');
       for (const r of okRows) {
         try {
           await mergeAccountInExtension({
             accountId: r.accountId,
-            pushStatus: email ? `已推送至 ${email}` : '已推送',
+            pushStatus: pushLabel,
           });
         } catch {
           /* ignore cache write errors */
@@ -1413,7 +1490,7 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
         try {
           await mergeAccountInExtension({
             accountId: r.accountId,
-            pushStatus: '已发送 BM 邀请',
+            pushStatus: pushLabel ? `${pushLabel}（部分失败）` : '部分推送成功',
           });
         } catch {
           /* ignore */
@@ -1427,9 +1504,21 @@ async function onBatchDrawerConfirm(payload: BatchDrawerSubmitPayload) {
       const okRows = rows.filter((r) => r.status === '成功');
       if (okRows.length) {
         try {
+          const syncHints: Record<string, SpendCapNormalizeHints> = {
+            ...(payload.accountSpendCapHints ?? {}),
+          };
+          for (const r of okRows) {
+            if (r.spendCapMinorAfter != null && r.spendCapMinorAfter >= 0) {
+              syncHints[r.accountId] = {
+                ...syncHints[r.accountId],
+                spendCapMinor: r.spendCapMinorAfter,
+                currency: syncHints[r.accountId]?.currency,
+              };
+            }
+          }
           const patches = await syncSpendCapPatchesFromGraph(
             okRows.map((r) => r.accountId),
-            payload.accountSpendCapHints
+            syncHints
           );
           applySpendCapPatchesToAccounts(patches);
         } catch (syncErr: unknown) {
@@ -1845,7 +1934,7 @@ onUnmounted(() => {
             <td :title="tipCurrencyCell(row)">{{ dash(row.currency) }}</td>
             <td :title="tipAccountTypeCell(row)">{{ dash(row.accountType) }}</td>
             <td class="linkish owner-role-cell" :title="tipOwnerRoleCell(row)">{{ formatOwnerRoleForTable(row) }}</td>
-            <td :title="tipPaymentMethodCell(row)">{{ dash(row.paymentMethod) }}</td>
+            <td :title="tipPaymentMethodCell(row)">{{ dash(paymentMethodCell(row)) }}</td>
             <td :title="tipBillingPeriodCell(row)">{{ formatBillingPeriodDisplay(row.billingPeriod) }}</td>
             <td class="lock" :class="{ policy: !!row.lockReason }" :title="tipLockReasonCell(row)">{{ dash(row.lockReason) }}</td>
             <td :title="tipCreatedDateCell(row)">{{ dash(row.createdDate) }}</td>
@@ -2120,6 +2209,7 @@ onUnmounted(() => {
       :batch-results="batchDrawerResults"
       :batch-running="batchDrawerRunning"
       :current-fb-profile-url="batchDrawerCurrentFbUrl"
+      :fx-usd-to-account="fxUsdToAccount"
       @close="closeBatchDrawer"
       @friend-verify-result="onFriendVerifyResult"
       @batch-results-update="batchDrawerResults = $event"

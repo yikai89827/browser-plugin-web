@@ -1,6 +1,15 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
-import { resolveDailySpendLimitMinor } from '../adAccount/accountSpendLimits';
-import { formatAccountKindLabelZh, formatOwnerRoleForTable } from '../adAccount/adAccountDisplayMaps';
+import {
+  isPrepayAccount,
+  resolveDailySpendLimitMinor,
+  resolvePaymentThresholdMinor,
+} from '../adAccount/accountSpendLimits';
+import { effectiveUsdToAccountRate } from './currencyExchange';
+import {
+  formatAccountKindLabelZh,
+  formatOwnerRoleForTable,
+  normalizeFundingDisplayString,
+} from '../adAccount/adAccountDisplayMaps';
 import { formatMoneyDualFromMinor } from '../adAccount/moneyDisplay';
 import { currencyOffset } from '../adAccount/spendCapCurrency';
 
@@ -133,8 +142,8 @@ function formatMinorWithFx(
   const disp = displayCurrency(row, opts);
   if (acct === disp) return formatMinorAmount(minor, disp);
 
-  const rate = opts?.usdToAccountRate;
-  if (!rate || rate <= 0) return formatMinorAmount(minor, acct);
+  const rate = effectiveUsdToAccountRate(opts?.usdToAccountRate);
+  if (rate == null) return formatMinorAmount(minor, acct);
 
   const majorAcct = minor / currencyOffset(acct);
   let majorDisp = majorAcct;
@@ -183,8 +192,8 @@ function formatMoneyishRawWithFx(
   }
   const cleaned = s.replace(/[^0-9.-]/g, '');
   const n = parseFloat(cleaned);
-  if (!Number.isNaN(n) && opts?.usdToAccountRate && opts.usdToAccountRate > 0) {
-    const rate = opts.usdToAccountRate;
+  const rate = effectiveUsdToAccountRate(opts?.usdToAccountRate);
+  if (!Number.isNaN(n) && rate != null) {
     let majorDisp = n;
     if (disp === 'USD' && acct !== 'USD') majorDisp = n / rate;
     else if (acct === 'USD' && disp !== 'USD') majorDisp = n * rate;
@@ -253,7 +262,8 @@ export function formatUsdConversionPreview(
   usdToAccountRate: number
 ): string {
   const ccy = accountCurrencyCode.trim().toUpperCase();
-  const n = ccy === 'USD' ? usdAmount : usdAmount * usdToAccountRate;
+  const rate = effectiveUsdToAccountRate(usdToAccountRate) ?? usdToAccountRate;
+  const n = ccy === 'USD' ? usdAmount : usdAmount * rate;
   const text = n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${text} ${ccy}`;
 }
@@ -282,10 +292,11 @@ export function formatPanelField(
       if (row.spendCapMinor != null) return formatMoneyField(row.spendCapMinor, row, opts);
       return { value: formatMoneyishRawWithFx(row.spendingLimit, row, opts) };
     case 'threshold': {
-      const m = row.paymentThresholdMinor;
+      const m = resolvePaymentThresholdMinor(row);
+      if (m == null) return { value: '—' };
+      if (m === 0 && isPrepayAccount(row)) return formatMoneyField(0, row, opts);
       if (m === 0) return { value: '不限额' };
-      if (m != null) return formatMoneyField(m, row, opts);
-      return { value: '—' };
+      return formatMoneyField(m, row, opts);
     }
     case 'billingAmount': {
       const m = row.billingAmountMinor ?? row.balanceMinor;
@@ -338,8 +349,11 @@ export function formatPanelField(
       return { value: dash(row.timezone) };
     case 'accountTime':
       return { value: formatAccountLocalTime(row.timezone) };
-    case 'paymentMethod':
-      return { value: dash(row.paymentMethod) };
+    case 'paymentMethod': {
+      const pm = row.paymentMethod;
+      const text = pm != null && String(pm).trim() ? normalizeFundingDisplayString(String(pm)) : pm;
+      return { value: dash(text) };
+    }
     case 'ownerRole':
       return { value: formatOwnerRoleForTable(row) };
     case 'currency':

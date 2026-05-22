@@ -12,7 +12,12 @@ import {
   syncAdAccountsFromGraphToIndexedDb,
   syncSingleAdAccountFromGraphToIndexedDb,
 } from '../../fb/adAccount/graphAdAccountSyncService';
-import { fetchUsdToCurrencyRate } from '../../fb/adsPanel/currencyExchange';
+import {
+  fetchUsdToCurrencyRate,
+  fxRateResultFromPage,
+  logFxRateResolved,
+  roundFxRate,
+} from '../../fb/adsPanel/currencyExchange';
 import {
   fbIdbClearAccounts,
   fbIdbGetAccountLoose,
@@ -117,14 +122,43 @@ export async function handleFbControlAdAccountMessage(
     }
 
     case 'FB_CONTROL_GET_USD_EXCHANGE_RATE': {
-      const body = message.data as { currency?: string } | undefined;
+      const body = message.data as
+        | { currency?: string; pageUsdToCurrencyRate?: number }
+        | undefined;
       const currency = body?.currency?.trim().toUpperCase();
       if (!currency) {
         return { success: false, error: 'currency required' };
       }
       try {
-        const rate = await fetchUsdToCurrencyRate(currency);
-        return { success: true, payload: { rate } };
+        const pageRate = body?.pageUsdToCurrencyRate;
+        if (pageRate != null && Number.isFinite(pageRate) && pageRate > 0) {
+          const fx = fxRateResultFromPage(pageRate);
+          logFxRateResolved(currency, fx, { via: 'FB_CONTROL_GET_USD_EXCHANGE_RATE' });
+          return {
+            success: true,
+            payload: {
+              rate: fx.rawRate,
+              source: fx.source,
+              effectiveRate: roundFxRate(fx.rawRate),
+            },
+          };
+        }
+        const token = await getFbAccessToken();
+        if (!token?.trim()) {
+          fbControlLog('messaging:accounts', '汇率：无 access_token，无法请求 Meta Graph', {
+            currency,
+          });
+        }
+        const fx = await fetchUsdToCurrencyRate(currency, { accessToken: token });
+        logFxRateResolved(currency, fx, { via: 'FB_CONTROL_GET_USD_EXCHANGE_RATE', hasToken: Boolean(token) });
+        return {
+          success: true,
+          payload: {
+            rate: fx.rawRate,
+            source: fx.source,
+            effectiveRate: roundFxRate(fx.rawRate),
+          },
+        };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         fbControlWarn('messaging:accounts', '汇率获取失败', msg);

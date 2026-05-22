@@ -21,6 +21,12 @@ import {
   UPDATE_BUSINESS_CURRENCIES,
   UPDATE_BUSINESS_TIMEZONES,
 } from '../lib/updateBusinessOptions';
+import { effectiveUsdToAccountRate } from '../../../utils/fb/adsPanel/currencyExchange';
+import {
+  currencyOffset,
+  resolveSpendCapMinorForRecord,
+} from '../../../utils/fb/adAccount/spendCapCurrency';
+import { formatMajorAmount, formatMinorAmount } from '../../../utils/fb/adAccount/moneyDisplay';
 
 import {
   runFacebookFriendCheckSequentialFromSite,
@@ -39,6 +45,7 @@ const props = defineProps<{
     accountId: string;
     status: string;
     detail: string;
+    accountName?: string;
     resultKind?: string;
     displayInput?: string;
     currentFbProfileUrl?: string | null;
@@ -47,6 +54,8 @@ const props = defineProps<{
   batchRunning?: boolean;
   /** 最近一次好友预检得到的当前 Facebook 主页（批量结果卡「当前账号」兜底） */
   currentFbProfileUrl?: string | null;
+  /** 1 USD = ? 币种（主站预取，用于限额预览与执行一致） */
+  fxUsdToAccount?: Record<string, number>;
 }>();
 
 const emit = defineEmits<{
@@ -58,6 +67,7 @@ const emit = defineEmits<{
       accountId: string;
       status: string;
       detail: string;
+      accountName?: string;
       resultKind?: string;
       displayInput?: string;
       currentFbProfileUrl?: string | null;
@@ -67,8 +77,6 @@ const emit = defineEmits<{
 }>();
 
 const limitOpKind = ref<'increase' | 'decrease'>('increase');
-/** 步骤 1 汇率换算行，独立输入 */
-const fxUsdStr = ref('');
 /** 步骤 2「增加额度」金额，独立输入 */
 const increaseUsdStr = ref('');
 /** 步骤 2「减少额度」金额，独立输入 */
@@ -118,30 +126,136 @@ const updateAdsForBusiness = ref(DEFAULT_UPDATE_BUSINESS_BM.adsForBusinessPurpos
 const updateTimezone = ref('America/Phoenix');
 
 const pushRecipientEmail = ref('');
-const pushRecipient = ref<{ email: string; displayName: string; userId?: string } | null>(null);
 const pushSearchRunning = ref(false);
+const pushSearchDone = ref(false);
 const pushSearchMsg = ref('');
+const pushSearchMsgIsError = ref(false);
+
+type PushRecipientCard = {
+  key: string;
+  email: string;
+  displayName: string;
+  userId: string;
+  businessId?: string;
+  checked: boolean;
+};
+
+const pushRecipientCards = ref<PushRecipientCard[]>([]);
+
+function pushRecipientCardKey(userId: string, businessId?: string): string {
+  return `${userId}:${businessId ?? ''}`;
+}
+
+const pushSelectedCount = computed(
+  () => pushRecipientCards.value.filter((c) => c.checked).length
+);
+
+const pushAllChecked = computed({
+  get: () =>
+    pushRecipientCards.value.length > 0 &&
+    pushRecipientCards.value.every((c) => c.checked),
+  set: (on: boolean) => {
+    for (const c of pushRecipientCards.value) {
+      c.checked = on;
+    }
+  },
+});
+
+function selectAllPushRecipients(): void {
+  pushAllChecked.value = true;
+}
+
+function selectNonePushRecipients(): void {
+  pushAllChecked.value = false;
+}
 
 const selectedAccountCount = computed(() => props.selectedAccountIds.length);
 
+/** 顶部提示：随搜索/勾选状态更新（与下方列表同步） */
+const pushRecipientStatusText = computed(() => {
+  if (pushSearchRunning.value) return '正在搜索接收者…';
+  if (!pushSearchDone.value) {
+    return pushRecipientEmail.value.trim()
+      ? '已输入邮箱，请点击「搜索」'
+      : '请先搜索接收者邮箱';
+  }
+  const total = pushRecipientCards.value.length;
+  const sel = pushSelectedCount.value;
+  if (total === 0) return '未找到可推送的接收者（0 人）';
+  if (sel === 0) return `找到 ${total} 人，请勾选要推送的接收者`;
+  if (sel === total) return `已勾选 ${sel} 位接收者`;
+  return `已勾选 ${sel} / ${total} 位接收者`;
+});
+
 const primaryPreviewAccount = computed(() => (props.selectedAccountRows && props.selectedAccountRows[0]) || null);
 
-function formatMinorLine(minor: number | undefined, currency: string | undefined): string {
-  if (minor == null || Number.isNaN(minor)) return '—';
-  const c = (currency || 'USD').trim() || 'USD';
-  return `${(minor / 100).toFixed(2)} ${c}`;
+function formatPreviewAccountLabel(row: BatchAccountPreviewRow | null): string {
+  if (!row?.accountId) return '—';
+  const name = (row.name || '').trim();
+  return name ? `${name}（${row.accountId}）` : row.accountId;
+}
+
+function buildAccountNamesMap(): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const row of props.selectedAccountRows ?? []) {
+    if (row.accountId && row.name?.trim()) names[row.accountId] = row.name.trim();
+  }
+  return names;
+}
+
+function accountCcy(row: BatchAccountPreviewRow | null | undefined): string {
+  return (row?.currency || 'USD').trim().toUpperCase() || 'USD';
+}
+
+function fxRateForPreview(ccy: string): number | null {
+  const c = ccy.trim().toUpperCase();
+  if (c === 'USD') return 1;
+  const r = props.fxUsdToAccount?.[c];
+  if (r == null || !Number.isFinite(r) || r <= 0) return null;
+  return effectiveUsdToAccountRate(r) ?? r;
+}
+
+/** 与后台 set_limit 一致：USD 美分 → 账户最小单位 */
+function usdMinorToAccountMinorPreview(usdMinor: number, currency: string): number | null {
+  const ccy = currency.trim().toUpperCase();
+  const usd = Math.max(0, Math.round(usdMinor));
+  if (ccy === 'USD') return usd;
+  const rate = fxRateForPreview(ccy);
+  if (rate == null) return null;
+  const majorAcct = (usd / 100) * rate;
+  return Math.round(majorAcct * currencyOffset(ccy));
+}
+
+function formatCapMoney(minor: number, row: BatchAccountPreviewRow | null): string {
+  const ccy = accountCcy(row);
+  const primary = formatMinorAmount(minor, ccy);
+  if (ccy === 'USD') return primary;
+  const rate = fxRateForPreview(ccy);
+  if (rate == null) return primary;
+  const usdMajor = minor / currencyOffset(ccy) / rate;
+  return `${primary}（约 ${formatMajorAmount(usdMajor, 'USD')}）`;
 }
 
 function displaySpendingCap(row: BatchAccountPreviewRow | null): string {
   if (!row) return '—';
-  if (row.spendingLimit && String(row.spendingLimit).trim()) return String(row.spendingLimit);
-  return formatMinorLine(row.spendCapMinor, row.currency);
+  const minor = resolveSpendCapMinorForRecord(row);
+  if (minor === 0) return '不限额';
+  if (minor != null && minor > 0) return formatCapMoney(minor, row);
+  return '—';
+}
+
+function resolvePreviewSpendCapMinor(row: BatchAccountPreviewRow | null | undefined): number | null | undefined {
+  if (!row) return undefined;
+  return resolveSpendCapMinorForRecord(row);
 }
 
 function displayBalance(row: BatchAccountPreviewRow | null): string {
   if (!row) return '—';
+  if (row.balanceMinor != null && Number.isFinite(row.balanceMinor)) {
+    return formatCapMoney(row.balanceMinor, row);
+  }
   if (row.balance && String(row.balance).trim()) return String(row.balance);
-  return formatMinorLine(row.balanceMinor, row.currency);
+  return '—';
 }
 
 /** 正金额：增加/减少额度输入 */
@@ -162,13 +276,7 @@ function parseUsdToMinorAllowZero(s: string): number | null {
   return Math.round(n * 100);
 }
 
-const fxComputedLabel = computed(() => {
-  const m = parseUsdInputToMinor(fxUsdStr.value);
-  if (m == null) return '结果会自动计算';
-  return `${(m / 100).toFixed(2)} USD（${m} 最小单位）`;
-});
-
-/** 当前选中的「增加/减少」对应的金额文案（与汇率换算无关） */
+/** 当前选中的「增加/减少」对应的金额文案 */
 function activeLimitAmountStr(): string {
   return limitOpKind.value === 'increase' ? increaseUsdStr.value : decreaseUsdStr.value;
 }
@@ -177,28 +285,37 @@ const limitPreviewText = computed(() => {
   const row = primaryPreviewAccount.value;
   const n = props.selectedAccountIds.length;
   const base = row
-    ? `账号: ${row.accountId} 当前额度: ${displaySpendingCap(row)} 剩余额度: ${displayBalance(row)}`
+    ? `账号: ${formatPreviewAccountLabel(row)}\n当前花费限额: ${displaySpendingCap(row)}\n剩余额度: ${displayBalance(row)}`
     : `已选 ${n} 个账户` + (n ? `（首条 ID: ${props.selectedAccountIds[0]}）` : '');
   const m = parseUsdInputToMinor(activeLimitAmountStr());
   if (m == null) {
     return `${base}\n请在「操作类型」中填写金额后查看效果说明。`;
   }
   const deltaUsd = (m / 100).toFixed(2);
-  const curMinor = row?.spendCapMinor;
-  if (curMinor != null && curMinor > 0) {
+  const ccy = accountCcy(row);
+  const deltaAcctMinor = usdMinorToAccountMinorPreview(m, ccy);
+  if (deltaAcctMinor == null && ccy !== 'USD') {
+    return `${base}\n将按约 ${deltaUsd} USD 调整限额（执行时由扩展拉取 ${ccy} 汇率后换算，与 Meta 一致）。`;
+  }
+  const curMinor = resolvePreviewSpendCapMinor(row);
+  const verb = limitOpKind.value === 'increase' ? '增加' : '减少';
+  const deltaLabel =
+    deltaAcctMinor != null ? formatCapMoney(deltaAcctMinor, row) : `${deltaUsd} USD`;
+  if (curMinor != null && curMinor > 0 && deltaAcctMinor != null) {
     const afterMinor =
-      limitOpKind.value === 'increase' ? curMinor + m : Math.max(0, curMinor - m);
-    const curUsd = (curMinor / 100).toFixed(2);
-    const afterUsd = (afterMinor / 100).toFixed(2);
-    if (limitOpKind.value === 'increase') {
-      return `${base}\n预计：${curUsd} USD + ${deltaUsd} USD = ${afterUsd} USD（按列表当前额度估算）`;
-    }
-    return `${base}\n预计：${curUsd} USD − ${deltaUsd} USD = ${afterUsd} USD`;
+      limitOpKind.value === 'increase'
+        ? curMinor + deltaAcctMinor
+        : Math.max(0, curMinor - deltaAcctMinor);
+    const curLabel = formatCapMoney(curMinor, row);
+    const afterLabel = formatCapMoney(afterMinor, row);
+    return `${base}\n预计：${curLabel} ${verb} ${deltaLabel} → ${afterLabel}`;
   }
   if (limitOpKind.value === 'increase') {
-    return `${base}\n将对每个账户在现有 spend_cap 上增加 ${deltaUsd} USD（不限额时按该金额设为新上限）。`;
+    const afterLabel =
+      deltaAcctMinor != null ? formatCapMoney(deltaAcctMinor, row) : `${deltaUsd} USD`;
+    return `${base}\n当前为不限额，将设新上限约 ${afterLabel}（输入 ${deltaUsd} USD）。`;
   }
-  return `${base}\n将对每个账户在现有 spend_cap 上减少 ${deltaUsd} USD（已不限额则无法减少）。`;
+  return `${base}\n当前为不限额时无法减少额度。`;
 });
 
 const limitConfirmOk = computed(() => {
@@ -278,7 +395,7 @@ const inputGateOk = computed(() => {
     return uidsText.value.trim().length > 0;
   }
   if (isAccountPushSpecial.value) {
-    return isValidEmail(pushRecipientEmail.value);
+    return pushSelectedCount.value > 0;
   }
   if (isRemoveAuthSpecial.value) {
     if (!ui.value.step1.required) return true;
@@ -446,9 +563,24 @@ function showAdAccountIdRow(r: { resultKind?: string; displayInput?: string }): 
   return !!r.displayInput && r.resultKind !== 'friend_uid';
 }
 
-function currentFbDisplay(r: { currentFbProfileUrl?: string | null }): string {
-  const u = (r.currentFbProfileUrl ?? props.currentFbProfileUrl ?? '').trim();
-  return u || '—';
+function currentFbDisplay(r: {
+  accountId?: string;
+  accountName?: string;
+  currentFbProfileUrl?: string | null;
+  resultKind?: string;
+}): string {
+  if (r.resultKind === 'friend_uid') {
+    const u = (r.currentFbProfileUrl ?? props.currentFbProfileUrl ?? '').trim();
+    return u || '—';
+  }
+  const name = (r.accountName ?? '').trim();
+  const id = (r.accountId ?? '').trim();
+  if (name && id) return `${name}（${id}）`;
+  if (name) return name;
+  const row = props.selectedAccountRows?.find((x) => x.accountId === r.accountId);
+  if (row) return formatPreviewAccountLabel(row);
+  if (r.accountId) return r.accountId;
+  return '—';
 }
 
 function resultDetailView(detail: string) {
@@ -564,7 +696,6 @@ function resetForm() {
   friendAuthorizeSnapshot.value = [];
   drawerTab.value = 'op';
   limitOpKind.value = 'increase';
-  fxUsdStr.value = '';
   increaseUsdStr.value = '';
   decreaseUsdStr.value = '';
   resetMode.value = 'account_zero';
@@ -589,9 +720,11 @@ function resetForm() {
   updateTimezone.value =
     UPDATE_BUSINESS_TIMEZONES.some((t) => t.id === rowTz) ? rowTz : 'America/Phoenix';
   pushRecipientEmail.value = '';
-  pushRecipient.value = null;
+  pushRecipientCards.value = [];
+  pushSearchDone.value = false;
   pushSearchRunning.value = false;
   pushSearchMsg.value = '';
+  pushSearchMsgIsError.value = false;
 }
 
 function isValidEmail(s: string): boolean {
@@ -611,13 +744,17 @@ function accountBmHintIds(): string[] {
 async function onPushSearchUser() {
   const email = pushRecipientEmail.value.trim();
   pushSearchMsg.value = '';
-  pushRecipient.value = null;
+  pushSearchMsgIsError.value = false;
+  pushRecipientCards.value = [];
+  pushSearchDone.value = false;
   if (!email) {
     pushSearchMsg.value = '请输入接收者邮箱';
+    pushSearchMsgIsError.value = true;
     return;
   }
   if (!isValidEmail(email)) {
     pushSearchMsg.value = '邮箱格式不正确';
+    pushSearchMsgIsError.value = true;
     return;
   }
   pushSearchRunning.value = true;
@@ -627,18 +764,26 @@ async function onPushSearchUser() {
       [...props.selectedAccountIds],
       accountBmHintIds()
     );
-    if (res.found && res.recipientUserId) {
-      pushRecipient.value = {
-        email: res.email,
-        displayName: res.displayName ?? res.email,
-        userId: res.recipientUserId,
-      };
-      pushSearchMsg.value = res.businessId ? `已在 BM ${res.businessId} 中找到该用户` : '';
+    pushSearchDone.value = true;
+    if (res.recipients?.length) {
+      pushRecipientCards.value = res.recipients.map((r) => ({
+        key: pushRecipientCardKey(r.recipientUserId, r.businessId),
+        email: r.email,
+        displayName: r.displayName || r.email,
+        userId: r.recipientUserId,
+        businessId: r.businessId,
+        checked: true,
+      }));
+      pushSearchMsg.value = res.message ?? `找到 ${res.recipients.length} 个用户`;
+      pushSearchMsgIsError.value = false;
     } else {
       pushSearchMsg.value = res.message ?? '未找到该邮箱对应的 BM 用户';
+      pushSearchMsgIsError.value = true;
     }
   } catch (e: unknown) {
+    pushSearchDone.value = true;
     pushSearchMsg.value = e instanceof Error ? e.message : String(e);
+    pushSearchMsgIsError.value = true;
   } finally {
     pushSearchRunning.value = false;
   }
@@ -687,8 +832,10 @@ watch(selectedOpId, () => {
 });
 
 watch(pushRecipientEmail, () => {
-  pushRecipient.value = null;
+  pushRecipientCards.value = [];
+  pushSearchDone.value = false;
   pushSearchMsg.value = '';
+  pushSearchMsgIsError.value = false;
 });
 
 watch(uidsText, () => {
@@ -804,6 +951,7 @@ async function onConfirm() {
     if (Object.keys(capHints).length) {
       payload.accountSpendCapHints = capHints;
     }
+    payload.accountNames = buildAccountNamesMap();
     payload.uidsText = '';
   } else if (props.preset.entryKey === 'resetLimit') {
     const mode = resetMode.value;
@@ -813,6 +961,7 @@ async function onConfirm() {
       if (cap == null) return;
       payload.resetLimitForm.amountMinor = cap;
     }
+    payload.accountNames = buildAccountNamesMap();
     payload.uidsText = '';
   } else if (removeAuthLike) {
     payload.friendCheckOk = true;
@@ -822,16 +971,22 @@ async function onConfirm() {
     payload.updateBusinessForm = buildUpdateBusinessFormPayload();
     payload.uidsText = '';
   } else if (isAccountPushSpecial.value) {
-    const rec = pushRecipient.value;
-    const email = pushRecipientEmail.value.trim();
-    if (!email) return;
+    const selected = pushRecipientCards.value.filter((c) => c.checked);
+    if (!selected.length) return;
     payload.friendCheckOk = true;
     payload.accountPushForm = {
-      recipientEmail: email,
-      recipientDisplayName: rec?.displayName ?? email,
-      recipientUserId: rec?.userId,
+      recipients: selected.map((c) => ({
+        recipientEmail: c.email,
+        recipientUserId: c.userId,
+        recipientDisplayName: c.displayName,
+        businessId: c.businessId,
+      })),
     };
-    payload.uidsText = email;
+    payload.uidsText = selected.map((c) => c.email).join('\n');
+  }
+  if (!payload.accountNames) {
+    const names = buildAccountNamesMap();
+    if (Object.keys(names).length) payload.accountNames = names;
   }
   emit('confirm', payload);
 }
@@ -891,22 +1046,13 @@ async function onConfirm() {
                   <div class="bod-step-body">
                     <p class="bod-limit-line">
                       当前账号:
-                      {{ primaryPreviewAccount?.accountId || selectedAccountIds[0] || '—' }}
+                      {{ formatPreviewAccountLabel(primaryPreviewAccount) || selectedAccountIds[0] || '—' }}
                       <span v-if="selectedAccountIds.length > 1" class="muted small">
                         （共 {{ selectedAccountIds.length }} 个，将逐户执行相同规则）
                       </span>
                     </p>
-                    <p class="bod-limit-line">当前额度: {{ displaySpendingCap(primaryPreviewAccount) }}</p>
+                    <p class="bod-limit-line">当前花费限额: {{ displaySpendingCap(primaryPreviewAccount) }}</p>
                     <p class="bod-limit-line">剩余额度: {{ displayBalance(primaryPreviewAccount) }}</p>
-                    <div class="bod-fx-row">
-                      <span class="bod-fx-label">汇率换算:</span>
-                      <span class="bod-fx-part"
-                        >USD:
-                        <input v-model="fxUsdStr" type="text" class="bod-limit-input" placeholder="请输入 USD"
-                      /></span>
-                      <span class="bod-fx-eq">= USD:</span>
-                      <span class="bod-fx-result muted">{{ fxComputedLabel }}</span>
-                    </div>
                   </div>
                 </div>
 
@@ -999,7 +1145,7 @@ async function onConfirm() {
                         <span>设置限额</span>
                       </label>
                       <div v-if="resetMode === 'set_absolute'" class="bod-reset-abs">
-                        <span class="muted small">新限额（USD，将写入 spend_cap 最小单位）</span>
+                        <span class="muted small">新花费限额（USD，将同步至 Meta 广告账户）</span>
                         <input
                           v-model="resetAbsoluteUsd"
                           type="text"
@@ -1148,9 +1294,22 @@ async function onConfirm() {
               </select>
               <div class="bod-push-info" role="status">
                 <span class="bod-push-info-ico" aria-hidden="true">i</span>
-                <span
-                  >已选中 {{ selectedAccountCount }} 个广告账号 (重复推送会被覆盖)</span
-                >
+                <div class="bod-push-info-text">
+                  <div>
+                    将向 {{ selectedAccountCount }} 个广告账号推送（重复推送会被覆盖）
+                  </div>
+                  <div
+                    class="bod-push-info-sub"
+                    :class="{
+                      'is-warn':
+                        pushSearchDone &&
+                        !pushRecipientCards.length &&
+                        !pushSearchRunning,
+                    }"
+                  >
+                    {{ pushRecipientStatusText }}
+                  </div>
+                </div>
               </div>
               <div class="bod-push-search">
                 <label class="bod-push-search-label">输入接收者邮箱</label>
@@ -1171,11 +1330,46 @@ async function onConfirm() {
                     {{ pushSearchRunning ? '搜索中…' : '搜索' }}
                   </button>
                 </div>
-                <p v-if="pushSearchMsg" class="bod-push-search-msg err">{{ pushSearchMsg }}</p>
+                <p
+                  v-if="pushSearchMsg"
+                  class="bod-push-search-msg"
+                  :class="{ err: pushSearchMsgIsError, ok: !pushSearchMsgIsError }"
+                >
+                  {{ pushSearchMsg }}
+                </p>
               </div>
-              <div v-if="pushRecipient" class="bod-push-user-card">
-                <div class="bod-push-user-name">{{ pushRecipient.displayName }}</div>
-                <div class="bod-push-user-email muted">{{ pushRecipient.email }}</div>
+              <div v-if="pushRecipientCards.length" class="bod-push-results">
+                <div class="bod-push-results-toolbar">
+                  <span class="muted small"
+                    >共 {{ pushRecipientCards.length }} 人，已选 {{ pushSelectedCount }}</span
+                  >
+                  <button type="button" class="bod-push-link-btn" @click="selectAllPushRecipients">
+                    全选
+                  </button>
+                  <button type="button" class="bod-push-link-btn" @click="selectNonePushRecipients">
+                    全不选
+                  </button>
+                </div>
+                <div class="bod-push-card-list">
+                  <label
+                    v-for="card in pushRecipientCards"
+                    :key="card.key"
+                    class="bod-push-user-card bod-push-user-card--pick"
+                  >
+                    <input v-model="card.checked" type="checkbox" class="bod-push-check" />
+                    <div class="bod-push-user-card-body">
+                      <div class="bod-push-user-name">{{ card.displayName }}</div>
+                      <div class="bod-push-user-email muted">{{ card.email }}</div>
+                      <div v-if="card.businessId" class="bod-push-user-bm muted small">
+                        BM {{ card.businessId }}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              <div v-else-if="pushSearchDone" class="bod-push-empty">
+                <div class="bod-push-empty-ico" aria-hidden="true" />
+                <p class="muted">未找到可推送用户</p>
               </div>
               <div v-else class="bod-push-empty">
                 <div class="bod-push-empty-ico" aria-hidden="true" />
@@ -2134,30 +2328,6 @@ async function onConfirm() {
   font-size: 13px;
   line-height: 1.5;
 }
-.bod-fx-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  margin-top: 10px;
-  font-size: 13px;
-}
-.bod-fx-label {
-  color: var(--fb-muted, #9ca3af);
-}
-.bod-fx-part {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.bod-fx-eq {
-  color: var(--fb-muted, #9ca3af);
-}
-.bod-fx-result {
-  flex: 1;
-  min-width: 140px;
-  font-size: 12px;
-}
 .bod-limit-input {
   box-sizing: border-box;
   padding: 6px 10px;
@@ -2379,6 +2549,20 @@ async function onConfirm() {
   align-items: center;
   justify-content: center;
 }
+.bod-push-info-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bod-push-info-sub {
+  font-size: 12px;
+  color: rgba(147, 197, 253, 0.85);
+}
+.bod-push-info-sub.is-warn {
+  color: #fca5a5;
+}
 .bod-push-search-label {
   display: block;
   font-size: 13px;
@@ -2418,6 +2602,57 @@ async function onConfirm() {
 }
 .bod-push-search-msg.err {
   color: #f87171;
+}
+.bod-push-search-msg.ok {
+  color: #86efac;
+}
+.bod-push-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+.bod-push-results-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.bod-push-link-btn {
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.bod-push-link-btn:hover {
+  text-decoration: underline;
+}
+.bod-push-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.bod-push-user-card--pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  margin: 0;
+}
+.bod-push-check {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.bod-push-user-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.bod-push-user-bm {
+  margin-top: 4px;
 }
 .bod-push-empty {
   flex: 1;
