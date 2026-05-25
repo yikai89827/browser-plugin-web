@@ -1,4 +1,8 @@
 import type { FbAdAccountRecord, FbPixelShareRecord } from '../../interfaces/fbControl';
+import {
+  isBillingAccountTypeLabel,
+  normalizeFundingDisplayString,
+} from '../fb/adAccount/adAccountDisplayMaps';
 import { normalizeAccountId } from '../fb/adAccount/mapGraphAdAccount';
 import { fbControlError, fbControlLog } from '../fbControlLog';
 import {
@@ -77,13 +81,21 @@ function mergeAdAccount(
   if (!recordHasOwnKey(normalizedIncoming, 'adminCount') && p?.adminCount !== undefined) {
     out.adminCount = p.adminCount;
   }
+  if (isBillingAccountTypeLabel(out.accountKindLabel)) {
+    delete out.accountKindLabel;
+  }
   if (
     (!recordHasOwnKey(normalizedIncoming, 'accountKindLabel') ||
-      String(normalizedIncoming.accountKindLabel ?? '').trim() === '') &&
+      String(normalizedIncoming.accountKindLabel ?? '').trim() === '' ||
+      isBillingAccountTypeLabel(normalizedIncoming.accountKindLabel)) &&
     p?.accountKindLabel != null &&
-    String(p.accountKindLabel).trim() !== ''
+    String(p.accountKindLabel).trim() !== '' &&
+    !isBillingAccountTypeLabel(p.accountKindLabel)
   ) {
     out.accountKindLabel = p.accountKindLabel;
+  }
+  if (out.paymentMethod != null && String(out.paymentMethod).trim()) {
+    out.paymentMethod = normalizeFundingDisplayString(String(out.paymentMethod));
   }
   return out;
 }

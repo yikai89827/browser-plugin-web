@@ -7,13 +7,10 @@ import {
   formatUsdConversionPreview,
   type AdsPanelDisplayRow,
 } from '../../../utils/fb/adsPanel/adAccountPanelDisplay';
+import { sanitizeAdAccountRecordForDisplay } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
 import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 import { detectSelectedAccountId, watchSelectedAccount } from './detectSelectedAccount';
-import {
-  fetchHiddenAdminCount,
-  fetchManageAdminCount,
-  fetchUsdToAccountRate,
-} from './panelFieldLoaders';
+import { fetchHiddenAdminCount, fetchUsdToAccountRate } from './panelFieldLoaders';
 
 const ROOT_ID = 'fb-control-ads-panel-root';
 const PANEL_W = 340;
@@ -601,7 +598,8 @@ export class AdsPanelWidget {
     if (!res?.success) {
       throw new Error(res?.error || '拉取账户失败');
     }
-    return res.payload?.account ?? null;
+    const account = res.payload?.account ?? null;
+    return account ? sanitizeAdAccountRecordForDisplay(account) : null;
   }
 
   /**
@@ -641,6 +639,7 @@ export class AdsPanelWidget {
       }
 
       account = cached.payload?.account ?? null;
+      if (account) account = sanitizeAdAccountRecordForDisplay(account);
 
       if (!account && autoFetchIfMissing) {
         this.renderBodyMessage('正在获取账户数据…', false);
@@ -687,12 +686,8 @@ export class AdsPanelWidget {
   private async loadAsyncCounts(account: FbAdAccountRecord): Promise<void> {
     const id = account.accountId;
     try {
-      const [admin, hidden] = await Promise.all([
-        fetchManageAdminCount(id, account),
-        fetchHiddenAdminCount(id, account),
-      ]);
+      const hidden = await fetchHiddenAdminCount(id, account);
       if (this.record?.accountId !== id) return;
-      account.adminCount = admin;
       account.hiddenAdminCount = hidden;
       this.refreshAccountRows(account);
     } catch (e) {

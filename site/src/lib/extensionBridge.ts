@@ -1,8 +1,6 @@
 /**
- * ???????????????? externally_connectable ?????????????????
- *
- * ????? ID ?????? `site/.env.development` / `site/.env` ???? `VITE_EXTENSION_ID`??Vite ????????????????
- * ???????????????????????? ID ???????????????????????????????????????????????? .env ???????????????????
+ * 站点页与 Chrome 扩展通信（需 manifest `externally_connectable` 包含本站来源）。
+ * 扩展 ID 来自 `site/.env.development` / `.env` 的 `VITE_EXTENSION_ID`。
  */
 
 import type {
@@ -64,8 +62,16 @@ import {
   searchAllBusinessUsersByEmailInBusinesses,
 } from '../../../utils/fb/adAccount/graphBusinessManagement';
 import type { BatchDrawerSubmitPayload } from './batchOperationTypes';
+import {
+  EXT_MSG_NO_ACCESS_TOKEN,
+  EXT_MSG_NO_CHROME_RUNTIME,
+  EXT_MSG_NO_EXTENSION_ID,
+  EXT_MSG_READ_TOKEN_FAILED,
+  formatExtensionUserError,
+} from './extensionUserMessages';
 
 export type { FbTokenMeta };
+export { formatExtensionUserError, EXT_MSG_NO_CHROME_RUNTIME, EXT_MSG_NO_EXTENSION_ID } from './extensionUserMessages';
 
 const STORAGE_KEY = 'fb_control_extension_id';
 
@@ -173,15 +179,13 @@ export function sendToExtension<T = unknown>(message: {
   const extId = getStoredExtensionId();
   const chromeApi = getChrome();
   if (!extensionConfigured(extId)) {
-    return Promise.reject(
-      new Error('???? site/.env.development????? .env??????? VITE_EXTENSION_ID???????????????????????')
-    );
+    return Promise.reject(new Error(EXT_MSG_NO_EXTENSION_ID));
   }
   if (!chromeApi?.runtime?.sendMessage) {
-    return Promise.reject(new Error('????????????? chrome.runtime?????? Chrome ?????????????????????????????'));
+    return Promise.reject(new Error(EXT_MSG_NO_CHROME_RUNTIME));
   }
 
-  fbControlLog('extension-bridge', 'sendMessage ??? ?????', { action: message.action, extIdPreview: extId.slice(0, 8) });
+  fbControlLog('extension-bridge', 'sendMessage 发往扩展', { action: message.action, extIdPreview: extId.slice(0, 8) });
 
   return new Promise((resolve, reject) => {
     chromeApi.runtime.sendMessage(extId, message, (response: ExtensionResponse<T>) => {
@@ -226,11 +230,11 @@ export async function syncSpendCapPatchesFromGraph(
 ): Promise<SpendCapRecordPatch[]> {
   const tokenRes = await getFbAccessTokenFromExtension();
   if (!tokenRes.success) {
-    throw new Error(tokenRes.error || '??? token ??');
+    throw new Error(tokenRes.error || EXT_MSG_READ_TOKEN_FAILED);
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    throw new Error('?????? access_token??????????? spend_cap');
+    throw new Error(EXT_MSG_NO_ACCESS_TOKEN);
   }
   const patches: SpendCapRecordPatch[] = [];
   for (const accountId of accountIds) {
@@ -311,11 +315,11 @@ export async function fetchAdAccountPaymentActivitiesFromExtension(
     return { success: false, error: msg };
   }
   if (!tokenRes.success) {
-    return { success: false, error: tokenRes.error || '??? token ??' };
+    return { success: false, error: tokenRes.error || EXT_MSG_READ_TOKEN_FAILED };
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    return { success: false, error: '?????? access_token???????????????????' };
+    return { success: false, error: EXT_MSG_NO_ACCESS_TOKEN };
   }
   try {
     const result = await fetchAdAccountPaymentActivities(token, accountId);
@@ -343,11 +347,11 @@ export async function fetchAdAccountAssignedUsersFromExtension(
     return { success: false, error: msg };
   }
   if (!tokenRes.success) {
-    return { success: false, error: tokenRes.error || '??? token ??' };
+    return { success: false, error: tokenRes.error || EXT_MSG_READ_TOKEN_FAILED };
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    return { success: false, error: '?????? access_token?????????????????' };
+    return { success: false, error: EXT_MSG_NO_ACCESS_TOKEN };
   }
   try {
     const selfIds = await fetchFacebookSelfUserIdsForExclude(token);
@@ -398,11 +402,11 @@ export async function fetchAdAccountManageAdminsFromExtension(
     return { success: false, error: msg };
   }
   if (!tokenRes.success) {
-    return { success: false, error: tokenRes.error || '??? token ??' };
+    return { success: false, error: tokenRes.error || EXT_MSG_READ_TOKEN_FAILED };
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    return { success: false, error: '?????? access_token?????????????????' };
+    return { success: false, error: EXT_MSG_NO_ACCESS_TOKEN };
   }
   try {
     const selfIds = await fetchFacebookSelfUserIdsForExclude(token);
@@ -427,13 +431,17 @@ export async function verifyFacebookUidsForBatchSite(
   try {
     tokenRes = await getFbAccessTokenFromExtension();
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, message: msg, rows: [], currentUserProfileUrl: null };
+    return {
+      ok: false,
+      message: formatExtensionUserError(e),
+      rows: [],
+      currentUserProfileUrl: null,
+    };
   }
   if (!tokenRes.success) {
     return {
       ok: false,
-      message: tokenRes.error || '??? token ??',
+      message: tokenRes.error || EXT_MSG_READ_TOKEN_FAILED,
       rows: [],
       currentUserProfileUrl: null,
     };
@@ -442,7 +450,7 @@ export async function verifyFacebookUidsForBatchSite(
   if (!token) {
     return {
       ok: false,
-      message: '?????? access_token?????????? UID',
+      message: EXT_MSG_NO_ACCESS_TOKEN,
       rows: [],
       currentUserProfileUrl: null,
     };
@@ -465,8 +473,8 @@ export async function verifyFacebookUidsForBatchSite(
   const allOk = rows.every((r) => r.ok);
   const failCount = rows.filter((r) => !r.ok).length;
   const message = allOk
-    ? `${rows.length} ?????????????????????????????????????????????????????????`
-    : `?????????????????????????${failCount}/${rows.length}?????`;
+    ? `${rows.length} 个 UID 均已验证为 Facebook 好友`
+    : `部分 UID 未通过好友验证（${failCount}/${rows.length}）`;
   return {
     ok: allOk,
     message,
@@ -486,13 +494,16 @@ export async function runFacebookFriendCheckSequentialFromSite(
   try {
     tokenRes = await getFbAccessTokenFromExtension();
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, message: msg, currentUserProfileUrl: null };
+    return {
+      ok: false,
+      message: formatExtensionUserError(e),
+      currentUserProfileUrl: null,
+    };
   }
   if (!tokenRes.success) {
     return {
       ok: false,
-      message: tokenRes.error || '??? token ??',
+      message: tokenRes.error || EXT_MSG_READ_TOKEN_FAILED,
       currentUserProfileUrl: null,
     };
   }
@@ -500,7 +511,7 @@ export async function runFacebookFriendCheckSequentialFromSite(
   if (!token) {
     return {
       ok: false,
-      message: '?????? access_token?????????? UID',
+      message: EXT_MSG_NO_ACCESS_TOKEN,
       currentUserProfileUrl: null,
     };
   }
@@ -512,7 +523,7 @@ export async function runFacebookFriendCheckSequentialFromSite(
     return {
       ok: false,
       message:
-        '?????????????????????? Facebook ?????????????????????? UID???profile.php?id= ???????????? www.facebook.com/??????? ??????????',
+        '请填写至少一个 Facebook 用户 UID 或主页链接（数字 ID、profile.php?id=… 或 www.facebook.com/用户名）',
       currentUserProfileUrl,
     };
   }
@@ -530,8 +541,8 @@ export async function runFacebookFriendCheckSequentialFromSite(
   const allOk = accumulated.every((r) => r.ok);
   const failCount = accumulated.filter((r) => !r.ok).length;
   const message = allOk
-    ? `${refPairs.length} ?????????????????????????????????????????????????????????`
-    : `?????????????????????????${failCount}/${refPairs.length}?????`;
+    ? `${refPairs.length} 个 UID 均已验证为 Facebook 好友`
+    : `部分 UID 未通过好友验证（${failCount}/${refPairs.length}）`;
 
   return { ok: allOk, message, currentUserProfileUrl };
 }
@@ -548,11 +559,11 @@ export async function renameAdAccountFromSite(accountId: string, newName: string
     throw new Error(msg);
   }
   if (!tokenRes.success) {
-    throw new Error(tokenRes.error || '??? token ??');
+    throw new Error(tokenRes.error || EXT_MSG_READ_TOKEN_FAILED);
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    throw new Error('?????? access_token??????????????');
+    throw new Error(EXT_MSG_NO_ACCESS_TOKEN);
   }
   fbControlLog('extension-bridge', 'renameAdAccountFromSite', { accountIdPreview: String(accountId).slice(0, 12) });
   await renameAdAccountOnFacebook(token, accountId, newName);
@@ -638,11 +649,11 @@ export async function executeAdAccountBatchFromSite(
     throw new Error(msg);
   }
   if (!tokenRes.success) {
-    throw new Error(tokenRes.error || '??? token ??');
+    throw new Error(tokenRes.error || EXT_MSG_READ_TOKEN_FAILED);
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    throw new Error('?????? access_token???????????????????????');
+    throw new Error(EXT_MSG_NO_ACCESS_TOKEN);
   }
   fbControlLog('extension-bridge', 'executeAdAccountBatchFromSite', {
     operationId: payload.operationId,
@@ -672,15 +683,14 @@ export async function runBmInvitePollAndGrantFromSite(params: {
   try {
     tokenRes = await getFbAccessTokenFromExtension();
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, status: '??', detail: msg };
+    return { ok: false, status: '失败', detail: formatExtensionUserError(e) };
   }
   if (!tokenRes.success) {
-    return { ok: false, status: '??', detail: tokenRes.error || '??? token ??' };
+    return { ok: false, status: '失败', detail: tokenRes.error || EXT_MSG_READ_TOKEN_FAILED };
   }
   const token = tokenRes.payload?.token;
   if (!token) {
-    return { ok: false, status: '??', detail: '?????? access_token' };
+    return { ok: false, status: '失败', detail: EXT_MSG_NO_ACCESS_TOKEN };
   }
 
   const businessIds = await resolveBusinessIdsForAccounts(
@@ -691,8 +701,9 @@ export async function runBmInvitePollAndGrantFromSite(params: {
   if (!businessIds.length) {
     return {
       ok: false,
-      status: '??',
-      detail: '????????????????????? Business Manager???????????????????????????? BM',
+      status: '失败',
+      detail:
+        '无法确定广告账户所属 Business Manager，请先在广告管理工具中打开对应账户或 BM',
     };
   }
   const businessId = businessIds[0];
@@ -708,10 +719,10 @@ export async function runBmInvitePollAndGrantFromSite(params: {
   });
 
   if (!poll.joined || !poll.businessUser) {
-    return { ok: false, status: '??', detail: poll.message };
+    return { ok: false, status: '失败', detail: poll.message };
   }
 
-  params.onProgress?.('??????????? BM??????????????????????????????????');
+  params.onProgress?.('对方已加入 BM，正在分配广告账户权限…');
   try {
     await assignBusinessUserToAdAccount(
       token,
@@ -724,15 +735,15 @@ export async function runBmInvitePollAndGrantFromSite(params: {
       : poll.businessUser.email;
     return {
       ok: true,
-      status: '??????',
-      detail: `${poll.message}??????????${label}??${tasks.join(', ')}??`,
+      status: '成功',
+      detail: `${poll.message}；已为 ${label} 分配权限（${tasks.join(', ')}）`,
     };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return {
       ok: false,
-      status: '??',
-      detail: `${poll.message}???????? BM ????????????${msg}`,
+      status: '失败',
+      detail: `${poll.message}；加入 BM 成功但分配广告权限失败：${msg}`,
     };
   }
 }

@@ -678,7 +678,7 @@ export async function resolveBusinessIdForAdAccount(
 /** 构建带 business 的 assigned_users 列表 URL（分页 next 由 Graph 返回，通常已含 business） */
 export function buildAdAccountAssignedUsersReadUrl(
   accountId: string,
-  businessId: string,
+  businessId: string | null | undefined,
   fields: string,
   accessToken: string,
   limit = 500
@@ -686,10 +686,11 @@ export function buildAdAccountAssignedUsersReadUrl(
   const act = actPath(accountId);
   const q = new URLSearchParams({
     fields,
-    business: businessId,
     limit: String(limit),
     access_token: accessToken,
   });
+  const bm = businessId != null ? String(businessId).trim() : '';
+  if (bm) q.set('business', bm);
   return `https://graph.facebook.com/${GRAPH_VERSION}/${act}/assigned_users?${q.toString()}`;
 }
 

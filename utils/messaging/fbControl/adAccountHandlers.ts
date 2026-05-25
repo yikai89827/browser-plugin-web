@@ -26,6 +26,20 @@ import {
   fbIdbUpsertAccounts,
 } from '../../storage/fbControlIndexedDB';
 
+const PAGE_FX_CACHE_TTL_MS = 60 * 60 * 1000;
+const pageFxRateByCurrency = new Map<string, { rate: number; at: number }>();
+
+function rememberPageFxRate(currency: string, rate: number): void {
+  if (!Number.isFinite(rate) || rate <= 0) return;
+  pageFxRateByCurrency.set(currency.trim().toUpperCase(), { rate, at: Date.now() });
+}
+
+function cachedPageFxRate(currency: string): number | null {
+  const hit = pageFxRateByCurrency.get(currency.trim().toUpperCase());
+  if (!hit || Date.now() - hit.at > PAGE_FX_CACHE_TTL_MS) return null;
+  return hit.rate;
+}
+
 /** 广告账户 IndexedDB + Graph 同步（与 token 消息协议、像素模块解耦） */
 export async function handleFbControlAdAccountMessage(
   message: FbControlIncomingMessage
@@ -121,6 +135,17 @@ export async function handleFbControlAdAccountMessage(
       }
     }
 
+    case 'FB_CONTROL_CACHE_PAGE_FX_RATE': {
+      const body = message.data as { currency?: string; rate?: number } | undefined;
+      const currency = body?.currency?.trim().toUpperCase();
+      const rate = body?.rate;
+      if (!currency || rate == null || !Number.isFinite(rate) || rate <= 0) {
+        return { success: false, error: 'currency and rate required' };
+      }
+      rememberPageFxRate(currency, rate);
+      return { success: true, payload: { currency, rate } };
+    }
+
     case 'FB_CONTROL_GET_USD_EXCHANGE_RATE': {
       const body = message.data as
         | { currency?: string; pageUsdToCurrencyRate?: number }
@@ -130,7 +155,12 @@ export async function handleFbControlAdAccountMessage(
         return { success: false, error: 'currency required' };
       }
       try {
-        const pageRate = body?.pageUsdToCurrencyRate;
+        let pageRate = body?.pageUsdToCurrencyRate;
+        if (pageRate != null && Number.isFinite(pageRate) && pageRate > 0) {
+          rememberPageFxRate(currency, pageRate);
+        } else {
+          pageRate = cachedPageFxRate(currency) ?? undefined;
+        }
         if (pageRate != null && Number.isFinite(pageRate) && pageRate > 0) {
           const fx = fxRateResultFromPage(pageRate);
           logFxRateResolved(currency, fx, { via: 'FB_CONTROL_GET_USD_EXCHANGE_RATE' });

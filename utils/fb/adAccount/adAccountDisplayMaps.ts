@@ -3,6 +3,8 @@
  * 未收录的编码仍返回可读占位，便于对照官方文档排查。
  */
 
+import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
+
 const ACCOUNT_STATUS_ZH: Record<number, string> = {
   1: '活跃',
   2: '已停用',
@@ -181,20 +183,56 @@ export function formatOwnerRoleForTable(row: { userRoleRaw?: string | number; ow
   return '—';
 }
 
-const FUNDING_DISPLAY_SYMBOLS = ['¥', '$', '€', '£', 'Rs', 'HK$', 'NT$', 'A$', 'C$', 'S$', '₹'];
+const FUNDING_DISPLAY_SYMBOLS = ['¥', '￥', '$', '€', '£', 'Rs', 'HK$', 'NT$', 'A$', 'C$', 'S$', '₹'];
+
+/** 括号内金额末尾重复的 ISO 币种代码（Meta 常同时给符号与 CNY/USD） */
+const FUNDING_ISO_SUFFIX_RE = /\s+(USD|CNY|EUR|GBP|PKR|HKD|TWD|AUD|CAD|SGD|INR|JPY)\s*$/i;
+
+function fundingInnerHasSymbol(inner: string): boolean {
+  return FUNDING_DISPLAY_SYMBOLS.some((sym) => inner.includes(sym));
+}
+
+function stripRedundantIsoInFundingParen(inner: string): string {
+  return inner.replace(FUNDING_ISO_SUFFIX_RE, '').trimEnd();
+}
 
 /**
- * Meta `display_string` 常在括号金额后重复币种代码（如 `可用余额 (¥ 0.00 CNY)`），去掉冗余后缀。
+ * Meta `display_string` 常在括号金额后重复币种代码（如 `可用余额 (¥ 0.00 CNY)` / `可用余额（￥ 0.00 CNY）`），去掉冗余后缀。
  */
 export function normalizeFundingDisplayString(display: string): string {
-  const s = display.trim();
+  let s = display.trim();
   if (!s) return s;
-  return s.replace(/\(([^()]+)\)/g, (match, inner: string) => {
-    const hasSym = FUNDING_DISPLAY_SYMBOLS.some((sym) => inner.includes(sym));
-    if (!hasSym) return match;
-    const trimmed = inner.replace(/\s+[A-Z]{3}\s*$/i, '').trimEnd();
-    return `(${trimmed})`;
+  s = s.replace(/（([^（）]+)）/g, (match, inner: string) => {
+    if (!fundingInnerHasSymbol(inner)) return match;
+    return `（${stripRedundantIsoInFundingParen(inner)}）`;
   });
+  s = s.replace(/\(([^()]+)\)/g, (match, inner: string) => {
+    if (!fundingInnerHasSymbol(inner)) return match;
+    return `(${stripRedundantIsoInFundingParen(inner)})`;
+  });
+  /** 无括号时：可用余额 ￥ 0.00 CNY */
+  if (fundingInnerHasSymbol(s)) {
+    s = s.replace(FUNDING_ISO_SUFFIX_RE, '').trimEnd();
+  }
+  return s;
+}
+
+/** 计费方式文案，不能当作 Graph account_type / 账号类型 */
+export function isBillingAccountTypeLabel(v?: string | null): boolean {
+  const t = String(v ?? '').trim();
+  return t === '预付' || t === '后付费';
+}
+
+/** 展示/读库前规范化：支付文案去冗余 CNY；剔除误入 accountKindLabel 的预付/后付费 */
+export function sanitizeAdAccountRecordForDisplay<T extends FbAdAccountRecord>(row: T): T {
+  const out = { ...row };
+  if (out.paymentMethod != null && String(out.paymentMethod).trim()) {
+    out.paymentMethod = normalizeFundingDisplayString(String(out.paymentMethod));
+  }
+  if (isBillingAccountTypeLabel(out.accountKindLabel)) {
+    delete out.accountKindLabel;
+  }
+  return out;
 }
 
 /**
@@ -262,7 +300,32 @@ export function formatAccountKindLabelZh(raw?: string | null): string {
   if (!t) return '';
   if (t === '个人' || t === '商业') return t;
   if (t === '—') return '—';
+  /** 勿把计费类型（预付/后付费）当作账号类型展示 */
+  if (isBillingAccountTypeLabel(t)) return '';
   const key = normalizeAccountKindEnumKey(t);
   if (ACCOUNT_KIND_ZH[key]) return ACCOUNT_KIND_ZH[key];
+  if (key === 'BUSINESS') return '商业';
+  if (key === 'PERSONAL') return '个人';
   return t;
+}
+
+/** 侧栏/表格「账号类型」：商业或个人（与 Graph account_type 口径一致，不用预付/后付费） */
+export function resolveAccountKindDisplay(row: {
+  accountKindLabel?: string | null;
+  belongsToBmId?: string | null;
+  createdFromBmId?: string | null;
+  belongsToBmName?: string | null;
+  createdFromBmName?: string | null;
+}): string {
+  const kind = formatAccountKindLabelZh(row.accountKindLabel);
+  if (kind) return kind;
+  const hasBm =
+    !!(row.belongsToBmId && String(row.belongsToBmId).trim()) ||
+    !!(row.createdFromBmId && String(row.createdFromBmId).trim());
+  if (hasBm) return '商业';
+  const label = String(row.accountKindLabel ?? '').trim();
+  if (/^personal$/i.test(label)) return '个人';
+  /** 无 BM 关联且未写入 kind 时，Meta 侧多为个人广告户（如 Aizaz Khan 类账户） */
+  if (!label) return '个人';
+  return '';
 }

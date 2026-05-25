@@ -1,5 +1,5 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
-import { effectiveUsdToAccountRate } from '../adsPanel/currencyExchange';
+import { fxRateForMoneyConversion, roundUsdMajor } from '../adsPanel/currencyExchange';
 import { currencyOffset } from './spendCapCurrency';
 
 export type MoneyDisplay = {
@@ -55,9 +55,9 @@ export function usdMajorFromAccountMinor(
   const ccy = accountCurrency.trim().toUpperCase();
   const majorAcct = minor / currencyOffset(ccy);
   if (ccy === 'USD') return majorAcct;
-  const rate = effectiveUsdToAccountRate(usdToAccountRate);
+  const rate = fxRateForMoneyConversion(usdToAccountRate);
   if (rate == null) return majorAcct;
-  return majorAcct / rate;
+  return roundUsdMajor(majorAcct / rate);
 }
 
 /**
@@ -76,7 +76,7 @@ export function formatMoneyDualFromMinor(
   const primary = formatMinorAmount(minor, ccy);
   if (ccy === 'USD') return { primary };
 
-  const rate = effectiveUsdToAccountRate(usdToAccountRate);
+  const rate = fxRateForMoneyConversion(usdToAccountRate);
   if (rate == null) return { primary };
 
   const usdMajor = usdMajorFromAccountMinor(minor, ccy, rate);

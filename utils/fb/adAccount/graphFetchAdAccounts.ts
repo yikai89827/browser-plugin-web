@@ -5,13 +5,17 @@ import {
   fetchAdAccountManageAdminCount,
 } from './graphFetchAdAccountAssignedUsers';
 import { fetchFacebookSelfUserIdsForExclude } from '../graphFetchMe';
+import { graphAmountSpentToMinor } from './accountSpendLimits';
 import { mapGraphApiAdAccountToRecord, normalizeAccountId } from './mapGraphAdAccount';
+import { currencyOffset, resolveSpendCapMinorForRecord, spendCapRawToMinor } from './spendCapCurrency';
 import { graphFetch } from '../graphExternalFetch';
 
 const GRAPH_VERSION = 'v21.0';
 
 /** Graph 拉取列表后，并发统计各户「带 MANAGE 的 assigned_users」人数，避免「管理员」列恒为 0 */
 const ADMIN_COUNT_ENRICH_CONCURRENCY = 10;
+const AMOUNT_SPENT_ENRICH_CONCURRENCY = 8;
+const SPEND_CAP_ENRICH_CONCURRENCY = 8;
 
 async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRecord[]): Promise<void> {
   if (!rows.length) return;
@@ -53,6 +57,98 @@ async function enrichManageAdminCounts(accessToken: string, rows: FbAdAccountRec
     }
   }
   const n = Math.min(ADMIN_COUNT_ENRICH_CONCURRENCY, rows.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+}
+
+/** 列表 `amount_spent` 常为 0 时，按户拉 act_{id}?fields=amount_spent 补全总花费 */
+async function enrichAmountSpent(accessToken: string, rows: FbAdAccountRecord[]): Promise<void> {
+  const targets = rows.filter((r) => (r.totalSpentMinor ?? 0) === 0);
+  if (!targets.length) return;
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= targets.length) return;
+      const row = targets[i];
+      const id = String(row.accountId).replace(/^act_/i, '').trim();
+      try {
+        const url = `https://graph.facebook.com/${GRAPH_VERSION}/act_${id}?fields=amount_spent,currency&access_token=${encodeURIComponent(accessToken)}`;
+        const res = await graphFetch(url);
+        const json = (await res.json()) as {
+          amount_spent?: string | number;
+          currency?: string;
+          error?: { message?: string };
+        };
+        if (!res.ok || json.error) continue;
+        const ccy = json.currency ?? row.currency;
+        const minor = graphAmountSpentToMinor(json.amount_spent, ccy);
+        if (minor == null || minor <= 0) continue;
+        row.totalSpentMinor = minor;
+        row.billingAmountMinor = minor;
+        row.totalSpent = minor / currencyOffset(ccy);
+        if (json.amount_spent != null) row.periodSpent = String(json.amount_spent);
+      } catch (e) {
+        console.info('[fbControl:graph] amount_spent 补全跳过', {
+          accountId: row.accountId,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  }
+  const n = Math.min(AMOUNT_SPENT_ENRICH_CONCURRENCY, targets.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+}
+
+/**
+ * 列表 `spend_cap` 常为 0/缺失；单户 GET 可读到 Meta 占位值 1（CNY→¥0.01），与参考插件「临时限额」一致。
+ */
+async function enrichSpendCap(accessToken: string, rows: FbAdAccountRecord[]): Promise<void> {
+  const targets = rows.filter((r) => {
+    const cap = resolveSpendCapMinorForRecord(r);
+    return cap == null || cap === 0;
+  });
+  if (!targets.length) return;
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= targets.length) return;
+      const row = targets[i];
+      const id = String(row.accountId).replace(/^act_/i, '').trim();
+      try {
+        const url = `https://graph.facebook.com/${GRAPH_VERSION}/act_${id}?fields=spend_cap,currency,amount_spent&access_token=${encodeURIComponent(accessToken)}`;
+        const res = await graphFetch(url);
+        const json = (await res.json()) as {
+          spend_cap?: string | number;
+          currency?: string;
+          amount_spent?: string | number;
+          error?: { message?: string };
+        };
+        if (!res.ok || json.error) continue;
+        const ccy = json.currency ?? row.currency;
+        const raw = json.spend_cap;
+        if (raw == null || raw === '' || raw === 0 || raw === '0') continue;
+        const amountSpentMinor = graphAmountSpentToMinor(json.amount_spent, ccy);
+        const minor = spendCapRawToMinor(
+          typeof raw === 'number' ? raw : parseInt(String(raw), 10),
+          {
+            currency: ccy,
+            amountSpentMinor: amountSpentMinor ?? row.totalSpentMinor,
+            spendCapMinor: row.spendCapMinor,
+          }
+        );
+        if (minor == null || minor <= 0) continue;
+        row.spendCapMinor = minor;
+        row.spendingLimit = String(raw);
+      } catch (e) {
+        console.info('[fbControl:graph] spend_cap 补全跳过', {
+          accountId: row.accountId,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  }
+  const n = Math.min(SPEND_CAP_ENRICH_CONCURRENCY, targets.length);
   await Promise.all(Array.from({ length: n }, () => worker()));
 }
 
@@ -152,6 +248,10 @@ export async function fetchAdAccountsFromGraph(accessToken: string): Promise<FbA
   });
   await enrichManageAdminCounts(accessToken, out);
   console.info('[fbControl:graph] adminCount enrich 完成', { mappedCount: out.length });
+  await enrichAmountSpent(accessToken, out);
+  console.info('[fbControl:graph] amount_spent enrich 完成', { mappedCount: out.length });
+  await enrichSpendCap(accessToken, out);
+  console.info('[fbControl:graph] spend_cap enrich 完成', { mappedCount: out.length });
   return out;
 }
 
@@ -209,6 +309,13 @@ export async function fetchSingleAdAccountFromGraph(
     );
   } catch {
     record.hiddenAdminCount = undefined;
+  }
+
+  if ((record.totalSpentMinor ?? 0) === 0) {
+    await enrichAmountSpent(accessToken, [record]);
+  }
+  if ((resolveSpendCapMinorForRecord(record) ?? 0) === 0) {
+    await enrichSpendCap(accessToken, [record]);
   }
 
   return record;

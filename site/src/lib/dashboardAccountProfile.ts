@@ -2,9 +2,11 @@ import type { FbMeProfile } from '../../../utils/fb/graphFetchMeProfile';
 import { fetchFacebookMeProfile } from '../../../utils/fb/graphFetchMeProfile';
 import {
   extensionConfigured,
+  formatExtensionUserError,
   getFbAccessTokenFromExtension,
   getFbTokenMetaFromExtension,
 } from './extensionBridge';
+import { EXT_MSG_NO_EXTENSION_ID } from './extensionUserMessages';
 
 const SITE_USERNAME_KEY = 'fb_control_site_username';
 const SITE_ACCOUNT_ID_KEY = 'fb_control_site_account_id';
@@ -60,24 +62,20 @@ export async function loadDashboardAccountView(): Promise<DashboardAccountView> 
   const username = loadLocalUsername();
 
   if (!extensionConfigured()) {
-    return {
-      username: username || '—',
-      siteAccountId,
-      email: '—',
-      facebookUserId: '—',
-      facebookName: '—',
-      facebookLink: '',
-      hasToken: false,
-      tokenPrefix: null,
-      token: null,
-    };
+    throw new Error(EXT_MSG_NO_EXTENSION_ID);
   }
 
-  const metaRes = await getFbTokenMetaFromExtension();
-  const meta = metaRes.success ? metaRes.payload : null;
+  let meta: Awaited<ReturnType<typeof getFbTokenMetaFromExtension>>['payload'] = null;
+  let token: string | null = null;
+  try {
+    const metaRes = await getFbTokenMetaFromExtension();
+    meta = metaRes.success ? metaRes.payload ?? null : null;
 
-  const tokenRes = await getFbAccessTokenFromExtension();
-  const token = tokenRes.success ? tokenRes.payload?.token ?? null : null;
+    const tokenRes = await getFbAccessTokenFromExtension();
+    token = tokenRes.success ? tokenRes.payload?.token ?? null : null;
+  } catch (e: unknown) {
+    throw new Error(formatExtensionUserError(e));
+  }
 
   let me: FbMeProfile | null = null;
   if (token) {

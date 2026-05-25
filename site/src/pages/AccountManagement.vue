@@ -27,14 +27,15 @@ import {
 } from '../lib/accountListSyncHub';
 import { fbControlLog } from '../../../utils/fbControlLog';
 import {
-  formatAccountKindLabelZh,
   formatOwnerRoleForTable,
+  resolveAccountKindDisplay,
   normalizeFundingDisplayString,
 } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
 import {
   isPrepayAccount,
   resolveDailySpendLimitMinor,
   resolvePaymentThresholdMinor,
+  resolveTotalSpentMinor,
 } from '../../../utils/fb/adAccount/accountSpendLimits';
 import {
   resolveSpendCapMinorForRecord,
@@ -292,9 +293,9 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
     case 'hiddenAdminCount':
       return coalesceNum(hiddenAdminCountEffective(row), -1e18);
     case 'accountKindLabel':
-      return coalesceStr(formatAccountKindLabelZh(row.accountKindLabel));
+      return coalesceStr(resolveAccountKindDisplay(row));
     case 'billingMinor':
-      return moneySortValue(row.billingAmountMinor ?? row.balanceMinor, billingAmountCell(row));
+      return moneySortValue(resolveTotalSpentMinor(row), billingAmountCell(row));
     case 'threshold':
       return moneySortValue(resolvePaymentThresholdMinor(row), thresholdCell(row));
     case 'dailyLimit':
@@ -303,7 +304,7 @@ function getSortableValue(row: FbAdAccountRecord, key: SortKey): string | number
         dailyLimitCell(row)
       );
     case 'totalSpent':
-      return moneySortValue(row.totalSpentMinor, totalSpentCell(row));
+      return moneySortValue(resolveTotalSpentMinor(row), totalSpentCell(row));
     case 'spendingLimit':
       return moneySortValue(row.spendCapMinor, spendingLimitCell(row));
     case 'periodSpent':
@@ -530,7 +531,7 @@ function tipHiddenAdminCell(row: FbAdAccountRecord): string {
 }
 
 function tipAccountKindCell(row: FbAdAccountRecord): string {
-  return `账号类型：如企业/个人等业务分类（来自采集字段）。\n当前值：${dash(formatAccountKindLabelZh(row.accountKindLabel))}`;
+  return `账号类型：商业或个人（Graph account_type，与预付/后付费无关）。\n当前值：${dash(resolveAccountKindDisplay(row))}`;
 }
 
 function tipBillingCell(row: FbAdAccountRecord): string {
@@ -538,12 +539,11 @@ function tipBillingCell(row: FbAdAccountRecord): string {
 }
 
 function tipThresholdCell(row: FbAdAccountRecord): string {
-  const kind = isPrepayAccount(row) ? '预付账户无付款门槛，固定显示 0' : '后付费：Graph min_campaign_group_spend_cap；0=不限额';
-  return `门槛：${kind}。\n当前值：${formatMoneyDisplayText(thresholdCell(row))}`;
+  return `门槛：与参考插件一致，恒为 0。\n当前值：${formatMoneyDisplayText(thresholdCell(row))}`;
 }
 
 function tipDailyLimitCell(row: FbAdAccountRecord): string {
-  return `日限额：Graph min_daily_budget；非 USD 且低于约 $50 时按 Meta 默认日花费上限 $50 等值展示。\n当前值：${formatMoneyDisplayText(dailyLimitCell(row))}`;
+  return `日限额：Graph min_daily_budget 约 $50 档时展示；长沙七画/Aizaz Khan 等按 Meta 日上限约 $50.09 与汇率换算；其余 USD 户为「不限额」。\n当前值：${formatMoneyDisplayText(dailyLimitCell(row))}`;
 }
 
 function tipTotalSpentCell(row: FbAdAccountRecord): string {
@@ -858,7 +858,7 @@ function fxRateForRow(row: FbAdAccountRecord): number | null {
   const ccy = (row.currency || 'USD').trim().toUpperCase();
   if (ccy === 'USD') return 1;
   const r = fxUsdToAccount[ccy];
-  return effectiveUsdToAccountRate(r);
+  return r != null && r > 0 ? r : null;
 }
 
 async function ensureFxRate(currency?: string): Promise<number | null> {
@@ -907,27 +907,14 @@ function legacyMoneyDisplay(row: FbAdAccountRecord, text: string): MoneyDisplay 
   const cleaned = text.replace(/,/g, '').replace(/[^\d.-]/g, '');
   const major = parseFloat(cleaned);
   if (!Number.isFinite(major)) return { primary: text };
-  const eff = effectiveUsdToAccountRate(rate);
-  if (eff == null) return { primary: text };
-  const usdMajor = major / eff;
+  if (rate == null || rate <= 0) return { primary: text };
+  const usdMajor = major / rate;
   return { primary: text, secondary: formatMajorAmount(usdMajor, 'USD') };
 }
 
 function totalSpentCell(row: FbAdAccountRecord): MoneyDisplay {
-  if (row.totalSpentMinor != null) return moneyCell(row, row.totalSpentMinor);
-  if (row.totalSpent !== undefined && row.totalSpent !== '') {
-    const text =
-      typeof row.totalSpent === 'number'
-        ? formatMajorAmount(row.totalSpent, row.currency)
-        : formatMoneyishRaw(String(row.totalSpent), row.currency);
-    return legacyMoneyDisplay(row, text);
-  }
-  if (row.paymentAmount) {
-    return legacyMoneyDisplay(row, formatMoneyishRaw(String(row.paymentAmount), row.currency));
-  }
-  if (row.spend != null) {
-    return legacyMoneyDisplay(row, formatMajorAmount(row.spend, row.currency));
-  }
+  const m = resolveTotalSpentMinor(row);
+  if (m != null) return moneyCell(row, m);
   return { primary: '—' };
 }
 
@@ -937,7 +924,7 @@ function balanceCell(row: FbAdAccountRecord): MoneyDisplay {
 }
 
 function billingAmountCell(row: FbAdAccountRecord): MoneyDisplay {
-  const m = row.billingAmountMinor ?? row.balanceMinor;
+  const m = resolveTotalSpentMinor(row);
   if (m != null) return moneyCell(row, m);
   return legacyMoneyDisplay(row, formatMoneyishRaw(row.balance, row.currency));
 }
@@ -947,19 +934,13 @@ function moneyCell(row: FbAdAccountRecord, minor: number | null | undefined, opt
 }
 
 function thresholdCell(row: FbAdAccountRecord): MoneyDisplay {
-  const m = resolvePaymentThresholdMinor(row);
-  if (m == null) return { primary: '—' };
-  if (m === 0) {
-    if (isPrepayAccount(row)) return moneyCell(row, 0);
-    return moneyCell(row, 0, { unlimitedZero: true });
-  }
-  return moneyCell(row, m);
+  return moneyCell(row, resolvePaymentThresholdMinor(row));
 }
 
 function dailyLimitCell(row: FbAdAccountRecord): MoneyDisplay {
   const m = resolveDailySpendLimitMinor(row, fxRateForRow(row));
   if (m != null && m > 0) return moneyCell(row, m);
-  return { primary: '—' };
+  return { primary: '不限额' };
 }
 
 function spendingLimitCell(row: FbAdAccountRecord): MoneyDisplay {
@@ -1344,7 +1325,7 @@ function exportAccountsToExcel() {
     推送状态: row.pushStatus ?? '',
     管理员: row.adminCount ?? 0,
     隐藏管理员人数: row.hiddenAdminCount ?? '',
-    账号类型: formatAccountKindLabelZh(row.accountKindLabel) || row.accountKindLabel || '',
+    账号类型: resolveAccountKindDisplay(row) || '',
     账单金额: formatMoneyDisplayText(billingAmountCell(row)),
     门槛: formatMoneyDisplayText(thresholdCell(row)),
     日限额: formatMoneyDisplayText(dailyLimitCell(row)),
@@ -1917,7 +1898,7 @@ onUnmounted(() => {
                 {{ hiddenAdminBadgeText(row) }}
               </span>
             </td>
-            <td :title="tipAccountKindCell(row)">{{ dash(formatAccountKindLabelZh(row.accountKindLabel)) }}</td>
+            <td :title="tipAccountKindCell(row)">{{ dash(resolveAccountKindDisplay(row)) }}</td>
             <td :title="tipBillingCell(row)"><MoneyCellDisplay :display="billingAmountCell(row)" /></td>
             <td :title="tipThresholdCell(row)"><MoneyCellDisplay :display="thresholdCell(row)" /></td>
             <td :title="tipDailyLimitCell(row)"><MoneyCellDisplay :display="dailyLimitCell(row)" /></td>

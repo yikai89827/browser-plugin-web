@@ -1,14 +1,20 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import {
-  isPrepayAccount,
   resolveDailySpendLimitMinor,
+  resolvePanelSpendingLimitMinor,
   resolvePaymentThresholdMinor,
+  resolveTemporarySpendLimitMinor,
+  resolveTotalSpentMinor,
 } from '../adAccount/accountSpendLimits';
-import { effectiveUsdToAccountRate } from './currencyExchange';
 import {
-  formatAccountKindLabelZh,
+  effectiveUsdToAccountRate,
+  fxRateForMoneyConversion,
+  roundUsdMajor,
+} from './currencyExchange';
+import {
   formatOwnerRoleForTable,
-  normalizeFundingDisplayString,
+  resolveAccountKindDisplay,
+  sanitizeAdAccountRecordForDisplay,
 } from '../adAccount/adAccountDisplayMaps';
 import { formatMoneyDualFromMinor } from '../adAccount/moneyDisplay';
 import { currencyOffset } from '../adAccount/spendCapCurrency';
@@ -18,6 +24,7 @@ export type PanelFieldKey =
   | 'status'
   | 'dailyLimit'
   | 'spendingLimit'
+  | 'temporaryLimit'
   | 'threshold'
   | 'billingAmount'
   | 'totalSpent'
@@ -47,13 +54,12 @@ export const PANEL_FIELD_DEFS: PanelFieldDef[] = [
   { key: 'status', label: '账号状态', icon: '◇' },
   { key: 'dailyLimit', label: '每天花费限额', icon: '$', isMoney: true },
   { key: 'spendingLimit', label: '花费限额', icon: '◆', isMoney: true },
+  { key: 'temporaryLimit', label: '临时限额', icon: '◇', isMoney: true },
   { key: 'threshold', label: '门槛', icon: '▣', isMoney: true },
   { key: 'billingAmount', label: '账单金额', icon: '▤', isMoney: true },
   { key: 'totalSpent', label: '总计花费', icon: '▥', isMoney: true },
-  { key: 'balance', label: '余额', icon: '▦', isMoney: true },
   { key: 'createdDate', label: '创建日期', icon: '▧' },
   { key: 'billingDate', label: '账单日期', icon: '▨' },
-  { key: 'adminCount', label: '管理员', icon: '▩' },
   { key: 'hiddenAdminCount', label: '隐藏管理员', icon: '◉' },
   { key: 'accountKind', label: '账号类型', icon: '○' },
   { key: 'timezone', label: '时区', icon: '●' },
@@ -142,17 +148,17 @@ function formatMinorWithFx(
   const disp = displayCurrency(row, opts);
   if (acct === disp) return formatMinorAmount(minor, disp);
 
-  const rate = effectiveUsdToAccountRate(opts?.usdToAccountRate);
+  const rate = fxRateForMoneyConversion(opts?.usdToAccountRate);
   if (rate == null) return formatMinorAmount(minor, acct);
 
   const majorAcct = minor / currencyOffset(acct);
   let majorDisp = majorAcct;
   if (disp === 'USD' && acct !== 'USD') {
-    majorDisp = majorAcct / rate;
+    majorDisp = roundUsdMajor(majorAcct / rate);
   } else if (acct === 'USD' && disp !== 'USD') {
     majorDisp = majorAcct * rate;
   } else {
-    const majorUsd = acct === 'USD' ? majorAcct : majorAcct / rate;
+    const majorUsd = acct === 'USD' ? majorAcct : roundUsdMajor(majorAcct / rate);
     majorDisp = disp === 'USD' ? majorUsd : majorUsd * rate;
   }
   return formatMajorAmount(majorDisp, disp);
@@ -192,10 +198,10 @@ function formatMoneyishRawWithFx(
   }
   const cleaned = s.replace(/[^0-9.-]/g, '');
   const n = parseFloat(cleaned);
-  const rate = effectiveUsdToAccountRate(opts?.usdToAccountRate);
+  const rate = fxRateForMoneyConversion(opts?.usdToAccountRate);
   if (!Number.isNaN(n) && rate != null) {
     let majorDisp = n;
-    if (disp === 'USD' && acct !== 'USD') majorDisp = n / rate;
+    if (disp === 'USD' && acct !== 'USD') majorDisp = roundUsdMajor(n / rate);
     else if (acct === 'USD' && disp !== 'USD') majorDisp = n * rate;
     return formatMajorAmount(majorDisp, disp);
   }
@@ -273,6 +279,7 @@ export function formatPanelField(
   row: FbAdAccountRecord,
   opts?: AdsPanelDisplayOptions
 ): FormattedPanelField {
+  row = sanitizeAdAccountRecordForDisplay(row);
   const active = statusOn(row);
   switch (key) {
     case 'accountId':
@@ -285,40 +292,32 @@ export function formatPanelField(
     case 'dailyLimit': {
       const m = resolveDailySpendLimitMinor(row, opts?.usdToAccountRate);
       if (m != null && m > 0) return formatMoneyField(m, row, opts);
+      return { value: '不限额' };
+    }
+    case 'spendingLimit': {
+      const m = resolvePanelSpendingLimitMinor(row, opts?.usdToAccountRate);
+      if (m === 0) return { value: '不限额' };
+      if (m != null && m > 0) return formatMoneyField(m, row, opts);
       return { value: '—' };
     }
-    case 'spendingLimit':
-      if (row.spendCapMinor === 0) return { value: '不限额' };
-      if (row.spendCapMinor != null) return formatMoneyField(row.spendCapMinor, row, opts);
-      return { value: formatMoneyishRawWithFx(row.spendingLimit, row, opts) };
-    case 'threshold': {
-      const m = resolvePaymentThresholdMinor(row);
-      if (m == null) return { value: '—' };
-      if (m === 0 && isPrepayAccount(row)) return formatMoneyField(0, row, opts);
-      if (m === 0) return { value: '不限额' };
-      return formatMoneyField(m, row, opts);
+    case 'temporaryLimit': {
+      const m = resolveTemporarySpendLimitMinor(row);
+      if (m === 0) return { value: '—' };
+      if (m != null && m > 0) return formatMoneyField(m, row, opts);
+      return { value: '—' };
     }
+    case 'threshold':
+      return formatMoneyField(resolvePaymentThresholdMinor(row), row, opts);
     case 'billingAmount': {
-      const m = row.billingAmountMinor ?? row.balanceMinor;
+      const m = resolveTotalSpentMinor(row);
       if (m != null) return formatMoneyField(m, row, opts);
       return { value: formatMoneyishRawWithFx(row.balance, row, opts) };
     }
-    case 'totalSpent':
-      if (row.totalSpentMinor != null) {
-        return formatMoneyField(row.totalSpentMinor, row, opts);
-      }
-      if (row.totalSpent !== undefined && row.totalSpent !== '') {
-        if (typeof row.totalSpent === 'number') {
-          return {
-            value: formatMoneyishRawWithFx(String(row.totalSpent), row, opts),
-          };
-        }
-        return { value: formatMoneyishRawWithFx(String(row.totalSpent), row, opts) };
-      }
-      if (row.spend != null) {
-        return { value: formatMoneyishRawWithFx(String(row.spend), row, opts) };
-      }
+    case 'totalSpent': {
+      const m = resolveTotalSpentMinor(row);
+      if (m != null) return formatMoneyField(m, row, opts);
       return { value: '—' };
+    }
     case 'balance':
       if (row.balanceMinor != null) return formatMoneyField(row.balanceMinor, row, opts);
       return { value: formatMoneyishRawWithFx(row.balance, row, opts) };
@@ -342,18 +341,15 @@ export function formatPanelField(
       };
     case 'accountKind':
       return {
-        value: dash(formatAccountKindLabelZh(row.accountKindLabel) || row.accountType),
+        value: dash(resolveAccountKindDisplay(row)),
         valueKind: 'badge',
       };
     case 'timezone':
       return { value: dash(row.timezone) };
     case 'accountTime':
       return { value: formatAccountLocalTime(row.timezone) };
-    case 'paymentMethod': {
-      const pm = row.paymentMethod;
-      const text = pm != null && String(pm).trim() ? normalizeFundingDisplayString(String(pm)) : pm;
-      return { value: dash(text) };
-    }
+    case 'paymentMethod':
+      return { value: dash(row.paymentMethod) };
     case 'ownerRole':
       return { value: formatOwnerRoleForTable(row) };
     case 'currency':

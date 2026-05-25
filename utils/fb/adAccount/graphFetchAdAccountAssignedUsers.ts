@@ -103,11 +103,20 @@ export async function fetchAdAccountAssignedUserDetails(
   options?: AdAccountAssignedUsersQueryOptions
 ): Promise<AdAccountAssignedUserDetail[]> {
   const path = actPath(accountId);
-  const businessId = await resolveBusinessIdForAdAccount(
-    accessToken,
-    accountId,
-    options?.hintBmIds ?? []
-  );
+  let businessId: string | null = null;
+  try {
+    businessId = await resolveBusinessIdForAdAccount(
+      accessToken,
+      accountId,
+      options?.hintBmIds ?? []
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.info('[fbControl:graph] assigned_users 无 BM，尝试不带 business 参数', {
+      accountId,
+      message: msg,
+    });
+  }
   let fields = 'id,tasks,user{id,name,email}';
   let url = buildAdAccountAssignedUsersReadUrl(accountId, businessId, fields, accessToken);
   const out: AdAccountAssignedUserDetail[] = [];
@@ -157,10 +166,11 @@ const ENRICH_CONCURRENCY = 6;
 
 async function enrichAssignedUserDetails(
   accessToken: string,
-  businessId: string,
+  businessId: string | null,
   rows: AdAccountAssignedUserDetail[]
 ): Promise<AdAccountAssignedUserDetail[]> {
   if (!rows.length) return rows;
+  if (!businessId?.trim()) return rows;
   const index = await fetchBusinessUsersIndex(accessToken, businessId);
   const out: AdAccountAssignedUserDetail[] = [];
   let next = 0;
@@ -330,6 +340,25 @@ export async function fetchAdAccountManageAdminCount(
   accountId: string,
   options?: ManageAdminCountOptions
 ): Promise<number> {
-  const rows = await fetchAdAccountManageAdminDetails(accessToken, accountId, options);
-  return rows.length;
+  const all = await fetchAdAccountAssignedUserDetails(accessToken, accountId, options);
+  const excludeSet = await resolveManageAdminExcludeSet(accessToken, options);
+  const manageRows = all.filter((r) => r.tasks.includes('MANAGE'));
+  const others = manageRows.filter((row) => isManageAdminDetail(row, excludeSet));
+  if (others.length > 0) return others.length;
+
+  let hasBm = false;
+  try {
+    const bid = await resolveBusinessIdForAdAccount(
+      accessToken,
+      accountId,
+      options?.hintBmIds ?? []
+    );
+    hasBm = !!bid?.trim();
+  } catch {
+    hasBm = false;
+  }
+  /** 个人广告户等无 BM：仅本人具备 MANAGE 时展示总人数（常为 1） */
+  if (!hasBm && manageRows.length > 0) return manageRows.length;
+
+  return 0;
 }

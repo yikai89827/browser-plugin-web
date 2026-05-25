@@ -6,7 +6,8 @@ import {
   formatUserRoleZh,
   readFundingSourceDisplay,
 } from './adAccountDisplayMaps';
-import { spendCapRawToMinor, type SpendCapNormalizeHints } from './spendCapCurrency';
+import { graphAmountSpentToMinor } from './accountSpendLimits';
+import { currencyOffset, spendCapRawToMinor, type SpendCapNormalizeHints } from './spendCapCurrency';
 
 function graphMoneyToMinor(raw: unknown, hints: SpendCapNormalizeHints): number | undefined {
   if (raw == null || raw === '') return undefined;
@@ -95,19 +96,21 @@ function resolveAccountKindLabel(
   ownerBiz: { id?: string; name?: string }
 ): string | undefined {
   const hasBmFromNodes = !!(biz.id || ownerBiz.id);
-  const bizNameHint = a.business_name != null && String(a.business_name).trim().length > 0;
-  const bmLinked = hasBmFromNodes || bizNameHint;
   const upper = String(a.account_type ?? '').trim().toUpperCase();
   const personalType = upper === 'PERSONAL';
   const personalFlag =
     a.is_personal === 1 || a.is_personal === true || a.is_personal === '1' || String(a.is_personal ?? '') === '1';
-  if (bmLinked && (personalType || personalFlag)) {
+  /** 无 BM 节点的个人广告户：展示 Personal，勿因 business_name 误判为商业 */
+  if ((personalType || personalFlag) && !hasBmFromNodes) {
+    return 'Personal';
+  }
+  if (hasBmFromNodes && (personalType || personalFlag)) {
     return 'Business';
   }
   const fromType = formatAccountKindLabel(a.account_type);
   if (fromType) return fromType;
-  /** 仅有 BM 名称/节点、无 account_type 时，与常见「商业广告户」展示一致 */
-  if (bmLinked) return 'Business';
+  const bizNameHint = a.business_name != null && String(a.business_name).trim().length > 0;
+  if (hasBmFromNodes || bizNameHint) return 'Business';
   return undefined;
 }
 
@@ -147,10 +150,21 @@ export function mapGraphApiAdAccountToRecord(
   const minDailyRaw = a.min_daily_budget;
   const balanceStr = balanceRaw != null ? String(balanceRaw) : '';
   const spendCap = spendCapRaw != null ? String(spendCapRaw) : '';
-  const amountSpentMinor = parseMinorInt(a.amount_spent ?? a.amount_spent_string ?? a.spend);
+  const offset = currencyOffset(currency || 'USD');
+  let amountSpentMinor = graphAmountSpentToMinor(
+    a.amount_spent ?? a.amount_spent_string ?? a.spend,
+    currency || undefined
+  );
+  const balanceMinor =
+    graphAmountSpentToMinor(balanceRaw, currency || undefined) ?? parseMinorInt(balanceRaw);
+  /** 列表接口 amount_spent 常为 0；参考插件账单/总花费与 balance 同量级时回退 */
+  if ((amountSpentMinor == null || amountSpentMinor === 0) && balanceMinor != null && balanceMinor > 0) {
+    amountSpentMinor = balanceMinor;
+  }
   const amountSpentMajor =
-    amountSpentMinor != null ? amountSpentMinor / 100 : parseAmountSpent(a.amount_spent ?? a.amount_spent_string ?? a.spend);
-  const balanceMinor = parseMinorInt(balanceRaw);
+    amountSpentMinor != null
+      ? amountSpentMinor / offset
+      : parseAmountSpent(a.amount_spent ?? a.amount_spent_string ?? a.spend);
 
   const baseHints: SpendCapNormalizeHints = {
     currency: currency || undefined,
@@ -207,7 +221,7 @@ export function mapGraphApiAdAccountToRecord(
     accountKindLabel,
     balance: balanceStr || undefined,
     balanceMinor,
-    billingAmountMinor: balanceMinor,
+    billingAmountMinor: amountSpentMinor,
     paymentThresholdMinor,
     spendCapMinor,
     minDailyBudgetMinor,

@@ -1,12 +1,20 @@
 <script lang="ts" setup>
 import { ref, watch, computed } from 'vue';
-import type { PixelDrawerKind, PixelDrawerPreset, PixelDrawerSubmitPayload, PixelDrawerContext } from '../lib/pixelOperationTypes';
+import type {
+  PixelBatchCreateMode,
+  PixelDrawerKind,
+  PixelDrawerPreset,
+  PixelDrawerSubmitPayload,
+  PixelDrawerContext,
+} from '../lib/pixelOperationTypes';
 import type { PixelBmOption, PixelChecklistItem, PixelOpResultRow } from '../../../utils/fb/pixel/graphPixelBatchOperations';
 import {
   executePixelDrawerFromSite,
   fetchPixelBmListFromSite,
   fetchPixelDrawerTargetsFromSite,
 } from '../lib/pixelOperationsBridge';
+import { fetchBmAdAccountsForPixelAssign } from '../../../utils/fb/pixel/graphPixelBatchOperations';
+import { getFbAccessTokenFromExtension } from '../lib/extensionBridge';
 
 const props = defineProps<{
   open: boolean;
@@ -27,8 +35,12 @@ const step2Error = ref('');
 
 const businesses = ref<PixelBmOption[]>([]);
 const selectedBmId = ref('');
+const adAccounts = ref<PixelChecklistItem[]>([]);
+const selectedAdAccountId = ref('');
+const loadAdAccounts = ref(false);
+/** BM 下全部账户 / 指定单个账户 */
+const createMode = ref<PixelBatchCreateMode>('bm_all_accounts');
 const namePrefix = ref('Pixel');
-const pixelCount = ref(1);
 const useDefaultInterval = ref(true);
 
 const checklist = ref<PixelChecklistItem[]>([]);
@@ -38,6 +50,8 @@ const listSearch = ref('');
 const results = ref<PixelOpResultRow[]>([]);
 
 const isCreate = computed(() => props.preset?.kind === 'batch_create');
+const isCreateAllBm = computed(() => isCreate.value && createMode.value === 'bm_all_accounts');
+const isCreateSingleAccount = computed(() => isCreate.value && createMode.value === 'single_account');
 const isListStep = computed(() => !isCreate.value);
 const isDelete = computed(() => {
   const k = props.preset?.kind;
@@ -70,7 +84,9 @@ const confirmDisabled = computed(() => {
   if (isCreate.value) {
     if (!selectedBmId.value) return true;
     if (!namePrefix.value.trim()) return true;
-    if (!pixelCount.value || pixelCount.value < 1 || pixelCount.value > 100) return true;
+    if (loadAdAccounts.value) return true;
+    if (isCreateAllBm.value && !adAccounts.value.length) return true;
+    if (isCreateSingleAccount.value && !selectedAdAccountId.value) return true;
     return false;
   }
   const any = Object.values(checkedIds.value).some(Boolean);
@@ -86,8 +102,35 @@ async function loadBusinesses() {
     if (!selectedBmId.value && businesses.value.length) {
       selectedBmId.value = businesses.value[0].id;
     }
+    if (selectedBmId.value) void loadAdAccountsForBm(selectedBmId.value);
   } catch (e: unknown) {
     step2Error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function loadAdAccountsForBm(bmId: string) {
+  if (!bmId) {
+    adAccounts.value = [];
+    selectedAdAccountId.value = '';
+    return;
+  }
+  loadAdAccounts.value = true;
+  step2Error.value = '';
+  adAccounts.value = [];
+  selectedAdAccountId.value = '';
+  try {
+    const tokenRes = await getFbAccessTokenFromExtension();
+    if (!tokenRes.success || !tokenRes.payload?.token) {
+      throw new Error(tokenRes.error || '读取 token 失败');
+    }
+    adAccounts.value = await fetchBmAdAccountsForPixelAssign(tokenRes.payload.token, bmId);
+    if (adAccounts.value.length) {
+      selectedAdAccountId.value = adAccounts.value[0].id;
+    }
+  } catch (e: unknown) {
+    step2Error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loadAdAccounts.value = false;
   }
 }
 
@@ -126,12 +169,15 @@ function resetForm() {
   loadStep2.value = false;
   step2Error.value = '';
   results.value = [];
+  createMode.value = 'bm_all_accounts';
   namePrefix.value = 'Pixel';
-  pixelCount.value = 1;
   useDefaultInterval.value = true;
   checklist.value = [];
   checkedIds.value = {};
   listSearch.value = '';
+  adAccounts.value = [];
+  selectedAdAccountId.value = '';
+  loadAdAccounts.value = false;
 }
 
 watch(
@@ -158,6 +204,10 @@ watch(
   }
 );
 
+watch(selectedBmId, (bmId) => {
+  if (props.open && isCreate.value && bmId) void loadAdAccountsForBm(bmId);
+});
+
 function toggleCheck(id: string) {
   checkedIds.value = { ...checkedIds.value, [id]: !checkedIds.value[id] };
 }
@@ -179,10 +229,11 @@ async function onConfirm() {
       bmName: isCreate.value
         ? businesses.value.find((b) => b.id === selectedBmId.value)?.name
         : props.context?.bmName,
+      batchCreateMode: isCreate.value ? createMode.value : undefined,
+      adAccountId: isCreateSingleAccount.value ? selectedAdAccountId.value : undefined,
       pixelId: props.context?.pixelId || '',
       pixelName: props.context?.pixelName,
       namePrefix: namePrefix.value.trim(),
-      count: pixelCount.value,
       selectedTargetIds: selectedTargetIds(),
       useDefaultInterval: useDefaultInterval.value,
     };
@@ -250,6 +301,36 @@ async function onConfirm() {
                   <div class="pod-step">
                     <span class="pod-step-badge">2</span>
                     <div class="pod-step-body">
+                      <div class="pod-step-label">创建方式</div>
+                      <div class="pod-mode-tabs" role="group" aria-label="创建方式">
+                        <button
+                          type="button"
+                          class="pod-mode-tab"
+                          :class="{ on: createMode === 'bm_all_accounts' }"
+                          @click="createMode = 'bm_all_accounts'"
+                        >
+                          BM 下全部账户
+                        </button>
+                        <button
+                          type="button"
+                          class="pod-mode-tab"
+                          :class="{ on: createMode === 'single_account' }"
+                          @click="createMode = 'single_account'"
+                        >
+                          指定广告账户
+                        </button>
+                      </div>
+                      <p class="pod-hint muted small">
+                        <template v-if="isCreateAllBm">
+                          将为所选 BM 下每个广告账户各创建 1 个像素（名称相同）。
+                        </template>
+                        <template v-else>仅在所选广告账户下创建 1 个像素。</template>
+                      </p>
+                    </div>
+                  </div>
+                  <div class="pod-step">
+                    <span class="pod-step-badge">3</span>
+                    <div class="pod-step-body">
                       <div class="pod-step-label">{{ preset.step2Label }}</div>
                       <p v-if="preset.step2Hint" class="pod-hint muted small">{{ preset.step2Hint }}</p>
                       <div v-if="!businesses.length && !step2Error" class="muted small">正在加载 BM 列表…</div>
@@ -259,31 +340,36 @@ async function onConfirm() {
                           <span>{{ b.id }}<template v-if="b.name"> ({{ b.name }})</template></span>
                         </label>
                       </div>
-                    </div>
-                  </div>
-                  <div class="pod-step">
-                    <span class="pod-step-badge">3</span>
-                    <div class="pod-step-body">
-                      <div class="pod-step-label">输入像素名称</div>
-                      <input
-                        v-model="namePrefix"
-                        type="text"
-                        class="pod-input"
-                        placeholder="如 Pixel，则系统以 Pixel1, Pixel2 自动命名"
-                      />
+                      <template v-if="selectedBmId">
+                        <p v-if="loadAdAccounts" class="muted small" style="margin-top: 0.75rem">正在加载广告账户…</p>
+                        <p v-else-if="!adAccounts.length && !step2Error" class="muted small" style="margin-top: 0.75rem">
+                          该 BM 下未找到可用广告账户（需 owned/client 账户且 token 含 business_management）
+                        </p>
+                        <p v-else-if="isCreateAllBm" class="pod-summary muted small" style="margin-top: 0.75rem">
+                          将创建 <strong>{{ adAccounts.length }}</strong> 个像素，对应
+                          {{ adAccounts.length }} 个广告账户。
+                        </p>
+                        <template v-else-if="isCreateSingleAccount">
+                          <p class="pod-hint muted small" style="margin-top: 0.75rem">选择广告账户</p>
+                          <div class="pod-radio-stack">
+                            <label v-for="a in adAccounts" :key="a.id" class="pod-radio-row">
+                              <input v-model="selectedAdAccountId" type="radio" :value="a.id" />
+                              <span>{{ a.label }}</span>
+                            </label>
+                          </div>
+                        </template>
+                      </template>
                     </div>
                   </div>
                   <div class="pod-step">
                     <span class="pod-step-badge">4</span>
                     <div class="pod-step-body">
-                      <div class="pod-step-label">输入像素数量</div>
+                      <div class="pod-step-label">像素名称</div>
                       <input
-                        v-model.number="pixelCount"
-                        type="number"
-                        min="1"
-                        max="100"
+                        v-model="namePrefix"
+                        type="text"
                         class="pod-input"
-                        placeholder="不能超过100"
+                        placeholder="如 MyPixel"
                       />
                     </div>
                   </div>
@@ -486,6 +572,37 @@ async function onConfirm() {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+.pod-mode-tabs {
+  display: flex;
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--fb-border, #4b5563);
+  margin-bottom: 8px;
+}
+.pod-mode-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--fb-muted, #9ca3af);
+  font-size: 13px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pod-mode-tab + .pod-mode-tab {
+  border-left: 1px solid var(--fb-border, #4b5563);
+}
+.pod-mode-tab.on {
+  background: var(--fb-accent, #2563eb);
+  color: #fff;
+}
+.pod-mode-tab:not(.on):hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.pod-summary strong {
+  color: var(--fb-modal-text, #e5e7eb);
 }
 .pod-tabs {
   display: inline-flex;

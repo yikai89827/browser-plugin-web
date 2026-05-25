@@ -7,6 +7,7 @@ import {
   type FxRateSource,
 } from '../../../utils/fb/adsPanel/currencyExchange';
 import { extractUsdToCurrencyRateFromPage } from '../../../utils/fb/adsPanel/metaPageFxRate';
+import { sanitizeAdAccountRecordForDisplay } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
 import { fbControlLog } from '../../../utils/fbControlLog';
 
 const corePromises = new Map<string, Promise<FbAdAccountRecord | null>>();
@@ -50,7 +51,7 @@ export async function ensureCoreRecord(
       })) as { success?: boolean; payload?: { account?: FbAdAccountRecord } };
       if (synced.success) account = synced.payload?.account ?? null;
     }
-    return account;
+    return account ? sanitizeAdAccountRecordForDisplay(account) : null;
   })();
 
   corePromises.set(cacheKey, p);
@@ -81,15 +82,21 @@ export async function fetchUsdToAccountRate(currency: string): Promise<number> {
     throw new Error(res?.error || '汇率获取失败');
   }
   const source = res.payload.source ?? (pageRate != null ? 'meta-page' : 'er-api');
-  const effective = res.payload.effectiveRate ?? roundFxRate(res.payload.rate);
+  const raw = res.payload.rate;
   fbControlLog('content:fx', '汇率已就绪（悬浮窗）', {
     currency: ccy,
     source,
     sourceLabel: fxRateSourceLabel(source),
-    rawRate: res.payload.rate,
-    effectiveRate: effective,
+    rawRate: raw,
+    effectiveRate: res.payload.effectiveRate ?? roundFxRate(raw),
   });
-  return effective;
+  if (raw != null && Number.isFinite(raw) && raw > 0) {
+    void browser.runtime.sendMessage({
+      action: 'FB_CONTROL_CACHE_PAGE_FX_RATE',
+      data: { currency: ccy, rate: pageRate ?? raw },
+    });
+  }
+  return raw;
 }
 
 export async function fetchManageAdminCount(
@@ -121,10 +128,10 @@ export const CORE_PANEL_FIELDS: PanelFieldKey[] = [
   'status',
   'dailyLimit',
   'spendingLimit',
+  'temporaryLimit',
   'threshold',
   'billingAmount',
   'totalSpent',
-  'balance',
   'createdDate',
   'billingDate',
   'accountKind',
@@ -137,4 +144,4 @@ export const CORE_PANEL_FIELDS: PanelFieldKey[] = [
   'remark',
 ];
 
-export const ASYNC_COUNT_FIELDS: PanelFieldKey[] = ['adminCount', 'hiddenAdminCount'];
+export const ASYNC_COUNT_FIELDS: PanelFieldKey[] = ['hiddenAdminCount'];

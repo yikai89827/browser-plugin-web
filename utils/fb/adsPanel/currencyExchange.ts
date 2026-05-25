@@ -216,16 +216,28 @@ export async function fetchExchangeRate(
   return r;
 }
 
-/** 汇率展示与金额折算：先保留两位小数，再参与乘除（避免先算金额再四舍五入） */
+/** 汇率展示标签用：保留两位小数（如「1 USD = 6.84 CNY」） */
 export function roundFxRate(rate: number): number {
   if (!Number.isFinite(rate)) return rate;
   return Math.round(rate * 100) / 100;
 }
 
-/** 1 USD = ? 账户币种；用于金额折算时统一两位小数汇率 */
+/** 1 USD = ? 账户币种；仅用于预览文案等，勿用于双币种金额折算 */
 export function effectiveUsdToAccountRate(rate: number | null | undefined): number | null {
   if (rate == null || !Number.isFinite(rate) || rate <= 0) return null;
   return roundFxRate(rate);
+}
+
+/** 双币种金额折算：使用 Meta/API 原始汇率，与参考插件一致 */
+export function fxRateForMoneyConversion(rate: number | null | undefined): number | null {
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) return null;
+  return rate;
+}
+
+/** USD 主币展示：仅对折算结果保留两位小数 */
+export function roundUsdMajor(major: number): number {
+  if (!Number.isFinite(major)) return major;
+  return Math.round(major * 100) / 100;
 }
 
 export type FetchUsdToCurrencyRateOptions = {

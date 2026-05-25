@@ -82,9 +82,10 @@ export async function executePixelDrawerFromSite(
   return executePixelDrawerOperation(token, {
     kind: payload.kind,
     bmId: payload.bmId,
+    batchCreateMode: payload.batchCreateMode,
+    adAccountId: payload.adAccountId,
     pixelId: payload.pixelId,
     namePrefix: payload.namePrefix,
-    count: payload.count,
     selectedTargetIds: payload.selectedTargetIds,
     useDefaultInterval: payload.useDefaultInterval,
   });

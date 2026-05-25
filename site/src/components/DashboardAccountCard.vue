@@ -6,6 +6,7 @@ import {
   saveLocalUsername,
   type DashboardAccountView,
 } from '../lib/dashboardAccountProfile';
+import { formatExtensionUserError } from '../lib/extensionUserMessages';
 
 const initialLoading = ref(true);
 const refreshing = ref(false);
@@ -27,7 +28,7 @@ async function refresh() {
   try {
     profile.value = await loadDashboardAccountView();
   } catch (e: unknown) {
-    errorMsg.value = e instanceof Error ? e.message : String(e);
+    errorMsg.value = formatExtensionUserError(e);
     if (!isRefresh) profile.value = null;
   } finally {
     initialLoading.value = false;
