@@ -301,7 +301,7 @@ export function formatPanelField(
       return { value: '—' };
     }
     case 'temporaryLimit': {
-      const m = resolveTemporarySpendLimitMinor(row);
+      const m = resolveTemporarySpendLimitMinor(row, opts?.usdToAccountRate);
       if (m === 0) return { value: '—' };
       if (m != null && m > 0) return formatMoneyField(m, row, opts);
       return { value: '—' };

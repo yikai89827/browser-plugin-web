@@ -6,9 +6,12 @@ import {
   roundFxRate,
   type FxRateSource,
 } from '../../../utils/fb/adsPanel/currencyExchange';
+import { extractUsdToAccountRateFromAccountRatio } from '../../../utils/fb/adsPanel/metaAccountCurrencyRatio';
 import { extractUsdToCurrencyRateFromPage } from '../../../utils/fb/adsPanel/metaPageFxRate';
+import { getCachedAccountFxRate } from './formattedDslCapture';
 import { sanitizeAdAccountRecordForDisplay } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
 import { fbControlLog } from '../../../utils/fbControlLog';
+import { enrichRecordWithFormattedDsl } from './formattedDslEnrich';
 
 const corePromises = new Map<string, Promise<FbAdAccountRecord | null>>();
 
@@ -51,27 +54,40 @@ export async function ensureCoreRecord(
       })) as { success?: boolean; payload?: { account?: FbAdAccountRecord } };
       if (synced.success) account = synced.payload?.account ?? null;
     }
-    return account ? sanitizeAdAccountRecordForDisplay(account) : null;
+    if (account) {
+      account = sanitizeAdAccountRecordForDisplay(account);
+      account = (await enrichRecordWithFormattedDsl(account, accountId)) ?? account;
+    }
+    return account;
   })();
 
   corePromises.set(cacheKey, p);
   return p;
 }
 
-export async function fetchUsdToAccountRate(currency: string): Promise<number> {
+export async function fetchUsdToAccountRate(
+  currency: string,
+  accountId?: string
+): Promise<number> {
   const ccy = currency.trim().toUpperCase();
   if (ccy === 'USD') return 1;
-  const pageRate = extractUsdToCurrencyRateFromPage(ccy);
-  fbControlLog('content:fx', '页面解析 usd_exchange_inverse', {
+  const id = accountId?.replace(/^act_/i, '').trim();
+  const pageRatio =
+    (id ? getCachedAccountFxRate(id) : undefined) ??
+    extractUsdToAccountRateFromAccountRatio(ccy, id);
+  const pageInverse = extractUsdToCurrencyRateFromPage(ccy);
+  fbControlLog('content:fx', '页面汇率解析', {
     currency: ccy,
-    pageRate: pageRate ?? null,
-    pageHit: pageRate != null,
+    accountId: id || null,
+    pageRatio: pageRatio ?? null,
+    pageInverse: pageInverse ?? null,
   });
   const res = (await browser.runtime.sendMessage({
     action: 'FB_CONTROL_GET_USD_EXCHANGE_RATE',
     data: {
       currency: ccy,
-      ...(pageRate != null ? { pageUsdToCurrencyRate: pageRate } : {}),
+      ...(pageRatio != null ? { pageAccountCurrencyRatioToUsd: pageRatio } : {}),
+      ...(pageInverse != null ? { pageUsdExchangeInverse: pageInverse } : {}),
     },
   })) as {
     success?: boolean;
@@ -81,7 +97,9 @@ export async function fetchUsdToAccountRate(currency: string): Promise<number> {
   if (!res?.success || res.payload?.rate == null) {
     throw new Error(res?.error || '汇率获取失败');
   }
-  const source = res.payload.source ?? (pageRate != null ? 'meta-page' : 'er-api');
+  const source =
+    res.payload.source ??
+    (pageRatio != null ? 'meta-account-ratio' : pageInverse != null ? 'meta-page' : 'er-api');
   const raw = res.payload.rate;
   fbControlLog('content:fx', '汇率已就绪（悬浮窗）', {
     currency: ccy,
@@ -93,8 +111,14 @@ export async function fetchUsdToAccountRate(currency: string): Promise<number> {
   if (raw != null && Number.isFinite(raw) && raw > 0) {
     void browser.runtime.sendMessage({
       action: 'FB_CONTROL_CACHE_PAGE_FX_RATE',
-      data: { currency: ccy, rate: pageRate ?? raw },
+      data: { currency: ccy, rate: pageRatio ?? pageInverse ?? raw },
     });
+    if (id) {
+      void browser.runtime.sendMessage({
+        action: 'FB_CONTROL_CACHE_ACCOUNT_FX_RATE',
+        data: { accountId: id, rate: raw, currency: ccy },
+      });
+    }
   }
   return raw;
 }

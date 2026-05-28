@@ -9,7 +9,9 @@ export function isNotBusinessScopedUserError(message: string): boolean {
   return (
     /subcode\s*=\s*1752100/i.test(t) ||
     /不属于业务账户范畴/i.test(t) ||
-    /business user or system user/i.test(t)
+    /business user or system user/i.test(t) ||
+    /自动换算为商务用户编号/i.test(t) ||
+    /请确认对方已加入\s*BM/i.test(t)
   );
 }
 

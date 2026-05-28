@@ -1,12 +1,21 @@
-import { browser } from 'wxt/browser';
 import path from 'path';
 import { defineConfig } from 'wxt';
-import tsconfigPaths from 'vite-tsconfig-paths'
-import { hostPermissions } from './config/wxtConfig'
+import tsconfigPaths from 'vite-tsconfig-paths';
 import { loadEnv } from 'vite';
+import { parseAdminUrlForManifest } from './config/adminUrlEnv';
 
-const httpsRE = /^https:\/\//;
-const env = loadEnv('development', process.cwd(), 'WXT_');
+/** WXT 解析配置时尚未注入 mode，从 CLI 推断（与 wxt COMMAND_MODES 一致） */
+function resolveWxtConfigMode(): string {
+  const args = process.argv;
+  const idx = args.indexOf('--mode');
+  if (idx >= 0 && args[idx + 1]) return args[idx + 1];
+  if (args.some((a) => a === 'build' || a === 'zip')) return 'production';
+  return 'development';
+}
+
+const mode = resolveWxtConfigMode();
+const env = loadEnv(mode, process.cwd(), 'WXT_');
+const adminPatterns = parseAdminUrlForManifest(env.WXT_ADMIN_URL);
 
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
@@ -21,66 +30,53 @@ export default defineConfig({
     'import.meta.env.WXT_API_TIMEOUT': JSON.stringify(env.WXT_API_TIMEOUT),
     'import.meta.env.WXT_API_HEARTBEAT': JSON.stringify(env.WXT_API_HEARTBEAT),
   },
-  // builder: {
-  //   rollupOptions: {
-  //     output: {
-  //       manualChunks: (id) => {
-  //         console.log('manualChunks',id)
-  //       }
-  //     }
-  //   }
-  // },
-  plugins: [tsconfigPaths({
-    tsconfigPath: path.resolve(__dirname, './tsconfig.json')
-  })],
+  plugins: [
+    tsconfigPaths({
+      tsconfigPath: path.resolve(__dirname, './tsconfig.json'),
+    }),
+  ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './utils')
-    }
+      '@': path.resolve(__dirname, './utils'),
+    },
   },
-  manifest: () => {
-    return {
-      version: '3',
-      name: '账户管理',
-      host_permissions: [
-        "*://*.facebook.com/*",
-        "https://api.frankfurter.app/*",
-        "https://open.er-api.com/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*",
-        "http://192.168.110.77/*",
+  manifest: () => ({
+    version: '3',
+    name: '账户管理',
+    host_permissions: [
+      '*://*.facebook.com/*',
+      'https://api.frankfurter.app/*',
+      'https://open.er-api.com/*',
+      ...adminPatterns.hostPermissions,
+    ],
+    permissions: [
+      'scripting',
+      'storage',
+      'webNavigation',
+      'proxy',
+      'webRequest',
+      'declarativeNetRequest',
+      'activeTab',
+      'cookies',
+      'offscreen',
+      'alarms',
+      'downloads',
+      'tabs',
+    ],
+    declarative_net_request: {
+      rule_resources: [
+        {
+          id: 'ruleset',
+          path: 'rules.json',
+          enabled: true,
+        },
       ],
-      permissions: [
-        "scripting",
-        "storage",
-        'webNavigation',
-        "proxy",
-        "webRequest",
-        "declarativeNetRequest",
-        "activeTab",
-        "cookies",
-        "offscreen",
-        "alarms",
-        "downloads",
-        "tabs",
-        // "tabGroups",
-        // "downloads.shelf",
-        // "downloads.open"
-        // "debugger",
-        // "unlimitedStorage",
-      ],
-      declarative_net_request: {
-        rule_resources: [{
-          id: "ruleset",
-          path: "rules.json",
-          enabled: true
-        }]
-      },
-      background: {
-        type: "module"
-      },
-
-      web_accessible_resources: [{
+    },
+    background: {
+      type: 'module',
+    },
+    web_accessible_resources: [
+      {
         resources: [
           'fb-control-token-probe.js',
           'icon/*.png',
@@ -92,43 +88,24 @@ export default defineConfig({
         matches: [
           '*://*.facebook.com/*',
           '*://*.business.facebook.com/*',
-          'http://localhost/*',
-          'http://127.0.0.1/*',
-          'http://192.168.110.77/*',
+          ...adminPatterns.webAccessibleMatches,
         ],
         use_dynamic_url: true,
-      }],
-      // 使用commands代替部分action操作
-      commands: {
-        _execute_action: {
-          suggested_key: {
-            default: "Ctrl+Shift+F",
-            mac: "Command+Shift+F"
-          }
-        }
       },
-      action: {
-        default_popup: "popup.html"
+    ],
+    commands: {
+      _execute_action: {
+        suggested_key: {
+          default: 'Ctrl+Shift+F',
+          mac: 'Command+Shift+F',
+        },
       },
-      externally_connectable: {
-        matches: [
-          'http://localhost:*/*',
-          'http://127.0.0.1:*/*',
-          'http://192.168.110.77:*/*',
-        ],
-      },
-      // "content_security_policy": {
-      //   "extension_pages": "script-src 'self' 'unsafe-eval'; connect-src http://localhost:* http://127.0.0.1:* http://192.168.*:*"
-      // }
-      // externally_connectable: {
-      //   matches: ['*://*/*']
-      // },
-      // "content_security_policy": {
-      //   "extension_pages": "script-src 'self'; object-src 'self'"
-      // },
-      // content_security_policy: {// 安全策略 限制脚本加载资源和请求地址
-      //   extension_pages: "script-src 'self'; object-src 'self'; connect-src https://your-api-domain.com"
-      // }
-    }
-  },
+    },
+    action: {
+      default_popup: 'popup.html',
+    },
+    externally_connectable: {
+      matches: adminPatterns.externallyConnectable,
+    },
+  }),
 });

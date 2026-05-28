@@ -89,8 +89,10 @@ const hiddenAdminUi = reactive<Record<string, 'loading' | 'error'>>({});
 const hiddenAdminErrors = reactive<Record<string, string>>({});
 /** 隐藏管理员详情缓存（加载成功后供点击人数打开抽屉） */
 const hiddenAdminDetailsCache = reactive<Record<string, AdAccountAssignedUserDetail[]>>({});
-/** 1 USD = ? 账户币种（表格双行金额折算） */
+/** 1 USD = ? 账户币种（按币种，表格双行金额折算） */
 const fxUsdToAccount = reactive<Record<string, number>>({});
+/** 1 USD = ? 账户币种（按广告账户 ID，优先 Meta account_currency_ratio_to_usd） */
+const fxUsdToAccountByAccountId = reactive<Record<string, number>>({});
 /** 汇率来源（与 fxUsdToAccount 同键，供批量限额换算日志） */
 const fxUsdToAccountSource = reactive<Record<string, string>>({});
 
@@ -854,26 +856,52 @@ function formatMoneyishRaw(raw: string | undefined, currency?: string): string {
   return s;
 }
 
+function accountIdKey(accountId: string): string {
+  return String(accountId).replace(/^act_/i, '').trim();
+}
+
 function fxRateForRow(row: FbAdAccountRecord): number | null {
   const ccy = (row.currency || 'USD').trim().toUpperCase();
   if (ccy === 'USD') return 1;
+  const id = accountIdKey(row.accountId);
+  if (row.accountCurrencyRatioToUsd != null && row.accountCurrencyRatioToUsd > 0) {
+    return row.accountCurrencyRatioToUsd;
+  }
+  const byAcct = fxUsdToAccountByAccountId[id];
+  if (byAcct != null && byAcct > 0) return byAcct;
   const r = fxUsdToAccount[ccy];
   return r != null && r > 0 ? r : null;
 }
 
-async function ensureFxRate(currency?: string): Promise<number | null> {
+async function ensureFxRate(
+  currency?: string,
+  accountId?: string,
+  pageRatioFromRecord?: number
+): Promise<number | null> {
   const ccy = (currency || 'USD').trim().toUpperCase();
   if (ccy === 'USD') return 1;
+  const id = accountId ? accountIdKey(accountId) : '';
+  if (pageRatioFromRecord != null && pageRatioFromRecord > 0) {
+    if (id) fxUsdToAccountByAccountId[id] = pageRatioFromRecord;
+    fxUsdToAccount[ccy] = pageRatioFromRecord;
+    return pageRatioFromRecord;
+  }
+  if (id && fxUsdToAccountByAccountId[id] != null) return fxUsdToAccountByAccountId[id];
   if (fxUsdToAccount[ccy] != null) return fxUsdToAccount[ccy];
   if (!extensionConfigured()) return null;
   try {
-    const res = await fetchUsdExchangeRateFromExtension(ccy);
+    const res = await fetchUsdExchangeRateFromExtension(ccy, {
+      accountId: id || undefined,
+      pageAccountCurrencyRatioToUsd: pageRatioFromRecord,
+    });
     if (res.success && res.payload?.rate != null && res.payload.rate > 0) {
       fxUsdToAccount[ccy] = res.payload.rate;
+      if (id) fxUsdToAccountByAccountId[id] = res.payload.rate;
       if (res.payload.source) fxUsdToAccountSource[ccy] = res.payload.source;
       const src = res.payload.source as FxRateSource | undefined;
       console.info('[fbControl:site:fx] 汇率已就绪（账户管理页）', {
         currency: ccy,
+        accountId: id || null,
         source: src ?? 'unknown',
         sourceLabel: src ? fxRateSourceLabel(src) : '未知',
         rawRate: res.payload.rate,
@@ -888,14 +916,12 @@ async function ensureFxRate(currency?: string): Promise<number | null> {
 }
 
 async function prefetchFxRates(rows: FbAdAccountRecord[]) {
-  const ccys = [
-    ...new Set(
-      rows
-        .map((r) => (r.currency || '').trim().toUpperCase())
-        .filter((c) => c && c !== 'USD')
-    ),
-  ];
-  await Promise.all(ccys.map((c) => ensureFxRate(c)));
+  const nonUsd = rows.filter((r) => (r.currency || 'USD').trim().toUpperCase() !== 'USD');
+  await Promise.all(
+    nonUsd.map((r) =>
+      ensureFxRate(r.currency, r.accountId, r.accountCurrencyRatioToUsd)
+    )
+  );
 }
 
 function legacyMoneyDisplay(row: FbAdAccountRecord, text: string): MoneyDisplay {

@@ -50,12 +50,29 @@ const listSearch = ref('');
 const results = ref<PixelOpResultRow[]>([]);
 
 const isCreate = computed(() => props.preset?.kind === 'batch_create');
+const isBmShare = computed(() => props.preset?.kind === 'share_between_bm');
 const isCreateAllBm = computed(() => isCreate.value && createMode.value === 'bm_all_accounts');
 const isCreateSingleAccount = computed(() => isCreate.value && createMode.value === 'single_account');
-const isListStep = computed(() => !isCreate.value);
+const isListStep = computed(() => !isCreate.value && !isBmShare.value);
+const targetBmIdsText = ref('');
 const isDelete = computed(() => {
   const k = props.preset?.kind;
   return k === 'delete_ad_account' || k === 'delete_partner' || k === 'delete_admin';
+});
+
+const emptyListHint = computed(() => {
+  if (!isDelete.value || step2Error.value || loadStep2.value || checklist.value.length) return '';
+  const k = props.preset?.kind;
+  if (k === 'delete_partner') {
+    return '暂无可删除的合作伙伴 BM。自有像素若未通过「BM间分享」分享给其他商务管理平台，此处为空属正常。';
+  }
+  if (k === 'delete_admin') {
+    return '暂无可删除的人员。若从未通过本工具「分配给人员」或 Meta 后台单独授权，像素级与资产组合权限列表可能均为空。';
+  }
+  if (k === 'delete_ad_account') {
+    return '暂无可删除的广告账户关联。';
+  }
+  return isDelete.value ? '暂无可删除项' : '暂无可选项';
 });
 
 const filteredChecklist = computed(() => {
@@ -78,6 +95,22 @@ const allFilteredChecked = computed(() => {
   return list.every((item) => checkedIds.value[item.id]);
 });
 
+function parseTargetBmIds(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of text.split(/[\r\n,，;；]+/)) {
+    const m = line.match(/\d{5,}/g);
+    if (!m) continue;
+    for (const id of m) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+  }
+  return out;
+}
+
 const confirmDisabled = computed(() => {
   if (running.value) return true;
   if (!props.preset) return true;
@@ -89,6 +122,7 @@ const confirmDisabled = computed(() => {
     if (isCreateSingleAccount.value && !selectedAdAccountId.value) return true;
     return false;
   }
+  if (isBmShare.value) return !parseTargetBmIds(targetBmIdsText.value).length;
   const any = Object.values(checkedIds.value).some(Boolean);
   return !any;
 });
@@ -175,6 +209,7 @@ function resetForm() {
   checklist.value = [];
   checkedIds.value = {};
   listSearch.value = '';
+  targetBmIdsText.value = '';
   adAccounts.value = [];
   selectedAdAccountId.value = '';
   loadAdAccounts.value = false;
@@ -234,7 +269,9 @@ async function onConfirm() {
       pixelId: props.context?.pixelId || '',
       pixelName: props.context?.pixelName,
       namePrefix: namePrefix.value.trim(),
-      selectedTargetIds: selectedTargetIds(),
+      selectedTargetIds: isBmShare.value
+        ? parseTargetBmIds(targetBmIdsText.value)
+        : selectedTargetIds(),
       useDefaultInterval: useDefaultInterval.value,
     };
     results.value = await executePixelDrawerFromSite(payload);
@@ -375,6 +412,25 @@ async function onConfirm() {
                   </div>
                 </template>
 
+                <template v-else-if="isBmShare">
+                  <div class="pod-step">
+                    <span class="pod-step-badge">2</span>
+                    <div class="pod-step-body">
+                      <div class="pod-step-label">{{ preset.step2Label }}</div>
+                      <p v-if="preset.step2Hint" class="pod-hint muted small">{{ preset.step2Hint }}</p>
+                      <p v-if="context" class="pod-hint muted small">
+                        当前像素：{{ context.pixelName || context.pixelId }}（{{ context.pixelId }}）
+                      </p>
+                      <textarea
+                        v-model="targetBmIdsText"
+                        class="pod-textarea"
+                        rows="6"
+                        placeholder="输入 BM ID，回车换行"
+                      />
+                    </div>
+                  </div>
+                </template>
+
                 <template v-else-if="isListStep">
                   <div class="pod-step">
                     <span class="pod-step-badge">2</span>
@@ -416,7 +472,7 @@ async function onConfirm() {
                           </label>
                         </div>
                       </template>
-                      <p v-else-if="!step2Error" class="muted small">{{ isDelete ? '暂无可删除项' : '暂无可选项' }}</p>
+                      <p v-else-if="!step2Error" class="muted small">{{ emptyListHint }}</p>
                     </div>
                   </div>
                 </template>
@@ -783,6 +839,24 @@ async function onConfirm() {
   font-family: inherit;
 }
 .pod-input:focus {
+  outline: none;
+  border-color: #1877f2;
+}
+.pod-textarea {
+  width: 100%;
+  min-height: 120px;
+  margin-top: 0.5rem;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-input-border, #4b5563);
+  background: var(--fb-modal-input-bg, #2d2d2d);
+  color: var(--fb-input-text, #e5e7eb);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+.pod-textarea:focus {
   outline: none;
   border-color: #1877f2;
 }

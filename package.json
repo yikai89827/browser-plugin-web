@@ -6,18 +6,21 @@
   "type": "module",
   "scripts": {
     "dev": "wxt --port 5050",
-    "test": "wxt --mode test",
+    "test": "wxt --mode test --port 5050",
     "uat": "wxt --mode uat",
     "prod": "wxt --mode prod",
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",
+    "build:test": "wxt build --mode test",
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefoox": "wxt zip -b firefox",
     "compile": "vue-tsc --noEmit",
     "postinstall": "wxt prepare",
-    "site:dev": "cd site && vite --host 0.0.0.0 --port 3000",
-    "site:build": "cd site && vite build --host 0.0.0.0 --port 3000"
+    "site:dev": "cd site && vite --mode development --host 0.0.0.0 --port 3000",
+    "site:test": "cd site && vite --mode test --host 0.0.0.0 --port 3000",
+    "site:build": "cd site && vite build --mode development",
+    "site:build:test": "cd site && vite build --mode test"
   },
   "dependencies": {
     "@faker-js/faker": "^9.8.0",

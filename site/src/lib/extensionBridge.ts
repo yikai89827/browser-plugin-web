@@ -373,17 +373,33 @@ export type UsdExchangeRatePayload = {
   effectiveRate?: number;
 };
 
-/** 1 USD = ? 目标币种（优先 Meta Graph currency，否则 ER API / Frankfurter） */
+export type FetchUsdExchangeRateOptions = {
+  /** 广告账户 ID：优先使用该户缓存的 Meta account_currency_ratio_to_usd */
+  accountId?: string;
+  /** 记录或页面已解析的 1 USD = ? 本币（与 fbspider 一致） */
+  pageAccountCurrencyRatioToUsd?: number;
+};
+
+/** 1 USD = ? 目标币种（优先 Meta account_currency_ratio_to_usd，否则 Graph / ER API） */
 export async function fetchUsdExchangeRateFromExtension(
-  currency: string
+  currency: string,
+  options?: FetchUsdExchangeRateOptions
 ): Promise<ExtensionResponse<UsdExchangeRatePayload>> {
   const ccy = currency.trim().toUpperCase();
   if (!ccy) {
     return { success: false, error: 'currency required' };
   }
+  const accountId = options?.accountId?.replace(/^act_/i, '').trim();
+  const ratio = options?.pageAccountCurrencyRatioToUsd;
   return sendToExtension<UsdExchangeRatePayload>({
     action: 'FB_CONTROL_GET_USD_EXCHANGE_RATE',
-    data: { currency: ccy },
+    data: {
+      currency: ccy,
+      ...(accountId ? { accountId } : {}),
+      ...(ratio != null && Number.isFinite(ratio) && ratio > 0
+        ? { pageAccountCurrencyRatioToUsd: ratio }
+        : {}),
+    },
   });
 }
 

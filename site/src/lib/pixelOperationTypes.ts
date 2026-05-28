@@ -73,6 +73,18 @@ export function pixelDrawerContextFromRows(rows: FbPixelShareRecord[]): PixelDra
 export function getPixelDrawerPreset(kind: PixelDrawerKind, ctx?: PixelDrawerContext | null): PixelDrawerPreset {
   const bm = ctx?.bmId || '—';
   switch (kind) {
+    case 'share_between_bm':
+      return {
+        kind,
+        headerTitle: 'BM之间分享像素',
+        step1Notice:
+          `①当前像素所在 BM 为 ${bm}（须与业主 BM 相同，表格「分享」「BM分享」为 ✓）。\n` +
+          `②将向目标 BM 发起像素分享（Graph agencies）；须使用本 BM 管理员 token。\n` +
+          `③若双方 BM 尚无合作关系，对方须在商务管理平台接受待处理请求后分享才生效。\n` +
+          `④每行填写一个目标 BM 数字 ID，勿与当前 BM 相同。`,
+        step2Label: '输入你要分享的 BM ID',
+        step2Hint: '输入 BM ID，回车换行；将使用 ANALYZE、ADVERTISE 权限分享给目标商务管理平台',
+      };
     case 'assign_to_account':
       return {
         kind,
@@ -115,7 +127,8 @@ export function getPixelDrawerPreset(kind: PixelDrawerKind, ctx?: PixelDrawerCon
         headerTitle: '删除合作伙伴',
         step1Notice: `当前操作的BM为${bm}，如需删除其他BM的合作伙伴，需分别执行。`,
         step2Label: '选择你需要删除的合作伙伴账号ID',
-        step2Hint: '列表来自Facebook 像素 shared_agencies',
+        step2Hint:
+          '列表来自 Facebook 像素 shared_agencies / agencies；仅包含已分享给其他 BM 的合作伙伴，自有未分享像素通常为空',
       };
     case 'delete_admin':
       return {
@@ -123,7 +136,8 @@ export function getPixelDrawerPreset(kind: PixelDrawerKind, ctx?: PixelDrawerCon
         headerTitle: '删除管理员',
         step1Notice: `当前操作的BM为${bm}，如需删除其他BM的管理员，需分别执行。`,
         step2Label: '选择你要删除的管理员账号ID',
-        step2Hint: '列表来自Facebook 像素 assigned_users',
+        step2Hint:
+          '列表来自像素 assigned_users 及 BM 资产组合内对该像素的 assigned_users（与「分配给人员」路径一致）',
       };
     default:
       return {

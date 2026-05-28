@@ -1,5 +1,6 @@
 import type { FbAdAccountRecord } from '../../../interfaces/fbControl';
 import { fxRateForMoneyConversion } from '../adsPanel/currencyExchange';
+import { formattedDslToMinor } from '../adsPanel/metaFormattedDsl';
 import {
   currencyOffset,
   resolveSpendCapMinorForRecord,
@@ -51,6 +52,25 @@ export function accountMinorToUsdMinor(
   return Math.round((majorAcct / rate) * 100);
 }
 
+/** formatted_dsl 折算约 $45–$55 时视为「日限额」展示值（与 fbspider 部分账户一致） */
+function formattedDslMinorInDailyShowBand(
+  row: FbAdAccountRecord,
+  usdToAccountRate: number
+): number | null {
+  const raw = row.formattedDsl?.trim();
+  if (!raw) return null;
+  const fromDsl = formattedDslToMinor(raw, row.currency);
+  if (fromDsl == null || fromDsl <= 0) return null;
+  const usdMinor = accountMinorToUsdMinor(fromDsl, row.currency || 'USD', usdToAccountRate);
+  if (
+    usdMinor >= DAILY_LIMIT_SHOW_USD_MINOR_MIN &&
+    usdMinor <= DAILY_LIMIT_SHOW_USD_MINOR_MAX
+  ) {
+    return fromDsl;
+  }
+  return null;
+}
+
 /** USD 美分 → 账户最小单位 */
 export function usdMinorToAccountMinor(
   usdMinor: number,
@@ -78,6 +98,8 @@ export function resolveDailySpendLimitMinor(
   const raw = row.minDailyBudgetMinor;
 
   if (hasMetaPanelSpendingLimitAccount(row) && ccy !== 'USD' && rate != null) {
+    const fromDsl = formattedDslMinorInDailyShowBand(row, rate);
+    if (fromDsl != null) return fromDsl;
     if (raw != null && raw > 0) {
       const usdMinor = accountMinorToUsdMinor(raw, ccy, rate);
       if (
@@ -128,12 +150,22 @@ export function resolvePanelSpendingLimitMinor(
 }
 
 /**
- * 悬浮窗「临时限额」：Meta Graph `spend_cap`（账户花费上限）。
- * 新户常见 raw=1 → 最小货币单位（CNY ¥0.01、USD $0.01），非用户手设。
+ * 悬浮窗「临时限额」：优先 Meta 内部 `formatted_dsl`（参考 fbspider）；
+ * 回退 Graph `spend_cap`（新户常见 raw=1 → ¥0.01 / $0.01）。
  */
 export function resolveTemporarySpendLimitMinor(
-  row: FbAdAccountRecord
+  row: FbAdAccountRecord,
+  usdToAccountRate?: number | null
 ): number | null | undefined {
+  if (row.formattedDsl?.trim()) {
+    const fromDsl = formattedDslToMinor(row.formattedDsl, row.currency);
+    if (fromDsl != null && fromDsl > 0) return fromDsl;
+    if (fromDsl === 0) return 0;
+  }
+  if (hasMetaPanelSpendingLimitAccount(row)) {
+    const daily = resolveDailySpendLimitMinor(row, usdToAccountRate);
+    if (daily != null && daily > 0) return daily;
+  }
   const cap = resolveSpendCapMinorForRecord(row);
   if (cap != null && cap > 0) return cap;
   const rawStr = row.spendingLimit?.trim();

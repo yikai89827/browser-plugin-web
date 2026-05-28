@@ -10,6 +10,10 @@ import {
 import { sanitizeAdAccountRecordForDisplay } from '../../../utils/fb/adAccount/adAccountDisplayMaps';
 import { fbControlError, fbControlLog } from '../../../utils/fbControlLog';
 import { detectSelectedAccountId, watchSelectedAccount } from './detectSelectedAccount';
+import {
+  enrichRecordWithFormattedDsl,
+  refreshMetaBillingOnPanelOpen,
+} from './formattedDslEnrich';
 import { fetchHiddenAdminCount, fetchUsdToAccountRate } from './panelFieldLoaders';
 
 const ROOT_ID = 'fb-control-ads-panel-root';
@@ -281,6 +285,8 @@ export class AdsPanelWidget {
   private panelPos = { left: 0, top: 0 };
   private unwatch: (() => void) | null = null;
   private timeTimer: ReturnType<typeof setInterval> | null = null;
+  /** 临时限额异步刷新序号，用于丢弃过期响应 */
+  private temporaryLimitFetchGen = 0;
 
   mount(): void {
     if (document.getElementById(ROOT_ID)) return;
@@ -420,7 +426,7 @@ export class AdsPanelWidget {
       this.ccyConvertedEl.textContent = '';
     }
     try {
-      this.usdToAccountRate = await fetchUsdToAccountRate(acct);
+      this.usdToAccountRate = await fetchUsdToAccountRate(acct, this.record?.accountId);
       this.updateConversionPreview();
     } catch {
       this.usdToAccountRate = null;
@@ -640,10 +646,12 @@ export class AdsPanelWidget {
 
       account = cached.payload?.account ?? null;
       if (account) account = sanitizeAdAccountRecordForDisplay(account);
+      if (account) account = (await enrichRecordWithFormattedDsl(account, id)) ?? account;
 
       if (!account && autoFetchIfMissing) {
         this.renderBodyMessage('正在获取账户数据…', false);
         account = await this.fetchAccountFromGraph(id);
+        if (account) account = (await enrichRecordWithFormattedDsl(account, id)) ?? account;
       }
 
       this.record = account;
@@ -655,9 +663,40 @@ export class AdsPanelWidget {
       }
 
       await this.renderAccount(account);
+      if (this.open) void this.refreshMetaBillingAsync();
     } catch (e) {
       fbControlError('content:ads-panel', 'loadAccount', e);
       this.renderBodyMessage(e instanceof Error ? e.message : String(e), true);
+    }
+  }
+
+  /** 每次展开面板后拉取最新 formatted_dsl 与 Meta 汇率 */
+  private async refreshMetaBillingAsync(): Promise<void> {
+    const id = this.accountId;
+    const base = this.record;
+    if (!id || !base || !this.open) return;
+
+    const gen = ++this.temporaryLimitFetchGen;
+    try {
+      const { account: updated, usdToAccountRate: freshFx } =
+        await refreshMetaBillingOnPanelOpen(base, id);
+      if (gen !== this.temporaryLimitFetchGen || !this.open || this.record?.accountId !== id) {
+        return;
+      }
+      const dslChanged = updated.formattedDsl !== base.formattedDsl;
+      const fxChanged =
+        freshFx != null &&
+        freshFx > 0 &&
+        (this.usdToAccountRate == null || Math.abs(freshFx - this.usdToAccountRate) > 1e-6);
+      if (!dslChanged && !fxChanged) return;
+      this.record = updated;
+      if (fxChanged) {
+        this.usdToAccountRate = freshFx;
+        this.updateConversionPreview();
+      }
+      this.refreshAccountRows(updated);
+    } catch (e) {
+      fbControlError('content:ads-panel', 'refreshMetaBilling', e);
     }
   }
 

@@ -17,6 +17,7 @@ import {
   type PixelDrawerContext,
   type PixelDrawerKind,
 } from '../lib/pixelOperationTypes';
+import { isPixelSelfOwnedInBm } from '../lib/pixelShareDisplay';
 import {
   fetchPixelRelationCountFromSite,
   type PixelRelationCountKind,
@@ -270,12 +271,29 @@ async function copyBmLine(row: FbPixelShareRecord) {
 }
 
 function shareCellClass(ok?: boolean) {
-  return ok === true ? 'share-ico share-ico--ok' : 'share-ico share-ico--bad';
+  if (ok === true) return 'share-ico share-ico--ok';
+  if (ok === false) return 'share-ico share-ico--bad';
+  return 'share-ico share-ico--na';
 }
 
-function shareMark(ok?: boolean) {
-  return ok === true ? '✓' : '✗';
+/** 参考插件：分享 / BM分享 仅在本 BM 自有（所属 BM = 业主 BM）时为 ✓ */
+function sharePermissionMark(row: FbPixelShareRecord) {
+  return isPixelSelfOwnedInBm(row) ? '✓' : '✗';
 }
+
+function sharePermissionTip(row: FbPixelShareRecord) {
+  if (isPixelSelfOwnedInBm(row)) {
+    return '本 BM 自有像素（所属 BM 与业主 ID 一致），可进行 BM 间分享';
+  }
+  const bm = row.bmId || '—';
+  const owner = row.ownerId || '—';
+  return `非本 BM 创建：所属 BM ${bm} ≠ 业主 ${owner}（通常为在他方 BM 资产下仅有管理员权限）`;
+}
+
+const selectedCanBmShare = computed(() => {
+  if (selectedRows.value.length !== 1) return false;
+  return isPixelSelfOwnedInBm(selectedRows.value[0]);
+});
 
 async function loadPixelRelationCount(row: FbPixelShareRecord, kind: PixelRelationCountKind) {
   const key = pixelCountKey(row.id, kind);
@@ -367,6 +385,11 @@ function openPixelDrawer(kind: PixelDrawerKind) {
   if (kind !== 'batch_create') {
     if (selectedRows.value.length !== 1) {
       errorMsg.value = '请仅勾选一行像素后再操作';
+      return;
+    }
+    if (kind === 'share_between_bm' && !isPixelSelfOwnedInBm(selectedRows.value[0])) {
+      errorMsg.value =
+        '仅支持对本 BM 自有的像素做 BM 间分享（表格「分享」「BM分享」须为 ✓，即所属 BM 与业主 ID 一致）';
       return;
     }
     const ctx = pixelDrawerContextFromRows(selectedRows.value);
@@ -516,7 +539,17 @@ onUnmounted(() => {
         <div class="batch-cluster">
           <span class="batch-meta">已选 <strong>{{ selectedCount }}</strong> 条</span>
           <div class="batch-btns">
-            <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="batchPlaceholder('BM间分享')">
+            <button
+              type="button"
+              class="btn batch-btn"
+              :disabled="!selectedCanBmShare"
+              :title="
+                selectedCanBmShare
+                  ? '将本 BM 自有像素分享给其他 BM'
+                  : '请勾选一行且「分享」「BM分享」均为 ✓ 的像素（所属 BM = 业主）'
+              "
+              @click="openPixelDrawer('share_between_bm')"
+            >
               BM间分享
             </button>
             <button type="button" class="btn batch-btn" :disabled="!selectedCount" @click="openPixelDrawer('assign_to_account')">
@@ -672,8 +705,18 @@ onUnmounted(() => {
                   >
                 </span>
               </th>
-              <th class="center col-share th-plain">分享</th>
-              <th class="center col-bmshare th-plain">BM分享</th>
+              <th
+                class="center col-share th-plain"
+                title="参考插件逻辑：✓=所属 BM 与业主 ID 一致（本 BM 自有，可 BM 间分享）；✗=仅在他方 BM 资产下管理"
+              >
+                分享
+              </th>
+              <th
+                class="center col-bmshare th-plain"
+                title="与「分享」列相同：✓=本 BM 自有像素；✗=非本 BM 创建"
+              >
+                BM分享
+              </th>
               <th
                 v-for="col in pixelCountColumnDefs"
                 :key="col.kind"
@@ -741,11 +784,15 @@ onUnmounted(() => {
                 </div>
               </td>
               <td class="center col-role">{{ dash(row.role) }}</td>
-              <td class="center col-share">
-                <span :class="shareCellClass(row.shareOk)">{{ shareMark(row.shareOk) }}</span>
+              <td class="center col-share" :title="sharePermissionTip(row)">
+                <span :class="shareCellClass(isPixelSelfOwnedInBm(row))">{{
+                  sharePermissionMark(row)
+                }}</span>
               </td>
-              <td class="center col-bmshare">
-                <span :class="shareCellClass(row.bmShareOk)">{{ shareMark(row.bmShareOk) }}</span>
+              <td class="center col-bmshare" :title="sharePermissionTip(row)">
+                <span :class="shareCellClass(isPixelSelfOwnedInBm(row))">{{
+                  sharePermissionMark(row)
+                }}</span>
               </td>
               <td
                 v-for="col in pixelCountColumnDefs"
@@ -1399,6 +1446,10 @@ tbody td.sticky-col {
 }
 .share-ico--bad {
   color: #f87171;
+}
+.share-ico--na {
+  color: #9ca3af;
+  font-weight: 500;
 }
 .pixel-table th,
 .pixel-table td {

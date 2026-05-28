@@ -1,6 +1,9 @@
 import type { PixelDrawerKind } from '../../../interfaces/fbControl';
 import { fbControlLog, fbControlWarn } from '../../fbControlLog';
-import { formatNotBusinessScopedUserHint } from '../adAccount/graphBusinessManagement';
+import {
+  formatNotBusinessScopedUserHint,
+  postBusinessPartnerAgency,
+} from '../adAccount/graphBusinessManagement';
 import { graphFetch } from '../graphExternalFetch';
 import { fetchMeBusinessesFromGraph } from './graphFetchBusinessPixels';
 import { redactUrlForLog } from '../tokenDebugLog';
@@ -138,21 +141,35 @@ async function addPixelToAssetGroup(
 /**
  * 解析可用于「分配给人员」的 BM 资产组合：已包含该像素，或 BM 仅有一个组合时自动把像素加入该组合。
  */
+/** 列出 BM 下已包含该像素的所有资产组合 id（只读，不自动加入像素） */
+async function listAssetGroupIdsContainingPixel(
+  accessToken: string,
+  businessId: string,
+  pixelId: string
+): Promise<string[]> {
+  const tokenEnc = encodeURIComponent(accessToken);
+  const path = `${businessId}/business_asset_groups?fields=id,name&limit=100&access_token=${tokenEnc}`;
+  const groups = await graphGetPaged(path);
+  const out: string[] = [];
+  for (const g of groups) {
+    const gid = normalizeGraphId(g.id);
+    if (!gid) continue;
+    if (await assetGroupContainsPixel(accessToken, gid, pixelId)) out.push(gid);
+  }
+  return out;
+}
+
 async function resolveAssetGroupForPixelPeopleAssign(
   accessToken: string,
   businessId: string,
   pixelId: string
 ): Promise<string | null> {
+  const existing = await listAssetGroupIdsContainingPixel(accessToken, businessId, pixelId);
+  if (existing.length) return existing[0];
+
   const tokenEnc = encodeURIComponent(accessToken);
   const path = `${businessId}/business_asset_groups?fields=id,name&limit=100&access_token=${tokenEnc}`;
   const groups = await graphGetPaged(path);
-  if (!groups.length) return null;
-
-  for (const g of groups) {
-    const gid = normalizeGraphId(g.id);
-    if (!gid) continue;
-    if (await assetGroupContainsPixel(accessToken, gid, pixelId)) return gid;
-  }
 
   if (groups.length === 1) {
     const gid = normalizeGraphId(groups[0].id);
@@ -324,25 +341,80 @@ export async function fetchPixelSharedAgencies(
 ): Promise<PixelChecklistItem[]> {
   const fields = encodeURIComponent('id,name');
   const tokenEnc = encodeURIComponent(accessToken);
-  const bizEnc = encodeURIComponent(businessId);
   const map = new Map<string, PixelChecklistItem>();
-  const paths = [
-    `${pixelId}/shared_agencies?fields=${fields}&business=${bizEnc}&limit=200&access_token=${tokenEnc}`,
-    `${pixelId}/agencies?fields=${fields}&business=${bizEnc}&limit=200&access_token=${tokenEnc}`,
-  ];
-  for (const path of paths) {
+  const bizIds = new Set<string>();
+  const bmNorm = normalizeGraphId(businessId);
+  if (bmNorm) bizIds.add(bmNorm);
+  const ownerBm = await fetchPixelOwnerBusinessId(accessToken, pixelId);
+  if (ownerBm) bizIds.add(ownerBm);
+
+  const mergeAgencyBatch = (batch: Record<string, unknown>[]) => {
+    mergeChecklistNodes(
+      map,
+      batch,
+      (node) => String(node.id ?? '').replace(/\D/g, '') || String(node.id ?? ''),
+      (node) => (typeof node.name === 'string' ? node.name : undefined)
+    );
+  };
+
+  const edges = ['shared_agencies', 'agencies'] as const;
+  for (const edge of edges) {
     try {
-      const batch = await graphGetPaged(path);
-      mergeChecklistNodes(map, batch, (node) => {
-        const id = String(node.id ?? '').replace(/\D/g, '') || String(node.id ?? '');
-        return id;
-      }, (node) => (typeof node.name === 'string' ? node.name : undefined));
+      const path = `${pixelId}/${edge}?fields=${fields}&limit=200&access_token=${tokenEnc}`;
+      mergeAgencyBatch(await graphGetPaged(path));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      fbControlWarn('fb:graph-pixel-ops', '拉取像素合作伙伴边失败', { path: path.split('?')[0], msg });
+      fbControlWarn('fb:graph-pixel-ops', '拉取像素合作伙伴边失败（无 business）', {
+        edge,
+        msg,
+      });
+    }
+    for (const bid of bizIds) {
+      try {
+        const bizEnc = encodeURIComponent(bid);
+        const path = `${pixelId}/${edge}?fields=${fields}&business=${bizEnc}&limit=200&access_token=${tokenEnc}`;
+        mergeAgencyBatch(await graphGetPaged(path));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        fbControlWarn('fb:graph-pixel-ops', '拉取像素合作伙伴边失败', { edge, businessId: bid, msg });
+      }
     }
   }
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
+}
+
+async function fetchAssetGroupAssignedUsersForPixel(
+  accessToken: string,
+  businessId: string,
+  pixelId: string
+): Promise<PixelChecklistItem[]> {
+  const map = new Map<string, PixelChecklistItem>();
+  const groupIds = await listAssetGroupIdsContainingPixel(accessToken, businessId, pixelId);
+  const fields = encodeURIComponent('id,name,email,pixel_roles');
+  const tokenEnc = encodeURIComponent(accessToken);
+  const bizEnc = encodeURIComponent(businessId);
+  for (const gid of groupIds) {
+    try {
+      const path = `${gid}/assigned_users?fields=${fields}&business=${bizEnc}&limit=200&access_token=${tokenEnc}`;
+      const batch = await graphGetPaged(path);
+      mergeChecklistNodes(
+        map,
+        batch,
+        (node) => String(node.id ?? '').replace(/\D/g, '') || String(node.id ?? ''),
+        (node) => {
+          const name = typeof node.name === 'string' ? node.name : undefined;
+          const email = typeof node.email === 'string' ? node.email : undefined;
+          const roles = Array.isArray(node.pixel_roles) ? node.pixel_roles.join(',') : '';
+          const suffix = roles ? ` [${roles}]` : '';
+          return (name || email || '') + suffix;
+        }
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      fbControlWarn('fb:graph-pixel-ops', '拉取资产组合 assigned_users 失败', { assetGroupId: gid, msg });
+    }
+  }
+  return [...map.values()];
 }
 
 export async function fetchPixelAssignedUsers(
@@ -350,18 +422,33 @@ export async function fetchPixelAssignedUsers(
   pixelId: string,
   businessId: string
 ): Promise<PixelChecklistItem[]> {
-  const fields = encodeURIComponent('id,name');
+  const map = new Map<string, PixelChecklistItem>();
+  const fields = encodeURIComponent('id,name,email');
   const tokenEnc = encodeURIComponent(accessToken);
   const bizEnc = encodeURIComponent(businessId);
-  const path = `${pixelId}/assigned_users?fields=${fields}&business=${bizEnc}&limit=200&access_token=${tokenEnc}`;
-  const batch = await graphGetPaged(path);
-  const map = new Map<string, PixelChecklistItem>();
-  mergeChecklistNodes(
-    map,
-    batch,
-    (node) => String(node.id ?? '').replace(/\D/g, '') || String(node.id ?? ''),
-    (node) => (typeof node.name === 'string' ? node.name : undefined)
-  );
+  try {
+    const path = `${pixelId}/assigned_users?fields=${fields}&business=${bizEnc}&limit=200&access_token=${tokenEnc}`;
+    const batch = await graphGetPaged(path);
+    mergeChecklistNodes(
+      map,
+      batch,
+      (node) => String(node.id ?? '').replace(/\D/g, '') || String(node.id ?? ''),
+      (node) => {
+        const name = typeof node.name === 'string' ? node.name : undefined;
+        const email = typeof node.email === 'string' ? node.email : undefined;
+        return name || email;
+      }
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    fbControlWarn('fb:graph-pixel-ops', '拉取像素 assigned_users 失败', msg);
+  }
+
+  const fromGroups = await fetchAssetGroupAssignedUsersForPixel(accessToken, businessId, pixelId);
+  for (const item of fromGroups) {
+    if (!map.has(item.id)) map.set(item.id, item);
+  }
+
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
 }
 
@@ -583,6 +670,237 @@ export async function deletePixelSharedAdAccounts(
   return results;
 }
 
+/** BM 间分享像素时授予目标 BM 的默认任务（Meta permitted_tasks） */
+const PIXEL_AGENCY_PERMITTED_TASKS = ['ANALYZE', 'UPLOAD', 'ADVERTISE'] as const;
+
+function formatPixelAgencyShareDetail(json: Record<string, unknown>): string {
+  const pending = json.pending_request_id ?? json.id;
+  if (pending != null && String(pending).trim()) {
+    return `分享请求已提交；若双方尚无 BM 合作关系，目标 BM 管理员须在商务管理平台接受（request: ${String(pending).trim()}）`;
+  }
+  if (json.success === true) {
+    return '已与目标 BM 建立像素分享';
+  }
+  return 'Graph 已接受分享请求';
+}
+
+function formatPixelBmShareError(message: string, pixelId: string, ownerBm: string): string {
+  let msg = message;
+  if (/Unsupported post request|does not support this operation/i.test(msg)) {
+    msg +=
+      '\n\n说明：Meta 拒绝了 POST 像素 agencies。常见原因：①当前 access_token 不是像素所属 BM 的「所有者」管理员（仅代理商 token 不可分享）；' +
+      `②像素 ${pixelId} 未真正归属 BM ${ownerBm}（仅在广告账户下创建时需先在商务管理平台认领）；③浏览器抓取的 token 无 business_management 写权限。` +
+      '建议：用像素所属 BM 管理员账号在 business.facebook.com 打开后重试，或先在后台手动分享一次。';
+  } else if (/permission|权限|code\s*=\s*10/i.test(msg)) {
+    msg += '\n\n说明：请确认 token 对像素所属 BM 具备管理权限，且含 business_management。';
+  }
+  return msg;
+}
+
+async function probeAdsPixelForShare(
+  accessToken: string,
+  pixelId: string
+): Promise<{ ok: boolean; ownerBusinessId?: string; error?: string }> {
+  const tokenEnc = encodeURIComponent(accessToken);
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}?fields=id,owner_business{id,name}&access_token=${tokenEnc}`;
+  try {
+    const res = await graphFetch(url, { method: 'GET' });
+    const json = (await res.json()) as {
+      id?: string;
+      owner_business?: { id?: string | number };
+      error?: { message?: string };
+    };
+    if (!res.ok || json.error) {
+      return { ok: false, error: json.error?.message || `HTTP ${res.status}` };
+    }
+    const ownerBusinessId =
+      json.owner_business?.id != null ? normalizeGraphId(json.owner_business.id) : undefined;
+    return { ok: true, ownerBusinessId };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function postPixelAgenciesShare(
+  accessToken: string,
+  pixelId: string,
+  targetBusinessId: string
+): Promise<Record<string, unknown>> {
+  const tasksJson = JSON.stringify([...PIXEL_AGENCY_PERMITTED_TASKS]);
+  const tokenEnc = encodeURIComponent(accessToken);
+  const targetEnc = encodeURIComponent(targetBusinessId);
+
+  const attempts: { label: string; run: () => Promise<Record<string, unknown>> }[] = [
+    {
+      label: 'form-body',
+      run: async () => {
+        const body = new URLSearchParams();
+        body.set('business', targetBusinessId);
+        body.set('permitted_tasks', tasksJson);
+        body.set('access_token', accessToken);
+        return graphFormPost(`${pixelId}/agencies`, body);
+      },
+    },
+    {
+      label: 'query-post',
+      run: async () => {
+        const path =
+          `${pixelId}/agencies?business=${targetEnc}&permitted_tasks=${encodeURIComponent(tasksJson)}&access_token=${tokenEnc}`;
+        const url = `https://graph.facebook.com/${GRAPH_VERSION}/${path}`;
+        const res = await graphFetch(url, { method: 'POST' });
+        const json = (await res.json()) as Record<string, unknown> & { error?: { message?: string } };
+        if (!res.ok || json.error) {
+          throw new Error(String(json.error?.message || `HTTP ${res.status}`));
+        }
+        return json;
+      },
+    },
+    {
+      label: 'shared-agencies-form',
+      run: async () => {
+        const body = new URLSearchParams();
+        body.set('business', targetBusinessId);
+        body.set('access_token', accessToken);
+        return graphFormPost(`${pixelId}/shared_agencies`, body);
+      },
+    },
+  ];
+
+  let lastErr = '分享请求失败';
+  for (const attempt of attempts) {
+    try {
+      const json = await attempt.run();
+      fbControlLog('fb:graph-pixel-ops', 'POST pixel agencies 成功', {
+        pixelId,
+        targetBusinessId,
+        attempt: attempt.label,
+      });
+      return json;
+    } catch (e: unknown) {
+      lastErr = e instanceof Error ? e.message : String(e);
+      fbControlWarn('fb:graph-pixel-ops', 'POST pixel agencies 尝试失败', {
+        attempt: attempt.label,
+        msg: lastErr,
+      });
+    }
+  }
+  throw new Error(lastErr);
+}
+
+/** 将自有像素分享给其他 BM（先建立 BM 合作关系，再 POST 像素 agencies） */
+export async function sharePixelWithAgencyBusinesses(
+  accessToken: string,
+  pixelId: string,
+  ownerBusinessId: string,
+  agencyBusinessIds: string[],
+  useDefaultInterval: boolean
+): Promise<PixelOpResultRow[]> {
+  const results: PixelOpResultRow[] = [];
+  const pid = normalizeGraphId(pixelId) || pixelId;
+
+  const probe = await probeAdsPixelForShare(accessToken, pid);
+  if (!probe.ok) {
+    const ownerHint = normalizeGraphId(ownerBusinessId) || ownerBusinessId;
+    for (const raw of agencyBusinessIds) {
+      results.push({
+        pixelId: pid,
+        targetId: normalizeGraphId(raw) || raw,
+        status: '失败',
+        detail: formatPixelBmShareError(
+          probe.error || '无法读取像素节点',
+          pid,
+          ownerHint
+        ),
+      });
+    }
+    return results;
+  }
+
+  const ownerNorm =
+    probe.ownerBusinessId || normalizeGraphId(ownerBusinessId) || ownerBusinessId;
+  const tableOwnerNorm = normalizeGraphId(ownerBusinessId);
+  if (tableOwnerNorm && probe.ownerBusinessId && tableOwnerNorm !== probe.ownerBusinessId) {
+    fbControlWarn('fb:graph-pixel-ops', '表格 BM 与像素 owner_business 不一致，以 Graph 为准', {
+      tableBm: tableOwnerNorm,
+      ownerBusiness: probe.ownerBusinessId,
+      pixelId: pid,
+    });
+  }
+
+  for (let i = 0; i < agencyBusinessIds.length; i++) {
+    const raw = agencyBusinessIds[i];
+    const bid = normalizeGraphId(raw);
+    if (!bid || !/^\d{5,}$/.test(bid)) {
+      results.push({
+        pixelId: pid,
+        targetId: raw || '—',
+        status: '失败',
+        detail: '无效的 BM ID',
+      });
+      continue;
+    }
+    if (bid === ownerNorm) {
+      results.push({
+        pixelId: pid,
+        targetId: bid,
+        status: '失败',
+        detail: '目标 BM 不能与像素所属 BM 相同',
+      });
+      continue;
+    }
+
+    try {
+      let bmLinkNote = '';
+      try {
+        const link = await postBusinessPartnerAgency(accessToken, ownerNorm, bid, [
+          'ADVERTISE',
+          'ANALYZE',
+        ]);
+        bmLinkNote = link.alreadyLinked
+          ? '双方 BM 合作关系已存在；'
+          : link.id
+            ? `已发起 BM 合作关系（${link.id}）；`
+            : '已发起 BM 合作关系；';
+      } catch (e: unknown) {
+        const linkMsg = e instanceof Error ? e.message : String(e);
+        if (!/already|exist|duplicate|已|重复|3989|3946/i.test(linkMsg)) {
+          fbControlWarn('fb:graph-pixel-ops', 'BM agencies 合作请求未成功（继续尝试分享像素）', linkMsg);
+          bmLinkNote = `BM 合作请求：${linkMsg}；`;
+        } else {
+          bmLinkNote = '双方 BM 合作关系已存在；';
+        }
+      }
+
+      const json = await postPixelAgenciesShare(accessToken, pid, bid);
+      results.push({
+        pixelId: pid,
+        targetId: bid,
+        status: '成功',
+        detail: bmLinkNote + formatPixelAgencyShareDetail(json),
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/duplicated|already belongs|已存在|3989|3946/i.test(msg)) {
+        results.push({
+          pixelId: pid,
+          targetId: bid,
+          status: '成功',
+          detail: '目标 BM 已拥有该像素分享关系',
+        });
+      } else {
+        results.push({
+          pixelId: pid,
+          targetId: bid,
+          status: '失败',
+          detail: formatPixelBmShareError(msg, pid, ownerNorm),
+        });
+      }
+    }
+    if (useDefaultInterval && i < agencyBusinessIds.length - 1) await sleep(DEFAULT_INTERVAL_MS);
+  }
+  return results;
+}
+
 export async function deletePixelSharedAgencies(
   accessToken: string,
   pixelId: string,
@@ -631,20 +949,46 @@ export async function deletePixelAssignedUsers(
   useDefaultInterval: boolean
 ): Promise<PixelOpResultRow[]> {
   const results: PixelOpResultRow[] = [];
+  const assetGroupIds = await listAssetGroupIdsContainingPixel(accessToken, businessId, pixelId);
+  const tokenEnc = encodeURIComponent(accessToken);
+  const bizEnc = encodeURIComponent(businessId);
+
   for (let i = 0; i < userIds.length; i++) {
     const uid = userIds[i];
+    let removed = false;
+    let lastErr = '';
+
     try {
-      const q = `user=${encodeURIComponent(uid)}&access_token=${encodeURIComponent(accessToken)}`;
+      const q = `user=${encodeURIComponent(uid)}&access_token=${tokenEnc}`;
       await graphDelete(`${pixelId}/assigned_users?${q}`);
+      removed = true;
+    } catch (e: unknown) {
+      lastErr = e instanceof Error ? e.message : String(e);
+    }
+
+    if (!removed) {
+      for (const gid of assetGroupIds) {
+        try {
+          const q = `user=${encodeURIComponent(uid)}&business=${bizEnc}&access_token=${tokenEnc}`;
+          await graphDelete(`${gid}/assigned_users?${q}`);
+          removed = true;
+          lastErr = '';
+          break;
+        } catch (e: unknown) {
+          lastErr = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
+
+    if (removed) {
       results.push({
         pixelId,
         targetId: uid,
         status: '成功',
-        detail: '已移除管理员',
+        detail: assetGroupIds.length ? '已移除像素/资产组合权限' : '已移除管理员',
       });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      results.push({ pixelId, targetId: uid, status: '失败', detail: msg });
+    } else {
+      results.push({ pixelId, targetId: uid, status: '失败', detail: lastErr || '移除失败' });
     }
     if (useDefaultInterval && i < userIds.length - 1) await sleep(DEFAULT_INTERVAL_MS);
   }
@@ -680,6 +1024,16 @@ export async function executePixelDrawerOperation(
       if (!adAccountId) throw new Error('请选择广告账户');
       return batchCreatePixelOnSingleAccount(accessToken, adAccountId, pixelName);
     }
+    case 'share_between_bm':
+      if (!payload.pixelId) throw new Error('缺少 pixelId');
+      if (!payload.selectedTargetIds.length) throw new Error('请填写至少一个目标 BM ID');
+      return sharePixelWithAgencyBusinesses(
+        accessToken,
+        payload.pixelId,
+        payload.bmId,
+        payload.selectedTargetIds,
+        payload.useDefaultInterval
+      );
     case 'delete_ad_account':
       if (!payload.pixelId) throw new Error('缺少 pixelId');
       return deletePixelSharedAdAccounts(

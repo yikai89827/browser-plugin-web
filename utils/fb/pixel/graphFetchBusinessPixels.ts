@@ -131,7 +131,9 @@ function mapNodeToRecord(
   const role =
     ctx.edge === 'owned_pixels' ? '自有' : ctx.edge === 'client_pixels' ? '客户' : '广告';
 
+  /** 表格「BM自有」列：仅表示同步时命中 owned_pixels，非「已分享给其他 BM」或 API 写权限 */
   const bmShareOk = ctx.edge === 'owned_pixels' ? true : undefined;
+  /** 表格「客户像素」列：仅表示同步时命中 client_pixels */
   const shareOk = ctx.edge === 'client_pixels' ? true : undefined;
 
   return {

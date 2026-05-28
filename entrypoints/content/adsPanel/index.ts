@@ -1,6 +1,9 @@
 import { fbControlLog } from '../../../utils/fbControlLog';
+import { installFormattedDslCapture } from './formattedDslCapture';
 import { isAdsPanelTargetPage } from './detectSelectedAccount';
 import { AdsPanelWidget } from './widget';
+
+installFormattedDslCapture();
 
 let widget: AdsPanelWidget | null = null;
 

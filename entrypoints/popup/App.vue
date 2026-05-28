@@ -105,16 +105,6 @@ const openAdmin = async () => {
     </header>
 
     <div class="button-area">
-      <div class="switch-buttons">
-        <button type="button" class="switch-btn" @click="switchToNewBM">
-          <span class="arrow">→</span>
-          <span>切换到BM新界面</span>
-        </button>
-        <button type="button" class="switch-btn" @click="switchToOldBM">
-          <span class="arrow">←</span>
-          <span>切换到BM旧界面</span>
-        </button>
-      </div>
 
       <button type="button" class="admin-btn" @click="openAdmin">
         <span class="icon" aria-hidden="true">📊</span>

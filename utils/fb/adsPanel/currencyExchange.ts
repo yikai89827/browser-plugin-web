@@ -12,6 +12,7 @@ const FRANKFURTER_SKIP = new Set(['PKR', 'BDT', 'LKR', 'NPR', 'MMK', 'KHR', 'LAK
 /** 汇率数据来源（控制台过滤 `[fbControl:fb:fx]`） */
 export type FxRateSource =
   | 'usd'
+  | 'meta-account-ratio'
   | 'meta-page'
   | 'meta-graph'
   | 'er-api'
@@ -37,6 +38,8 @@ const rateCache = new Map<string, CacheEntry>();
 
 const FX_SOURCE_LABEL: Record<FxRateSource, string> = {
   usd: 'USD（无需换算）',
+  'meta-account-ratio':
+    'Meta Ads Manager (account_currency_ratio_to_usd，与 fbspider 一致)',
   'meta-page': 'Meta Ads Manager 页面 (usd_exchange_inverse)',
   'meta-graph': 'Meta Graph API (/me?fields=currency)',
   'er-api': '第三方 ER API (open.er-api.com)',
@@ -242,6 +245,10 @@ export function roundUsdMajor(major: number): number {
 
 export type FetchUsdToCurrencyRateOptions = {
   accessToken?: string | null;
+  /** 页面/GraphQL 的 account_currency_ratio_to_usd（优先，与 fbspider 一致） */
+  pageAccountCurrencyRatioToUsd?: number | null;
+  /** 页面 usd_exchange_inverse */
+  pageUsdExchangeInverse?: number | null;
 };
 
 /** 1 USD = ? 目标币种（含来源，供日志与 API 返回） */
@@ -251,10 +258,30 @@ export async function fetchUsdToCurrencyRate(
 ): Promise<FxRateFetchResult> {
   const t = targetCurrency.trim().toUpperCase();
   if (t === 'USD') return result(1, 'usd');
-  return fetchExchangeRate('USD', t, options);
+
+  const ratio = options?.pageAccountCurrencyRatioToUsd;
+  if (ratio != null && Number.isFinite(ratio) && ratio > 0) {
+    const r = fxRateResultFromAccountRatio(ratio);
+    logFxRateResolved(t, r, { via: 'pageAccountCurrencyRatioToUsd' });
+    return r;
+  }
+
+  const inverse = options?.pageUsdExchangeInverse;
+  if (inverse != null && Number.isFinite(inverse) && inverse > 0) {
+    const r = fxRateResultFromPage(inverse);
+    logFxRateResolved(t, r, { via: 'pageUsdExchangeInverse' });
+    return r;
+  }
+
+  return fetchExchangeRate('USD', t, { accessToken: options?.accessToken });
 }
 
-/** 页面或消息层已解析出的 Meta 汇率 */
+/** 页面或消息层已解析出的 Meta 汇率（usd_exchange_inverse） */
 export function fxRateResultFromPage(pageRate: number): FxRateFetchResult {
   return result(pageRate, 'meta-page');
+}
+
+/** fbspider 同源：account_currency_ratio_to_usd → 1 USD = ? 本币 */
+export function fxRateResultFromAccountRatio(pageRate: number): FxRateFetchResult {
+  return result(pageRate, 'meta-account-ratio');
 }

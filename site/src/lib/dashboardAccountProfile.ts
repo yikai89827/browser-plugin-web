@@ -1,6 +1,10 @@
 import type { FbMeProfile } from '../../../utils/fb/graphFetchMeProfile';
 import { fetchFacebookMeProfile } from '../../../utils/fb/graphFetchMeProfile';
 import {
+  fetchFacebookUserPrimaryEmail,
+  findEmailForFacebookUserInAccessibleBusinesses,
+} from '../../../utils/fb/adAccount/graphBusinessManagement';
+import {
   extensionConfigured,
   formatExtensionUserError,
   getFbAccessTokenFromExtension,
@@ -86,6 +90,18 @@ export async function loadDashboardAccountView(): Promise<DashboardAccountView> 
     }
   }
 
+  let email = me?.email?.trim();
+  if ((!email || !email.includes('@')) && token && me?.id) {
+    try {
+      email =
+        (await fetchFacebookUserPrimaryEmail(token, me.id)) ??
+        (await findEmailForFacebookUserInAccessibleBusinesses(token, me.id)) ??
+        undefined;
+    } catch {
+      /* 邮箱为辅助信息，失败时保持 — */
+    }
+  }
+
   const fbLink =
     me?.link ||
     (me?.id ? `https://www.facebook.com/profile.php?id=${encodeURIComponent(me.id)}` : '');
@@ -93,7 +109,7 @@ export async function loadDashboardAccountView(): Promise<DashboardAccountView> 
   return {
     username: username || me?.name || '—',
     siteAccountId,
-    email: dash(me?.email),
+    email: dash(email),
     facebookUserId: dash(me?.id),
     facebookName: dash(me?.name),
     facebookLink: fbLink,

@@ -97,6 +97,22 @@ function mergeAdAccount(
   if (out.paymentMethod != null && String(out.paymentMethod).trim()) {
     out.paymentMethod = normalizeFundingDisplayString(String(out.paymentMethod));
   }
+  if (
+    (!recordHasOwnKey(normalizedIncoming, 'formattedDsl') ||
+      String(normalizedIncoming.formattedDsl ?? '').trim() === '') &&
+    p?.formattedDsl?.trim()
+  ) {
+    out.formattedDsl = p.formattedDsl;
+  }
+  if (
+    (normalizedIncoming.accountCurrencyRatioToUsd == null ||
+      !Number.isFinite(normalizedIncoming.accountCurrencyRatioToUsd) ||
+      normalizedIncoming.accountCurrencyRatioToUsd <= 0) &&
+    p?.accountCurrencyRatioToUsd != null &&
+    p.accountCurrencyRatioToUsd > 0
+  ) {
+    out.accountCurrencyRatioToUsd = p.accountCurrencyRatioToUsd;
+  }
   return out;
 }
 

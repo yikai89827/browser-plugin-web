@@ -28,14 +28,28 @@ import {
 
 const PAGE_FX_CACHE_TTL_MS = 60 * 60 * 1000;
 const pageFxRateByCurrency = new Map<string, { rate: number; at: number }>();
+const pageFxRateByAccountId = new Map<string, { rate: number; at: number }>();
 
 function rememberPageFxRate(currency: string, rate: number): void {
   if (!Number.isFinite(rate) || rate <= 0) return;
   pageFxRateByCurrency.set(currency.trim().toUpperCase(), { rate, at: Date.now() });
 }
 
+function rememberPageFxRateForAccount(accountId: string, rate: number): void {
+  const id = accountId.replace(/^act_/i, '').trim();
+  if (!/^\d{10,}$/.test(id) || !Number.isFinite(rate) || rate <= 0) return;
+  pageFxRateByAccountId.set(id, { rate, at: Date.now() });
+}
+
 function cachedPageFxRate(currency: string): number | null {
   const hit = pageFxRateByCurrency.get(currency.trim().toUpperCase());
+  if (!hit || Date.now() - hit.at > PAGE_FX_CACHE_TTL_MS) return null;
+  return hit.rate;
+}
+
+function cachedPageFxRateForAccount(accountId: string): number | null {
+  const id = accountId.replace(/^act_/i, '').trim();
+  const hit = pageFxRateByAccountId.get(id);
   if (!hit || Date.now() - hit.at > PAGE_FX_CACHE_TTL_MS) return null;
   return hit.rate;
 }
@@ -146,41 +160,68 @@ export async function handleFbControlAdAccountMessage(
       return { success: true, payload: { currency, rate } };
     }
 
+    case 'FB_CONTROL_CACHE_ACCOUNT_FX_RATE': {
+      const body = message.data as { accountId?: string; rate?: number; currency?: string } | undefined;
+      const accountId = body?.accountId?.trim();
+      const rate = body?.rate;
+      if (!accountId || rate == null || !Number.isFinite(rate) || rate <= 0) {
+        return { success: false, error: 'accountId and rate required' };
+      }
+      rememberPageFxRateForAccount(accountId, rate);
+      if (body?.currency?.trim()) {
+        rememberPageFxRate(body.currency.trim().toUpperCase(), rate);
+      }
+      return { success: true, payload: { accountId, rate } };
+    }
+
     case 'FB_CONTROL_GET_USD_EXCHANGE_RATE': {
       const body = message.data as
-        | { currency?: string; pageUsdToCurrencyRate?: number }
+        | {
+            currency?: string;
+            accountId?: string;
+            pageUsdToCurrencyRate?: number;
+            pageAccountCurrencyRatioToUsd?: number;
+            pageUsdExchangeInverse?: number;
+          }
         | undefined;
       const currency = body?.currency?.trim().toUpperCase();
       if (!currency) {
         return { success: false, error: 'currency required' };
       }
       try {
-        let pageRate = body?.pageUsdToCurrencyRate;
-        if (pageRate != null && Number.isFinite(pageRate) && pageRate > 0) {
-          rememberPageFxRate(currency, pageRate);
-        } else {
-          pageRate = cachedPageFxRate(currency) ?? undefined;
-        }
-        if (pageRate != null && Number.isFinite(pageRate) && pageRate > 0) {
-          const fx = fxRateResultFromPage(pageRate);
-          logFxRateResolved(currency, fx, { via: 'FB_CONTROL_GET_USD_EXCHANGE_RATE' });
-          return {
-            success: true,
-            payload: {
-              rate: fx.rawRate,
-              source: fx.source,
-              effectiveRate: roundFxRate(fx.rawRate),
-            },
-          };
-        }
+        const accountId = body?.accountId?.trim();
+        const cachedAccountRate = accountId ? cachedPageFxRateForAccount(accountId) : null;
+        const pageRatio =
+          body?.pageAccountCurrencyRatioToUsd ??
+          (cachedAccountRate != null ? cachedAccountRate : undefined);
+        const pageInverse =
+          body?.pageUsdExchangeInverse ?? body?.pageUsdToCurrencyRate;
         const token = await getFbAccessToken();
         if (!token?.trim()) {
           fbControlLog('messaging:accounts', '汇率：无 access_token，无法请求 Meta Graph', {
             currency,
           });
         }
-        const fx = await fetchUsdToCurrencyRate(currency, { accessToken: token });
-        logFxRateResolved(currency, fx, { via: 'FB_CONTROL_GET_USD_EXCHANGE_RATE', hasToken: Boolean(token) });
+        const fx = await fetchUsdToCurrencyRate(currency, {
+          accessToken: token,
+          pageAccountCurrencyRatioToUsd:
+            pageRatio != null && Number.isFinite(pageRatio) && pageRatio > 0
+              ? pageRatio
+              : undefined,
+          pageUsdExchangeInverse:
+            pageInverse != null && Number.isFinite(pageInverse) && pageInverse > 0
+              ? pageInverse
+              : undefined,
+        });
+        rememberPageFxRate(currency, fx.rawRate);
+        if (accountId && fx.source === 'meta-account-ratio') {
+          rememberPageFxRateForAccount(accountId, fx.rawRate);
+        }
+        logFxRateResolved(currency, fx, {
+          via: 'FB_CONTROL_GET_USD_EXCHANGE_RATE',
+          hasToken: Boolean(token),
+          accountId: accountId || null,
+        });
         return {
           success: true,
           payload: {

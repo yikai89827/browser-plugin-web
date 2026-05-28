@@ -86,6 +86,16 @@ export interface FbAdAccountRecord {
   balanceMinor?: number;
   /** spend_cap 最小单位 */
   spendCapMinor?: number;
+  /**
+   * Meta 计费 GraphQL 返回的 `formatted_dsl`（动态临时限额展示串，如 ¥0.01）。
+   * 参考 fbspider；与 Graph spend_cap 不同，新户 spend_cap 常为 0。
+   */
+  formattedDsl?: string;
+  /**
+   * Meta `account_currency_ratio_to_usd` 折算后：1 USD = ? 账户币种（与 fbspider 一致）。
+   * 由 Ads Manager 页采集或 GraphQL 计费接口写入，供站点表格按账户取汇率。
+   */
+  accountCurrencyRatioToUsd?: number;
   /** min_daily_budget 最小单位 */
   minDailyBudgetMinor?: number;
   /** 兼容旧字段：付款展示文案 */
@@ -136,6 +146,7 @@ export interface FbPixelShareRecord {
 /** 像素分享抽屉批量操作类型 */
 export type PixelDrawerKind =
   | 'batch_create'
+  | 'share_between_bm'
   | 'assign_to_account'
   | 'assign_to_people'
   | 'delete_ad_account'

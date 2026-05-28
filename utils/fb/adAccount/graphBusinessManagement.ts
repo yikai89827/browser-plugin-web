@@ -472,6 +472,40 @@ export async function fetchAccessibleBusinessIds(accessToken: string): Promise<s
   return out;
 }
 
+/**
+ * 在 token 可访问的 BM 的 business_users 中，按个人 Facebook UID 查找已登记邮箱。
+ * 浏览器捕获的 EAAB 等 token 常无 `email` 权限，但 BM 成员列表仍可能返回邮箱（与参考插件一致）。
+ */
+export async function findEmailForFacebookUserInAccessibleBusinesses(
+  accessToken: string,
+  facebookUserId: string
+): Promise<string | null> {
+  const pid = String(facebookUserId).trim();
+  if (!/^\d{5,}$/.test(pid)) return null;
+
+  const bmIds = await fetchAccessibleBusinessIds(accessToken);
+  for (const bid of bmIds) {
+    let url =
+      `https://graph.facebook.com/${GRAPH_VERSION}/${bid}/business_users?fields=id,email,user{id}&limit=200&access_token=${encodeURIComponent(accessToken)}`;
+    for (let page = 0; page < 10 && url; page++) {
+      const { ok, json } = await graphJson(url, { method: 'GET' });
+      if (!ok || json.error) break;
+      const rows = Array.isArray((json as { data?: unknown[] }).data)
+        ? ((json as { data: { email?: string; user?: { id?: string | number } }[] }).data ?? [])
+        : [];
+      for (const row of rows) {
+        const uid = row.user?.id != null ? String(row.user.id).trim() : '';
+        if (uid !== pid) continue;
+        const email = row.email != null ? String(row.email).trim() : '';
+        if (email.includes('@')) return email;
+      }
+      const next = (json as { paging?: { next?: string } }).paging?.next;
+      url = typeof next === 'string' && next.length ? next : '';
+    }
+  }
+  return null;
+}
+
 /** POST business_users 邀请：应用/token 无 business_management 等权限（subcode 1752203） */
 export function isBmInvitePermissionError(message: string): boolean {
   const t = (message || '').trim();
@@ -501,7 +535,9 @@ export function isNotBusinessScopedUserError(message: string): boolean {
   return (
     /subcode\s*=\s*1752100/i.test(t) ||
     /不属于业务账户范畴/i.test(t) ||
-    /business user or system user/i.test(t)
+    /business user or system user/i.test(t) ||
+    /自动换算为商务用户编号/i.test(t) ||
+    /请确认对方已加入\s*BM/i.test(t)
   );
 }
 
